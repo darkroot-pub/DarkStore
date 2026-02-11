@@ -2,2618 +2,539 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>APK STORE - Premium Repository</title>
-    <!-- Modern Font -->
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5, user-scalable=yes">
+    <title>DarkStore • big update loading</title>
+    <!-- no external dependencies — pure inline magic -->
     <style>
-        /* ========================================================= */
-        /* VARIABLES & RESET - IMPROVED LIGHT THEME */
-        /* ========================================================= */
-        :root {
-            --primary: #00C853; /* Vibrant Green */
-            --primary-light: #66ffa6;
-            --primary-dark: #009624;
-            --accent: #2979FF;
-            --accent-light: #75a7ff;
-            --bg-color: #ffffff;
-            --bg-secondary: #f8f9fa;
-            --card-bg: #ffffff;
-            --text-main: #1a1a1a;
-            --text-secondary: #5f6368;
-            --text-tertiary: #80868b;
-            --border-color: #e0e0e0;
-            --glass-bg: rgba(255, 255, 255, 0.95);
-            --glass-border: rgba(255, 255, 255, 0.6);
-            --shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.06);
-            --shadow-medium: 0 4px 12px rgba(0, 0, 0, 0.08);
-            --shadow-hover: 0 8px 24px rgba(0, 200, 83, 0.12);
-            --radius-sm: 8px;
-            --radius-md: 12px;
-            --radius-lg: 16px;
-            --radius-xl: 20px;
-            --transition-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
-            --featured-color: #ff6b6b;
-            --paid-color: #ff5252;
-            --free-color: #00C853;
-            --warning-color: #ff9800;
-            --success-color: #4caf50;
-            --info-color: #2196f3;
-        }
-
+        /* RESET + GLOBAL DARK FOUNDATION */
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-            font-family: 'Poppins', sans-serif;
-            -webkit-tap-highlight-color: transparent;
-        }
-
-        html {
-            font-size: 14px;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
         }
 
         body {
-            background-color: var(--bg-color);
-            color: var(--text-main);
-            overflow-x: hidden;
-            /* Subtle Animated Background Mesh */
-            background-image: 
-                radial-gradient(at 0% 0%, rgba(0, 200, 83, 0.02) 0px, transparent 50%),
-                radial-gradient(at 100% 0%, rgba(41, 121, 255, 0.02) 0px, transparent 50%);
-            background-attachment: fixed;
-            padding-bottom: env(safe-area-inset-bottom);
+            background: radial-gradient(circle at 20% 30%, #0b0c14, #030405);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem 1.5rem;
+            position: relative;
+            line-height: 1.5;
         }
 
-        /* Custom Scrollbar */
-        ::-webkit-scrollbar {
-            width: 6px;
-            height: 6px;
-        }
-        ::-webkit-scrollbar-track {
-            background: transparent;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: #d0d0d0;
-            border-radius: 3px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: var(--primary);
-        }
-
-        /* ========================================================= */
-        /* LOADER ANIMATION */
-        /* ========================================================= */
-        .loading-screen {
+        /* subtle noise overlay – adds texture */
+        body::after {
+            content: '';
             position: fixed;
             top: 0;
             left: 0;
-            width: 100%;
-            height: 100%;
-            background: #ffffff;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            z-index: 2000;
-            transition: opacity 0.6s ease, visibility 0.6s;
-        }
-
-        .loading-screen.hidden {
-            opacity: 0;
-            visibility: hidden;
+            width: 100vw;
+            height: 100vh;
+            background-image: url('data:image/svg+xml,<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"><filter id="noise"><feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="1" stitchTiles="stitch"/><feColorMatrix type="matrix" values="1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 0.04 0"/></filter><rect width="100%25" height="100%25" filter="url(%23noise)"/></svg>');
+            opacity: 0.2;
             pointer-events: none;
+            z-index: 3;
         }
 
-        /* Modern Pulse Loader */
-        .loader-logo {
-            font-size: 40px;
-            color: var(--primary);
-            margin-bottom: 20px;
-            animation: bounce 1s infinite alternate;
-        }
-
-        .spinner {
-            width: 40px;
-            height: 40px;
-            border: 4px solid rgba(0, 200, 83, 0.1);
-            border-left-color: var(--primary);
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-        }
-
-        @keyframes bounce { to { transform: translateY(-10px); } }
-        @keyframes spin { to { transform: rotate(360deg); } }
-
-        /* ========================================================= */
-        /* GLASS HEADER - MOBILE FRIENDLY */
-        /* ========================================================= */
-        header {
-            background: rgba(255, 255, 255, 0.98);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border-bottom: 1px solid var(--border-color);
-            padding: 12px 15px;
-            position: sticky;
-            top: 0;
-            z-index: 100;
+        .glass-card {
+            max-width: 1000px;
+            width: 100%;
+            background: rgba(6, 8, 16, 0.7);
+            backdrop-filter: blur(14px) saturate(180%);
+            -webkit-backdrop-filter: blur(14px) saturate(180%);
+            border: 1px solid rgba(46, 204, 113, 0.2);
+            border-top: 1px solid rgba(70, 220, 130, 0.35);
+            border-radius: 56px;
+            padding: 3.5rem 2.5rem;
+            box-shadow: 0 30px 50px -15px rgba(0,0,0,0.8), 0 0 0 1px rgba(30, 255, 120, 0.08) inset, 0 0 25px rgba(20, 255, 120, 0.08);
+            position: relative;
+            z-index: 10;
             transition: all 0.3s ease;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
+            animation: borderPulse 5s infinite alternate;
         }
 
-        .header-container {
+        @keyframes borderPulse {
+            0% { border-color: rgba(46, 204, 113, 0.2); box-shadow: 0 30px 50px -15px #000, 0 0 0 1px rgba(30,255,120,0.05) inset; }
+            100% { border-color: rgba(46, 204, 113, 0.5); box-shadow: 0 30px 60px -12px #1f3b2a, 0 0 0 1.5px rgba(70, 220, 130, 0.25) inset; }
+        }
+
+        /* STORE LOGO / BRAND */
+        .store-badge {
             display: flex;
             align-items: center;
-            width: 100%;
-            margin: 0 auto;
-            gap: 10px;
+            justify-content: space-between;
+            margin-bottom: 2.2rem;
+            flex-wrap: wrap;
+            border-bottom: 1px dashed rgba(110, 255, 140, 0.3);
+            padding-bottom: 1.5rem;
         }
 
         .logo {
             display: flex;
             align-items: center;
-            cursor: pointer;
-            transition: transform 0.3s var(--transition-bounce);
-            flex-shrink: 0;
+            gap: 12px;
         }
 
-        .logo:hover {
-            transform: scale(1.05);
+        .logo-icon {
+            background: linear-gradient(145deg, #1a2e1f, #0f1a12);
+            width: 52px;
+            height: 52px;
+            border-radius: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid #2ecc7170;
+            box-shadow: 0 5px 0 #0b1a0e;
         }
 
-        .logo i {
-            font-size: 24px;
-            color: var(--primary);
-            margin-right: 8px;
-            background: -webkit-linear-gradient(45deg, var(--primary), var(--accent));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+        .logo-icon span {
+            font-size: 32px;
+            font-weight: 700;
+            color: #bbffcc;
+            text-shadow: 0 0 8px #1ef07c;
+            letter-spacing: -2px;
         }
 
         .logo h1 {
-            font-size: 18px;
+            font-size: 2.1rem;
             font-weight: 700;
+            background: linear-gradient(to right, #d4ffe0, #a0f0b0);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
             letter-spacing: -0.5px;
-            white-space: nowrap;
+            text-shadow: 0 0 10px #2ecc7130;
         }
 
-        /* Enhanced Search Bar for Mobile */
-        .search-container {
-            flex: 1;
-            min-width: 0;
-            position: relative;
-        }
-
-        .search-box {
-            width: 100%;
-            padding: 10px 15px 10px 40px;
-            border-radius: 25px;
-            border: 1.5px solid #e8eaed;
-            background-color: #f8f9fa;
-            font-size: 14px;
-            transition: all 0.3s ease;
-            color: var(--text-main);
-        }
-
-        .search-box:focus {
-            background-color: #fff;
-            border-color: var(--primary);
-            box-shadow: 0 4px 15px rgba(0, 200, 83, 0.1);
-            transform: scale(1.02);
-        }
-
-        .search-icon {
-            position: absolute;
-            left: 15px;
-            top: 50%;
-            transform: translateY(-50%);
-            color: #9aa0a6;
-            transition: color 0.3s;
-            font-size: 14px;
-        }
-
-        .search-box:focus + .search-icon {
-            color: var(--primary);
-        }
-
-        /* Advanced Filters */
-        .advanced-filters {
-            display: flex;
-            gap: 8px;
-            align-items: center;
-            margin-left: 10px;
-        }
-
-        .filter-btn {
-            background: white;
-            border: 1px solid var(--border-color);
-            color: var(--text-secondary);
-            width: 36px;
-            height: 36px;
-            border-radius: 50%;
-            cursor: pointer;
-            font-size: 16px;
-            transition: all 0.3s var(--transition-bounce);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0;
-        }
-
-        .filter-btn:hover, .filter-btn:active {
-            background-color: var(--accent);
-            color: white;
-            box-shadow: 0 4px 12px rgba(41, 121, 255, 0.2);
-            transform: rotate(15deg);
-        }
-
-        .user-actions {
-            display: flex;
-            gap: 8px;
-            align-items: center;
-            flex-shrink: 0;
-        }
-
-        .user-actions button {
-            background: white;
-            border: 1px solid var(--border-color);
-            color: var(--text-secondary);
-            width: 36px;
-            height: 36px;
-            border-radius: 50%;
-            cursor: pointer;
-            font-size: 16px;
-            transition: all 0.3s var(--transition-bounce);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .user-actions button:hover, .user-actions button:active {
-            background-color: var(--primary);
-            color: white;
-            box-shadow: 0 4px 12px rgba(0, 200, 83, 0.2);
-            transform: rotate(15deg);
-        }
-
-        /* ========================================================= */
-        /* UI COMPONENTS - MOBILE FRIENDLY */
-        /* ========================================================= */
-        .container {
-            width: 100%;
-            margin: 0 auto;
-            padding: 15px;
-        }
-
-        /* Enhanced Category Tabs - Mobile Optimized */
-        .category-tabs {
-            display: flex;
-            overflow-x: auto;
-            padding: 10px 0 20px 0;
-            gap: 8px;
-            scrollbar-width: none;
-            position: relative;
-            -webkit-overflow-scrolling: touch;
-        }
-        .category-tabs::-webkit-scrollbar { display: none; }
-
-        .category-tabs button {
-            background: white;
-            border: 1px solid var(--border-color);
-            padding: 10px 18px;
-            border-radius: 25px;
-            cursor: pointer;
-            font-size: 13px;
-            font-weight: 500;
-            color: var(--text-secondary);
-            box-shadow: var(--shadow-soft);
-            transition: all 0.3s var(--transition-bounce);
-            white-space: nowrap;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            flex-shrink: 0;
-        }
-
-        .category-tabs button i {
-            font-size: 14px;
-        }
-
-        .category-tabs button:active {
-            transform: translateY(-2px);
-            color: var(--primary);
-        }
-
-        .category-tabs button.active {
-            background: var(--primary);
-            color: white;
-            border-color: var(--primary);
-            box-shadow: 0 4px 12px rgba(0, 200, 83, 0.2);
-            transform: scale(1.05);
-        }
-
-        .category-tabs button.featured {
-            background: linear-gradient(135deg, var(--featured-color), #ff8a8a);
-            color: white;
-            position: relative;
-            border: none;
-        }
-
-        .category-tabs button.featured::before {
-            content: '⭐';
-            margin-right: 4px;
-            font-size: 12px;
-        }
-
-        /* Enhanced Filter Controls - Mobile Optimized */
-        .filter-controls {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin: 15px 0 20px;
-            flex-wrap: wrap;
-            gap: 10px;
-            padding: 10px 0;
-            border-bottom: 1px solid var(--border-color);
-        }
-
-        .section-title {
-            font-size: 18px;
-            font-weight: 700;
-            position: relative;
-            padding-left: 15px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .section-title i {
-            color: var(--primary);
-            font-size: 18px;
-        }
-
-        .section-title::before {
-            content: '';
-            position: absolute;
-            left: 0;
-            top: 50%;
-            transform: translateY(-50%);
-            height: 20px;
-            width: 4px;
-            background: var(--primary);
-            border-radius: 2px;
-        }
-
-        .filter-group {
-            display: flex;
-            gap: 8px;
-            align-items: center;
-            flex-wrap: wrap;
-            width: 100%;
-        }
-
-        select {
-            padding: 8px 15px;
-            border-radius: 20px;
-            border: 1.5px solid var(--border-color);
-            background: white;
-            cursor: pointer;
-            outline: none;
-            font-family: 'Poppins', sans-serif;
-            font-size: 13px;
-            transition: all 0.3s ease;
-            min-width: 0;
-            flex: 1;
-            color: var(--text-main);
-        }
-
-        select:focus {
-            border-color: var(--primary);
-            box-shadow: 0 0 0 2px rgba(0, 200, 83, 0.1);
-        }
-
-        .stats-badge {
-            background: rgba(0, 200, 83, 0.08);
-            color: var(--primary);
-            padding: 5px 10px;
-            border-radius: 15px;
-            font-size: 11px;
+        .status {
+            background: rgba(230, 50, 50, 0.15);
+            backdrop-filter: blur(4px);
+            padding: 0.6rem 1.6rem;
+            border-radius: 40px;
+            border: 1px solid rgba(255, 80, 80, 0.4);
             font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 4px;
-            white-space: nowrap;
-            border: 1px solid rgba(0, 200, 83, 0.2);
-        }
-
-        /* ========================================================= */
-        /* ENHANCED APP GRID & CARDS - MOBILE FRIENDLY */
-        /* ========================================================= */
-        .app-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-            gap: 15px;
-            perspective: 1000px;
-        }
-
-        .app-card {
-            background: var(--card-bg);
-            border-radius: var(--radius-md);
-            overflow: hidden;
-            box-shadow: var(--shadow-soft);
-            transition: all 0.3s var(--transition-bounce);
-            cursor: pointer;
-            border: 1px solid var(--border-color);
-            opacity: 0; /* For animation */
-            animation: cardEntrance 0.5s ease forwards;
-            position: relative;
-        }
-
-        /* Featured App Styling */
-        .app-card.featured {
-            border: 1.5px solid var(--featured-color);
-            box-shadow: 0 6px 20px rgba(255, 107, 107, 0.1);
-        }
-
-        .app-card.featured::before {
-            content: '⭐ FEATURED';
-            position: absolute;
-            top: 8px;
-            right: 8px;
-            background: var(--featured-color);
-            color: white;
-            font-size: 9px;
-            font-weight: 700;
-            padding: 3px 6px;
-            border-radius: 10px;
-            z-index: 2;
-            animation: pulse 2s infinite;
-        }
-
-        @keyframes pulse {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.05); }
-        }
-
-        /* STAGGERED ANIMATION DELAYS */
-        .app-card:nth-child(1) { animation-delay: 0.1s; }
-        .app-card:nth-child(2) { animation-delay: 0.15s; }
-        .app-card:nth-child(3) { animation-delay: 0.2s; }
-        .app-card:nth-child(4) { animation-delay: 0.25s; }
-        .app-card:nth-child(5) { animation-delay: 0.3s; }
-        .app-card:nth-child(6) { animation-delay: 0.35s; }
-
-        @keyframes cardEntrance {
-            from {
-                opacity: 0;
-                transform: translateY(20px) scale(0.95);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0) scale(1);
-            }
-        }
-
-        .app-card:active {
-            transform: scale(0.98);
-            box-shadow: 0 2px 10px rgba(0, 200, 83, 0.15);
-            border-color: rgba(0, 200, 83, 0.3);
-        }
-
-        .app-icon {
-            padding: 12px;
-            background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            position: relative;
-            min-height: 120px;
-        }
-
-        .app-icon img {
-            width: 70px;
-            height: 70px;
-            border-radius: var(--radius-md);
-            box-shadow: 0 3px 8px rgba(0,0,0,0.05);
-            object-fit: cover;
-            transition: transform 0.3s ease;
-        }
-
-        .app-card:active .app-icon img {
-            transform: scale(1.05) rotate(1deg);
-        }
-
-        /* App Status Badge */
-        .app-status {
-            position: absolute;
-            top: 8px;
-            left: 8px;
-            font-size: 9px;
-            font-weight: 700;
-            padding: 3px 6px;
-            border-radius: 10px;
-            z-index: 2;
-        }
-
-        .status-active {
-            background-color: #e8f5e9;
-            color: #2e7d32;
-            border: 1px solid #c8e6c9;
-        }
-
-        .status-inactive {
-            background-color: #ffebee;
-            color: #c62828;
-            opacity: 0.7;
-            border: 1px solid #ffcdd2;
-        }
-
-        .app-info {
-            padding: 12px;
-            position: relative;
-        }
-
-        .app-name {
-            font-weight: 600;
-            font-size: 14px;
-            margin-bottom: 3px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            color: var(--text-main);
-        }
-
-        .app-developer {
-            font-size: 11px;
-            color: var(--text-tertiary);
-            margin-bottom: 6px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
-        .app-meta {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 8px;
-        }
-
-        .app-rating {
-            display: flex;
-            align-items: center;
-            gap: 2px;
-        }
-
-        .app-rating i {
-            color: #FFC107;
-            font-size: 11px;
-        }
-
-        .app-size {
-            font-size: 10px;
-            color: var(--text-tertiary);
-            background: #f5f5f5;
-            padding: 2px 6px;
-            border-radius: 8px;
-            border: 1px solid #eee;
-        }
-
-        .app-price {
-            position: absolute;
-            bottom: 12px;
-            right: 12px;
-            font-weight: 700;
-            font-size: 12px;
-        }
-
-        .price-free {
-            color: var(--free-color);
-        }
-
-        .price-paid {
-            color: var(--paid-color);
-        }
-
-        .app-downloads {
-            font-size: 10px;
-            color: var(--text-tertiary);
-            display: flex;
-            align-items: center;
-            gap: 2px;
-            margin-top: 4px;
-        }
-
-        .app-tags {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 3px;
-            margin-top: 8px;
-        }
-
-        .app-tag {
-            font-size: 9px;
-            background: rgba(0, 200, 83, 0.08);
-            color: var(--primary);
-            padding: 2px 5px;
-            border-radius: 8px;
-            border: 1px solid rgba(0, 200, 83, 0.2);
-        }
-
-        /* ========================================================= */
-        /* ENHANCED MODALS - MOBILE FRIENDLY */
-        /* ========================================================= */
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.4);
-            backdrop-filter: blur(5px);
-            z-index: 1000;
-            justify-content: center; 
-            align-items: flex-end;
-            padding: 0;
-            opacity: 0;
-            transition: opacity 0.3s ease;
-        }
-
-        .modal.show {
-            opacity: 1;
-        }
-
-        .modal-content {
-            background-color: white;
-            border-radius: 20px 20px 0 0;
-            width: 100%;
-            overflow: hidden;
-            box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.1);
-            transform: translateY(100%);
-            opacity: 0;
-            transition: all 0.4s cubic-bezier(0.32, 0.72, 0, 1);
-            max-height: 85vh;
-            overflow-y: auto;
-            position: relative;
-            padding-bottom: env(safe-area-inset-bottom);
-        }
-
-        .modal.show .modal-content {
-            transform: translateY(0);
-            opacity: 1;
-        }
-
-        /* Drag Handle */
-        .modal-content::before {
-            content: '';
-            display: block;
-            width: 40px;
-            height: 4px;
-            background: #ddd;
-            border-radius: 2px;
-            margin: 12px auto;
-            cursor: grab;
-        }
-
-        .modal-header {
-            padding: 15px 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid var(--border-color);
-        }
-
-        .close-btn {
-            font-size: 22px;
-            cursor: pointer;
-            width: 32px;
-            height: 32px;
-            background: #f1f3f4;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.2s;
-            flex-shrink: 0;
-            color: var(--text-secondary);
-        }
-
-        .close-btn:active {
-            background: #ffcdd2;
-            color: #c62828;
-            transform: rotate(90deg);
-        }
-
-        /* Enhanced App Details for Mobile */
-        .app-detail-header {
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            text-align: center;
-            gap: 15px;
-        }
-
-        .detail-app-icon {
-            width: 100px;
-            height: 100px;
-            border-radius: var(--radius-lg);
-            box-shadow: 0 8px 20px rgba(0,0,0,0.1);
-            overflow: hidden;
-            flex-shrink: 0;
-        }
-        
-        .detail-app-icon img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-
-        .app-detail-info {
-            flex: 1;
-            width: 100%;
-        }
-
-        .detail-app-name {
-            font-size: 22px;
-            font-weight: 700;
-            margin-bottom: 5px;
-            color: var(--text-main);
-        }
-
-        .detail-app-developer {
-            font-size: 14px;
-            color: var(--text-secondary);
-            margin-bottom: 15px;
-        }
-
-        .detail-meta {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 15px;
-            margin-bottom: 20px;
-        }
-
-        .detail-meta-item {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-        }
-
-        .detail-meta-label {
-            font-size: 11px;
-            color: var(--text-tertiary);
+            font-size: 0.95rem;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .detail-meta-value {
-            font-weight: 600;
-            font-size: 14px;
-            color: var(--text-main);
-        }
-
-        .detail-app-rating {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            margin-bottom: 20px;
-            font-size: 16px;
-            justify-content: center;
-        }
-
-        .install-btn {
-            background: var(--primary);
-            color: white;
-            border: none;
-            padding: 14px 30px;
-            border-radius: 25px;
-            font-size: 15px;
-            font-weight: 600;
-            cursor: pointer;
-            box-shadow: 0 4px 15px rgba(0, 200, 83, 0.2);
-            transition: all 0.3s var(--transition-bounce);
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            width: 100%;
-            justify-content: center;
-        }
-
-        .install-btn:active {
-            background: var(--primary-dark);
-            transform: scale(0.98);
-            box-shadow: 0 2px 10px rgba(0, 200, 83, 0.15);
-        }
-
-        .install-btn.paid {
-            background: var(--paid-color);
-            box-shadow: 0 4px 15px rgba(255, 82, 82, 0.2);
-        }
-
-        .install-btn.paid:active {
-            background: #ff1744;
-            box-shadow: 0 2px 10px rgba(255, 82, 82, 0.15);
-        }
-
-        .app-description {
-            padding: 20px;
-            background: var(--bg-secondary);
-            border-top: 1px solid var(--border-color);
-            line-height: 1.6;
-            color: var(--text-secondary);
-            font-size: 14px;
-        }
-
-        .app-detail-tags {
-            padding: 15px 20px;
-            border-top: 1px solid var(--border-color);
-            display: flex;
-            flex-wrap: wrap;
-            gap: 6px;
-        }
-
-        .detail-tag {
-            background: rgba(0, 200, 83, 0.08);
-            color: var(--primary);
-            padding: 5px 10px;
-            border-radius: 12px;
-            font-size: 11px;
-            font-weight: 500;
-            border: 1px solid rgba(0, 200, 83, 0.2);
-        }
-
-        /* ========================================================= */
-        /* ENHANCED FILTER MODAL - MOBILE FRIENDLY */
-        /* ========================================================= */
-        .filter-modal-content {
-            padding: 20px;
-        }
-
-        .filter-group-modal {
-            margin-bottom: 20px;
-        }
-
-        .filter-group-modal h4 {
-            margin-bottom: 12px;
-            color: var(--text-main);
-            font-size: 15px;
-            font-weight: 600;
+            letter-spacing: 1.5px;
+            color: #ffa3a3;
+            box-shadow: 0 0 15px #ff555520;
             display: flex;
             align-items: center;
             gap: 8px;
         }
 
-        .filter-options {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-        }
-
-        .filter-option {
-            padding: 8px 14px;
-            border-radius: 18px;
-            border: 1.5px solid var(--border-color);
-            background: white;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            font-size: 13px;
-            flex: 1;
-            min-width: 0;
-            text-align: center;
-            color: var(--text-main);
-        }
-
-        .filter-option:active {
-            border-color: var(--primary);
-            color: var(--primary);
-        }
-
-        .filter-option.active {
-            background: var(--primary);
-            color: white;
-            border-color: var(--primary);
-        }
-
-        /* ========================================================= */
-        /* PROFILE MODAL ENHANCEMENTS - MOBILE FRIENDLY */
-        /* ========================================================= */
-        .profile-body { 
-            padding: 20px; 
-            text-align: center; 
-        }
-
-        .profile-icon-large-container {
-            width: 100px;
-            height: 100px;
-            margin: 0 auto 15px;
+        .status::before {
+            content: '';
+            width: 10px;
+            height: 10px;
+            background: #ff5e5e;
             border-radius: 50%;
-            padding: 2px;
-            border: 2px dashed var(--primary);
-            animation: spin-slow 20s linear infinite;
-        }
-        
-        @keyframes spin-slow { 100% { transform: rotate(360deg); } }
-
-        .profile-image-large {
-            width: 100%; height: 100%; border-radius: 50%;
-            object-fit: cover;
-            animation: spin-slow 20s linear infinite reverse;
+            display: inline-block;
+            box-shadow: 0 0 12px #ff2a2a;
+            animation: blinkRed 1.8s infinite;
         }
 
-        .action-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 12px;
-            margin: 20px 0;
+        @keyframes blinkRed {
+            0%, 100% { opacity: 1; background: #ff5e5e; }
+            50% { opacity: 0.5; background: #d03030; box-shadow: 0 0 6px #ff0000; }
         }
 
-        .action-btn {
-            background: white;
-            border: 1.5px solid var(--border-color);
-            padding: 12px;
-            border-radius: 14px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 6px;
-            transition: all 0.3s;
-            cursor: pointer;
-            text-decoration: none;
-            color: inherit;
-        }
-
-        .action-btn i { 
-            font-size: 20px; 
-            color: var(--primary); 
-        }
-
-        .action-btn span {
-            font-size: 12px;
-            color: var(--text-secondary);
-        }
-
-        .action-btn:active {
-            border-color: var(--primary);
-            background: rgba(0, 200, 83, 0.05);
-            transform: translateY(-3px);
-        }
-
-        /* STATS SECTION */
-        .user-stats {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 12px;
-            margin-bottom: 20px;
-        }
-
-        .stat-item {
-            background: var(--bg-secondary);
-            padding: 12px;
-            border-radius: 12px;
+        /* MAIN MESSAGE — big update / close */
+        .hero-message {
             text-align: center;
-            border: 1px solid var(--border-color);
+            margin: 2.8rem 0 2.5rem;
         }
 
-        .stat-value {
-            font-size: 20px;
-            font-weight: 700;
-            color: var(--primary);
-            margin-bottom: 4px;
-        }
-
-        .stat-label {
-            font-size: 11px;
-            color: var(--text-secondary);
-        }
-
-        /* ========================================================= */
-        /* SETTINGS TOGGLE FIX */
-        /* ========================================================= */
-        .toggle-switch {
+        .glitch-title {
+            font-size: 4.2rem;
+            font-weight: 800;
+            line-height: 1.1;
+            margin-bottom: 0.5rem;
+            color: white;
+            text-transform: uppercase;
             position: relative;
             display: inline-block;
-            width: 50px;
-            height: 24px;
+            letter-spacing: 6px;
+            animation: glitchSkew 6s infinite;
         }
 
-        .toggle-switch input {
-            opacity: 0;
-            width: 0;
-            height: 0;
+        .glitch-title span {
+            display: inline-block;
+            background: linear-gradient(45deg, #c3ffcf, #9af7b3);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            text-shadow: -2px -2px 0 #00ff6240, 2px 2px 0 #006b2a40;
         }
 
-        .toggle-slider {
-            position: absolute;
-            cursor: pointer;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: #e0e0e0;
-            transition: .4s;
-            border-radius: 34px;
+        @keyframes glitchSkew {
+            2%, 5% { transform: skew(2deg, -1deg); }
+            6%, 8% { transform: skew(-2deg, 0.5deg); }
+            10%, 100% { transform: skew(0deg, 0deg); }
         }
 
-        .toggle-slider:before {
-            position: absolute;
-            content: "";
-            height: 16px;
-            width: 16px;
-            left: 4px;
-            bottom: 4px;
-            background-color: white;
-            transition: .4s;
-            border-radius: 50%;
-        }
-
-        .toggle-switch input:checked + .toggle-slider {
-            background-color: var(--primary);
-        }
-
-        .toggle-switch input:checked + .toggle-slider:before {
-            transform: translateX(26px);
-        }
-
-        .setting-item {
-            display: flex;
-            justify-content: space-between;
-            padding: 15px 20px;
-            align-items: center;
-            border-bottom: 1px solid var(--border-color);
-        }
-
-        .setting-info {
-            flex: 1;
-        }
-
-        .setting-title {
+        .close-badge {
+            font-size: 2rem;
             font-weight: 600;
-            font-size: 15px;
-            margin-bottom: 3px;
-            color: var(--text-main);
+            margin-top: 0.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 18px;
+            flex-wrap: wrap;
         }
 
-        .setting-description {
-            font-size: 12px;
-            color: var(--text-tertiary);
+        .close-badge span:first-child {
+            background: #181e24;
+            padding: 0.4rem 1.8rem;
+            border-radius: 60px;
+            color: #ffaeae;
+            border: 1px solid #ff6666;
+            box-shadow: 0 0 20px #ff3b3b30;
+            font-size: 1.7rem;
+            font-weight: 700;
+            letter-spacing: 3px;
         }
 
-        /* Empty State */
-        .empty-state {
-            grid-column: 1 / -1;
+        .close-badge .highlight {
+            background: #1e3528;
+            padding: 0.4rem 1.5rem;
+            border-radius: 60px;
+            color: #c6ffb7;
+            border: 1px solid #5eff7e;
+            font-size: 1.7rem;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .countdown-panel {
+            background: rgba(0, 15, 10, 0.4);
+            border-radius: 88px;
+            padding: 2rem 1.8rem;
+            margin: 2.8rem 0 2rem;
+            border: 1px solid rgba(80, 255, 120, 0.2);
+            backdrop-filter: blur(8px);
+        }
+
+        .countdown-label {
+            font-size: 1rem;
+            text-transform: uppercase;
+            color: #99d6a8;
+            letter-spacing: 5px;
+            font-weight: 500;
             text-align: center;
-            padding: 40px 15px;
+            margin-bottom: 1rem;
+            word-spacing: 8px;
         }
 
-        .empty-state i {
-            font-size: 48px;
-            color: #e0e0e0;
-            margin-bottom: 15px;
-        }
-
-        .empty-state h3 {
-            font-size: 18px;
-            color: var(--text-secondary);
-            margin-bottom: 8px;
-        }
-
-        .empty-state p {
-            color: var(--text-tertiary);
-            max-width: 300px;
-            margin: 0 auto;
-            font-size: 13px;
-        }
-
-        /* ========================================================= */
-        /* TOAST NOTIFICATIONS */
-        /* ========================================================= */
-        .toast-message {
-            position: fixed;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%) translateY(100px);
-            background: var(--primary);
-            color: white;
-            padding: 12px 20px;
-            border-radius: 25px;
+        .timer {
             display: flex;
-            align-items: center;
-            gap: 10px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-            z-index: 9999;
-            opacity: 0;
-            transition: all 0.3s var(--transition-bounce);
-            max-width: 90%;
-            border: 1px solid rgba(255, 255, 255, 0.2);
+            justify-content: center;
+            gap: 1.8rem;
+            flex-wrap: wrap;
         }
 
-        .toast-message.show {
-            transform: translateX(-50%) translateY(0);
-            opacity: 1;
-        }
-
-        .toast-success { 
-            background: var(--success-color); 
-        }
-
-        .toast-error { 
-            background: var(--paid-color); 
-        }
-
-        .toast-info { 
-            background: var(--info-color); 
-        }
-
-        .toast-warning {
-            background: var(--warning-color);
-        }
-
-        .toast-message i { 
-            font-size: 18px; 
-        }
-
-        /* Download Progress Toast */
-        .download-progress {
-            position: fixed;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%) translateY(100px);
-            background: white;
-            color: var(--text-main);
-            padding: 15px;
-            border-radius: var(--radius-lg);
-            box-shadow: 0 8px 30px rgba(0,0,0,0.15);
-            z-index: 9999;
-            opacity: 0;
-            transition: all 0.3s var(--transition-bounce);
-            max-width: 90%;
-            width: 300px;
-            border: 1px solid var(--border-color);
-        }
-
-        .download-progress.show {
-            transform: translateX(-50%) translateY(0);
-            opacity: 1;
-        }
-
-        .download-header {
+        .time-segment {
             display: flex;
+            flex-direction: column;
             align-items: center;
+            min-width: 80px;
+        }
+
+        .time-number {
+            font-size: 3.5rem;
+            font-weight: 800;
+            background: linear-gradient(to top, #d0ffd0, #ffffff);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            line-height: 1;
+            text-shadow: 0 0 20px #3aff8a;
+            letter-spacing: 6px;
+        }
+
+        .time-unit {
+            font-size: 0.9rem;
+            color: #99cfaa;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            margin-top: 5px;
+            border-top: 1px solid #2ecc7150;
+            padding-top: 6px;
+        }
+
+        .info-footer {
+            display: flex;
             justify-content: space-between;
-            margin-bottom: 10px;
+            align-items: center;
+            margin-top: 2.8rem;
+            color: #bee1cc;
+            flex-wrap: wrap;
+            gap: 1.2rem;
         }
 
-        .download-title {
+        .darkstore-note {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 0.6rem 1.6rem;
+            border-radius: 40px;
+            border: 0.5px solid #3b7350;
+            font-weight: 400;
+        }
+
+        .darkstore-note i {
+            font-size: 1.3rem;
+            font-style: normal;
+        }
+
+        .social-pulse {
+            display: flex;
+            gap: 12px;
+        }
+
+        .social-pulse span {
+            background: #1d2920;
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #b5ffc2;
+            border: 1px solid #3cb371;
+            font-weight: 700;
+            font-size: 1.2rem;
+        }
+
+        /* responsive fine-tuning */
+        @media (max-width: 650px) {
+            .glass-card { padding: 2.2rem 1.5rem; border-radius: 40px; }
+            .glitch-title { font-size: 2.8rem; letter-spacing: 3px; }
+            .close-badge span:first-child, .close-badge .highlight { font-size: 1.3rem; }
+            .time-number { font-size: 2.5rem; }
+            .store-badge { flex-direction: column; align-items: flex-start; gap: 1rem; }
+        }
+
+        @media (max-width: 480px) {
+            .glitch-title { font-size: 2.1rem; }
+            .timer { gap: 0.7rem; }
+            .time-segment { min-width: 60px; }
+        }
+
+        /* glitch extra effect */
+        .overline {
+            font-size: 0.9rem;
+            color: #a0dcb0;
+            text-decoration: line-through 1.5px #ff6666;
+            text-decoration-style: wavy;
+            opacity: 0.8;
+        }
+
+        button, .fake-btn {
+            background: transparent;
+            border: 1.5px solid #47d37c;
+            color: #d0ffd0;
+            padding: 0.6rem 2rem;
+            border-radius: 50px;
             font-weight: 600;
-            font-size: 14px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
+            transition: 0.2s;
+            cursor: default;
+            font-size: 0.95rem;
+            letter-spacing: 1px;
         }
 
-        .close-download {
-            background: none;
-            border: none;
-            color: var(--text-tertiary);
-            cursor: pointer;
-            font-size: 16px;
-            padding: 0;
-            width: 24px;
-            height: 24px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 50%;
-        }
-
-        .close-download:active {
-            background: #f1f3f4;
-        }
-
-        .progress-container {
-            width: 100%;
-            height: 4px;
-            background: #f0f0f0;
-            border-radius: 2px;
-            overflow: hidden;
-            margin-bottom: 8px;
-        }
-
-        .progress-bar {
-            height: 100%;
-            background: var(--primary);
-            width: 0%;
-            transition: width 0.3s ease;
-            border-radius: 2px;
-        }
-
-        .download-info {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 11px;
-            color: var(--text-tertiary);
-        }
-
-        /* ========================================================= */
-        /* BACK NAVIGATION HISTORY */
-        /* ========================================================= */
-        .history-back-btn {
-            display: none;
-            position: fixed;
-            bottom: 80px;
-            right: 20px;
-            width: 50px;
-            height: 50px;
-            background: var(--primary);
-            color: white;
-            border-radius: 50%;
-            border: none;
-            box-shadow: 0 4px 15px rgba(0, 200, 83, 0.3);
-            cursor: pointer;
-            z-index: 999;
-            align-items: center;
-            justify-content: center;
-            font-size: 20px;
-            transition: all 0.3s var(--transition-bounce);
-        }
-
-        .history-back-btn.show {
-            display: flex;
-        }
-
-        .history-back-btn:active {
-            transform: scale(0.95);
-            box-shadow: 0 2px 10px rgba(0, 200, 83, 0.2);
-        }
-
-        /* ========================================================= */
-        /* RESPONSIVENESS */
-        /* ========================================================= */
-        @media (min-width: 768px) {
-            html {
-                font-size: 16px;
-            }
-            
-            header {
-                padding: 15px 30px;
-            }
-            
-            .container {
-                max-width: 1200px;
-                padding: 20px 30px;
-            }
-            
-            .logo h1 {
-                display: block;
-            }
-            
-            .modal {
-                align-items: center;
-                padding: 20px;
-            }
-            
-            .modal-content {
-                border-radius: 24px;
-                max-width: 600px;
-                transform: scale(0.9) translateY(20px);
-                padding-bottom: 0;
-            }
-            
-            .modal.show .modal-content {
-                transform: scale(1) translateY(0);
-            }
-            
-            .modal-content::before {
-                display: none;
-            }
-            
-            .app-detail-header {
-                flex-direction: row;
-                text-align: left;
-            }
-            
-            .detail-app-rating {
-                justify-content: flex-start;
-            }
-            
-            .install-btn {
-                width: auto;
-            }
-            
-            .filter-group {
-                flex-wrap: nowrap;
-                width: auto;
-            }
-            
-            select {
-                min-width: 140px;
-                flex: none;
-            }
-
-            .download-progress {
-                width: 400px;
-            }
-        }
-
-        @media (max-width: 380px) {
-            .app-grid {
-                grid-template-columns: repeat(2, 1fr);
-                gap: 12px;
-            }
-            
-            .category-tabs button {
-                padding: 8px 14px;
-                font-size: 12px;
-            }
-            
-            .section-title {
-                font-size: 16px;
-            }
-            
-            .logo h1 {
-                font-size: 16px;
-            }
-        }
-
-        /* Safe Area Insets for Notch Phones */
-        @supports (padding: max(0px)) {
-            .modal-content {
-                padding-bottom: max(20px, env(safe-area-inset-bottom));
-            }
-        }
-
-        /* Prevent body scroll when modal is open */
-        body.modal-open {
-            overflow: hidden;
-            position: fixed;
-            width: 100%;
-            height: 100%;
+        .fake-btn {
+            background: rgba(30, 200, 100, 0.08);
+            box-shadow: 0 0 15px #1aad4b30;
         }
     </style>
 </head>
 <body>
-    <!-- Animated Loading Screen -->
-    <div class="loading-screen" id="loadingScreen">
-        <div class="loader-logo"><i class="fab fa-google-play"></i></div>
-        <div class="spinner"></div>
-    </div>
+    <div class="glass-card">
 
-    <!-- Enhanced Glass Header -->
-    <header>
-        <div class="header-container">
+        <!-- header with identity + status "close for some" -->
+        <div class="store-badge">
             <div class="logo">
-                <i class="fab fa-google-play"></i>
-                <h1>APK STORE</h1>
+                <div class="logo-icon">
+                    <span>⧫</span>
+                </div>
+                <h1>DARKSTORE</h1>
             </div>
-            <div class="search-container">
-                <input type="text" class="search-box" placeholder="Search apps..." id="searchInput">
-                <i class="fas fa-search search-icon"></i>
-            </div>
-            <div class="advanced-filters">
-                <button class="filter-btn" title="Filters" id="openFilterBtn">
-                    <i class="fas fa-filter"></i>
-                </button>
-                <button class="filter-btn" title="Favorites" id="favoritesBtn">
-                    <i class="fas fa-heart"></i>
-                </button>
-            </div>
-            <div class="user-actions">
-                <button title="Profile" id="openProfileBtn">
-                    <i class="fas fa-user"></i>
-                </button>
+            <div class="status">
+                <span>CLOSED • UPDATE MODE</span>
             </div>
         </div>
-    </header>
 
-    <div class="container">
-        <!-- Enhanced Category Tabs -->
-        <div class="category-tabs" id="categoryTabs">
-            <button class="active" data-category="All">
-                <i class="fas fa-fire"></i> For You
-            </button>
-            <button class="featured" data-category="Featured">
-                <i class="fas fa-star"></i> Featured
-            </button>
-            <button data-category="Games">
-                <i class="fas fa-gamepad"></i> Games
-            </button>
-            <button data-category="Tools">
-                <i class="fas fa-tools"></i> Tools
-            </button>
-            <button data-category="Social">
-                <i class="fas fa-users"></i> Social
-            </button>
+        <!-- MAIN ANNOUNCEMENT: big update + we are coming / close text -->
+        <div class="hero-message">
+            <div class="glitch-title">
+                <span>B̸I̸G UPDAT̷E</span>
+            </div>
+            <div class="close-badge">
+                <span>⛔ CLOSE FOR SOME</span>
+                <span class="highlight">⚡ COMING SOON ⚡</span>
+            </div>
+            <p style="color: #adc9b6; margin-top: 1.8rem; font-size: 1.25rem; max-width: 600px; margin-left: auto; margin-right: auto; font-weight: 350; letter-spacing: 0.5px;">
+                we're rebuilding the core — stronger, darker, faster. <br class="hide-mob">temporary shutdown for selected users.
+            </p>
         </div>
 
-        <!-- Enhanced Filter Controls -->
-        <div class="filter-controls">
-            <div>
-                <h2 id="currentCategoryTitle" class="section-title">
-                    <i class="fas fa-th-large"></i> All Apps
-                </h2>
-                <div class="stats-badge" id="appCountBadge">
-                    <i class="fas fa-mobile-alt"></i> <span id="appCount">0</span> Apps
+        <!-- DYNAMIC COUNTDOWN -> "we are coming" countdown timer till update finish mock -->
+        <div class="countdown-panel">
+            <div class="countdown-label">
+                ⌛  BIG UPDATE DROPS IN  ⌛
+            </div>
+            <!-- timer values filled by JS -->
+            <div class="timer" id="countdownTimer">
+                <div class="time-segment">
+                    <span class="time-number" id="days">00</span>
+                    <span class="time-unit">DAYS</span>
+                </div>
+                <div class="time-segment">
+                    <span class="time-number" id="hours">00</span>
+                    <span class="time-unit">HOURS</span>
+                </div>
+                <div class="time-segment">
+                    <span class="time-number" id="minutes">00</span>
+                    <span class="time-unit">MINUTES</span>
+                </div>
+                <div class="time-segment">
+                    <span class="time-number" id="seconds">00</span>
+                    <span class="time-unit">SECONDS</span>
                 </div>
             </div>
-            <div class="filter-group">
-                <select id="sortSelector">
-                    <option value="rating">Highest Rating</option>
-                    <option value="name">Name (A-Z)</option>
-                    <option value="downloads">Most Downloads</option>
-                    <option value="newest">Newest First</option>
-                </select>
-                <select id="priceFilter">
-                    <option value="all">All Prices</option>
-                    <option value="free">Free Only</option>
-                    <option value="paid">Paid Only</option>
-                </select>
+        </div>
+
+        <!-- additional info: close for some + DarkStore signature -->
+        <div class="info-footer">
+            <div class="darkstore-note">
+                <i>⧫</i> DarkStore v2.0 · rework in progress
+                <span style="margin-left: 6px; background: #202e26; padding: 3px 12px; border-radius: 50px; font-size: 0.8rem; border: 1px solid #458f60;">only for testflight</span>
+            </div>
+            <div class="social-pulse">
+                <span>⌘</span>
+                <span>⏣</span>
+                <span>◈</span>
             </div>
         </div>
 
-        <!-- Main Grid -->
-        <div class="app-grid" id="mainAppGrid">
-            <!-- Apps will be loaded here -->
-        </div>
-
-        <!-- Top Charts Section -->
-        <div class="filter-controls" style="margin-top: 30px;">
-            <h2 class="section-title">
-                <i class="fas fa-chart-line"></i> Top Charts
-            </h2>
-        </div>
-        <div class="app-grid" id="topChartsGrid"></div>
-    </div>
-
-    <!-- Back Navigation Button -->
-    <button class="history-back-btn" id="historyBackBtn" title="Go back">
-        <i class="fas fa-arrow-left"></i>
-    </button>
-
-    <!-- App Details Modal -->
-    <div class="modal" id="appModal"></div>
-
-    <!-- Filter Modal -->
-    <div class="modal" id="filterModal">
-        <div class="modal-content filter-modal-content">
-            <div class="modal-header">
-                <h3 style="flex: 1; margin: 0;">
-                    <i class="fas fa-filter"></i> Filters
-                </h3>
-                <span class="close-btn" data-modal-id="filterModal">&times;</span>
-            </div>
-            <div style="padding: 20px;">
-                <div class="filter-group-modal">
-                    <h4><i class="fas fa-star"></i> Rating</h4>
-                    <div class="filter-options">
-                        <div class="filter-option" data-rating="4">⭐ 4.0+</div>
-                        <div class="filter-option" data-rating="4.5">⭐ 4.5+</div>
-                        <div class="filter-option active" data-rating="0">All</div>
-                    </div>
-                </div>
-                
-                <div class="filter-group-modal">
-                    <h4><i class="fas fa-download"></i> Downloads</h4>
-                    <div class="filter-options">
-                        <div class="filter-option" data-downloads="1000">1K+</div>
-                        <div class="filter-option" data-downloads="10000">10K+</div>
-                        <div class="filter-option active" data-downloads="0">All</div>
-                    </div>
-                </div>
-                
-                <div class="filter-group-modal">
-                    <h4><i class="fas fa-sort-amount-up"></i> Sort By</h4>
-                    <div class="filter-options">
-                        <div class="filter-option active" data-sort="rating">Rating</div>
-                        <div class="filter-option" data-sort="downloads">Downloads</div>
-                        <div class="filter-option" data-sort="newest">Newest</div>
-                    </div>
-                </div>
-                
-                <button class="install-btn" style="width: 100%; margin-top: 20px;" id="applyFiltersBtn">
-                    <i class="fas fa-check"></i> Apply Filters
-                </button>
-                <button class="install-btn" style="width: 100%; margin-top: 10px; background: #666;" id="resetFiltersBtn">
-                    <i class="fas fa-redo"></i> Reset Filters
-                </button>
-            </div>
+        <!-- extra underline: "so this is close for some" appears again as detail -->
+        <div style="display: flex; justify-content: center; margin-top: 1.5rem; gap: 0.8rem; flex-wrap: wrap;">
+            <span class="overline">full access paused</span>
+            <span style="color: #77997b;">|</span>
+            <span style="color: #d4ffcf; font-size: 0.9rem; border: 1px dashed #2ecc71; padding: 0.2rem 1rem; border-radius: 20px;">🔮 select profiles whitelisted</span>
         </div>
     </div>
 
-    <!-- Profile Modal -->
-    <div class="modal" id="profileModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 style="flex: 1; margin: 0;">
-                    <i class="fas fa-user-circle"></i> Profile
-                </h3>
-                <span class="close-btn" data-modal-id="profileModal">&times;</span>
-            </div>
-            <div class="profile-body">
-                <div class="profile-icon-large-container">
-                    <img src="King.jpg" class="profile-image-large" onerror="this.src='https://ui-avatars.com/api/?name=User&background=0D8ABC&color=fff'">
-                </div>
-                <h3>Welcome to King Store!</h3>
-                <p style="color:#666; margin-bottom:20px;">Created by David</p>
-                
-                <div class="user-stats">
-                    <div class="stat-item">
-                        <div class="stat-value" id="totalDownloadsStat">0</div>
-                        <div class="stat-label">Downloads</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-value" id="featuredAppsStat">0</div>
-                        <div class="stat-label">Featured</div>
-                    </div>
-                </div>
+    <script>
+        (function() {
+            "use strict";
 
-                <div class="action-grid">
-                    <a href="#" class="action-btn" id="viewFavorites">
-                        <i class="fas fa-heart"></i>
-                        <span>Favorites</span>
-                    </a>
-                    <a href="#" class="action-btn" id="openSettingsBtn">
-                        <i class="fas fa-cog"></i>
-                        <span>Settings</span>
-                    </a>
-                    <a href="#" class="action-btn">
-                        <i class="fas fa-headset"></i>
-                        <span>Support</span>
-                    </a>
-                    <a href="#" class="action-btn">
-                        <i class="fas fa-history"></i>
-                        <span>History</span>
-                    </a>
-                </div>
-
-                <button class="install-btn" style="width:100%; background:#ff5252; margin-top: 20px;" id="authButton">
-                    <i class="fas fa-sign-out-alt"></i> Sign Out
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Settings Modal -->
-    <div class="modal" id="settingsModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 style="flex:1">
-                    <i class="fas fa-cog"></i> Settings
-                </h3>
-                <span class="close-btn" data-modal-id="settingsModal">&times;</span>
-            </div>
-            <div style="padding: 10px 0;">
-                <div class="setting-item">
-                    <div class="setting-info">
-                        <div class="setting-title">Auto-update apps</div>
-                        <div class="setting-description">Wi-Fi only</div>
-                    </div>
-                    <label class="toggle-switch">
-                        <input type="checkbox" id="autoUpdateToggle" checked>
-                        <span class="toggle-slider"></span>
-                    </label>
-                </div>
-                
-                <div class="setting-item">
-                    <div class="setting-info">
-                        <div class="setting-title">Dark Mode</div>
-                        <div class="setting-description">Switch to dark theme</div>
-                    </div>
-                    <label class="toggle-switch">
-                        <input type="checkbox" id="darkModeToggle">
-                        <span class="toggle-slider"></span>
-                    </label>
-                </div>
-                
-                <div class="setting-item">
-                    <div class="setting-info">
-                        <div class="setting-title">Data Saver</div>
-                        <div class="setting-description">Reduce data usage</div>
-                    </div>
-                    <label class="toggle-switch">
-                        <input type="checkbox" id="dataSaverToggle">
-                        <span class="toggle-slider"></span>
-                    </label>
-                </div>
-                
-                <div class="setting-item">
-                    <div class="setting-info">
-                        <div class="setting-title">Notifications</div>
-                        <div class="setting-description">App updates & news</div>
-                    </div>
-                    <label class="toggle-switch">
-                        <input type="checkbox" id="notificationsToggle" checked>
-                        <span class="toggle-slider"></span>
-                    </label>
-                </div>
-                
-                <div style="padding: 20px;">
-                    <div style="background: #f8f9fa; padding: 20px; border-radius: 12px; text-align: center;">
-                        <div style="font-size: 32px; font-weight: bold; color: var(--primary); margin-bottom: 5px;">
-                            2.0.0
-                        </div>
-                        <div style="color: #666; font-size: 14px; margin-bottom: 10px;">
-                            APK Store Premium
-                        </div>
-                        <div style="font-size: 12px; color: #888;">
-                            © 2024 King Store. All rights reserved.
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Download Progress Modal (Will be created dynamically) -->
-
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-app.js";
-        import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-database.js";
-
-        // CONFIG (Keeping your original config)
-        const firebaseConfig = {
-          apiKey: "AIzaSyDEOY44CcIrvvqZnCwrSe9GHiwPCigIpzc",
-          authDomain: "play-store-e84dc.firebaseapp.com",
-          databaseURL: "https://play-store-e84dc-default-rtdb.firebaseio.com",
-          projectId: "play-store-e84dc",
-          storageBucket: "play-store-e84dc.firebasestorage.app",
-          messagingSenderId: "674515432381",
-          appId: "1:674515432381:web:42ec7a05351d6e28a298d4",
-          measurementId: "G-1GMDFHK3F8" 
-        };
-
-        const app = initializeApp(firebaseConfig);
-        const db = getDatabase(app);
-        const appsRef = ref(db, 'apps');
-
-        // State Management
-        let allApps = [];
-        let currentFilter = 'All';
-        let currentSort = 'rating';
-        let currentPriceFilter = 'all';
-        let advancedFilters = {
-            minRating: 0,
-            minDownloads: 0
-        };
-
-        // Navigation History Stack
-        let navigationHistory = [];
-        let currentHistoryIndex = -1;
-        const MAX_HISTORY = 10;
-
-        // Active Downloads Tracking
-        let activeDownloads = new Map();
-
-        // DOM Elements
-        const loadingScreen = document.getElementById('loadingScreen');
-        const mainAppGrid = document.getElementById('mainAppGrid');
-        const topChartsGrid = document.getElementById('topChartsGrid');
-        const searchInput = document.getElementById('searchInput');
-        const categoryTabs = document.getElementById('categoryTabs');
-        const sortSelector = document.getElementById('sortSelector');
-        const priceFilter = document.getElementById('priceFilter');
-        const appCount = document.getElementById('appCount');
-        const appCountBadge = document.getElementById('appCountBadge');
-        const historyBackBtn = document.getElementById('historyBackBtn');
-        
-        // Statistics elements
-        const totalDownloadsStat = document.getElementById('totalDownloadsStat');
-        const featuredAppsStat = document.getElementById('featuredAppsStat');
-        
-        // Settings toggles
-        const autoUpdateToggle = document.getElementById('autoUpdateToggle');
-        const darkModeToggle = document.getElementById('darkModeToggle');
-        const dataSaverToggle = document.getElementById('dataSaverToggle');
-        const notificationsToggle = document.getElementById('notificationsToggle');
-        
-        // Helper: SVG Placeholder
-        const PLACEHOLDER_SVG = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><rect width="100" height="100" fill="#f0f2f5"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-size="20" fill="#00C853" font-family="sans-serif">APK</text></svg>';
-        
-        window.handleImageError = function(img) {
-            img.onerror = null; 
-            img.src = PLACEHOLDER_SVG;
-            img.style.padding = '10px';
-        };
-
-        // =======================
-        // NAVIGATION HISTORY SYSTEM
-        // =======================
-        function addToHistory(state) {
-            // Remove future states if we're going back and adding new state
-            if (currentHistoryIndex < navigationHistory.length - 1) {
-                navigationHistory = navigationHistory.slice(0, currentHistoryIndex + 1);
+            // --- DARKSTORE BIG UPDATE COUNTDOWN ---
+            // Set the target date for the update: 3 days, 14 hours, 27 minutes from now (futuristic, feels real)
+            // we want a countdown that feels imminent and exciting. 
+            // Using a fixed future: 3 days 14h 12m 0s from now, but we recalc every time.
+            function getTargetTime() {
+                let now = new Date();
+                // target: 3 days, 14 hours, 22 minutes, 10 seconds ahead (juicy update)
+                let target = new Date(now.getTime() + (3 * 24 * 60 * 60 * 1000) + (14 * 60 * 60 * 1000) + (22 * 60 * 1000) + (10 * 1000));
+                // But we want a clean, predictable countdown for everyone, same offset regardless
+                // and also increase engagement: let's add 2 extra seconds for smoothness.
+                return target;
             }
-            
-            // Add new state
-            navigationHistory.push({
-                ...state,
-                timestamp: Date.now()
-            });
-            
-            // Keep history size limited
-            if (navigationHistory.length > MAX_HISTORY) {
-                navigationHistory.shift();
-            }
-            
-            currentHistoryIndex = navigationHistory.length - 1;
-            updateBackButton();
-        }
 
-        function getCurrentState() {
-            return {
-                filter: currentFilter,
-                sort: currentSort,
-                priceFilter: currentPriceFilter,
-                advancedFilters: {...advancedFilters},
-                search: searchInput.value,
-                modal: document.querySelector('.modal.show')?.id || null
-            };
-        }
+            let targetDate = getTargetTime();
 
-        function restoreState(state) {
-            if (!state) return;
-            
-            // Restore filter states
-            currentFilter = state.filter || 'All';
-            currentSort = state.sort || 'rating';
-            currentPriceFilter = state.priceFilter || 'all';
-            advancedFilters = state.advancedFilters || { minRating: 0, minDownloads: 0 };
-            searchInput.value = state.search || '';
-            
-            // Update UI elements
-            updateCategoryTabs();
-            sortSelector.value = currentSort;
-            priceFilter.value = currentPriceFilter;
-            
-            // Close any open modal
-            if (state.modal) {
-                closeAllModals();
-            }
-            
-            // Re-apply filters
-            filterAndSortApps();
-            
-            // Update title
-            document.getElementById('currentCategoryTitle').innerHTML = 
-                `<i class="fas fa-th-large"></i> ${currentFilter === 'All' ? 'All Apps' : currentFilter}`;
-        }
+            // make sure target never goes negative; if page open long, we keep a consistent offset
+            // better: use a fixed offset from the exact moment script loads, but preserve that it doesn't jump.
+            // we recalc on each tick relatively to initial offset? actually simpler: use constant duration remaining.
+            // However to make it feel realistic, we set a target that counts down to roughly 3d 14h from initial load.
+            // But if user refresh, it's fine — they see new countdown. 
+            // Also we add "BIG UPDATE" always active. But we must avoid target being in past. Let's store it on first load.
 
-        function goBack() {
-            if (currentHistoryIndex > 0) {
-                currentHistoryIndex--;
-                const previousState = navigationHistory[currentHistoryIndex];
-                restoreState(previousState);
-                updateBackButton();
-            }
-        }
-
-        function updateBackButton() {
-            if (currentHistoryIndex > 0) {
-                historyBackBtn.classList.add('show');
+            let storedTarget;
+            if (!window.darkstoreCountdownTarget) {
+                // set once: now + 3 days 14h 22m 10s (makes timer look dynamic)
+                const now = new Date();
+                storedTarget = new Date(now.getTime() + (30 * 24 * 60 * 60 * 1000) + (14 * 60 * 60 * 1000) + (22 * 60 * 1000) + (10 * 1000));
+                window.darkstoreCountdownTarget = storedTarget;
             } else {
-                historyBackBtn.classList.remove('show');
+                storedTarget = window.darkstoreCountdownTarget;
             }
-        }
 
-        // =======================
-        // BACKGROUND DOWNLOAD SYSTEM
-        // =======================
-        window.downloadApp = async function(app) {
-            const downloadId = `download_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-            
-            // Show download progress modal
-            const downloadModal = createDownloadProgressModal(downloadId, app.name);
-            document.body.appendChild(downloadModal);
-            
-            // Simulate download progress
-            simulateDownloadProgress(downloadId, app);
-            
-            // Start actual download in background
-            startBackgroundDownload(downloadId, app);
-            
-            // Add to history
-            addToHistory(getCurrentState());
-        }
+            // update timer each second
+            function updateCountdown() {
+                const now = new Date().getTime();
+                const target = window.darkstoreCountdownTarget.getTime();
+                const distance = target - now;
 
-        function createDownloadProgressModal(downloadId, appName) {
-            const modal = document.createElement('div');
-            modal.className = 'download-progress';
-            modal.id = `download-${downloadId}`;
-            modal.innerHTML = `
-                <div class="download-header">
-                    <div class="download-title">
-                        <i class="fas fa-download"></i>
-                        <span>Downloading ${appName}</span>
-                    </div>
-                    <button class="close-download" onclick="window.cancelDownload('${downloadId}')">
-                        <i class="fas fa-times"></i>
-                    </button>
-                </div>
-                <div class="progress-container">
-                    <div class="progress-bar" id="progress-bar-${downloadId}"></div>
-                </div>
-                <div class="download-info">
-                    <span id="progress-text-${downloadId}">Starting download...</span>
-                    <span id="speed-text-${downloadId}"></span>
-                </div>
-            `;
-            
-            // Show modal
-            setTimeout(() => modal.classList.add('show'), 10);
-            
-            return modal;
-        }
-
-        function simulateDownloadProgress(downloadId, app) {
-            let progress = 0;
-            const progressBar = document.getElementById(`progress-bar-${downloadId}`);
-            const progressText = document.getElementById(`progress-text-${downloadId}`);
-            const speedText = document.getElementById(`speed-text-${downloadId}`);
-            
-            const interval = setInterval(() => {
-                if (progress >= 100) {
-                    clearInterval(interval);
-                    progressBar.style.width = '100%';
-                    progressText.textContent = 'Download complete!';
-                    speedText.textContent = '';
-                    
-                    // Auto-close after 2 seconds
-                    setTimeout(() => {
-                        const modal = document.getElementById(`download-${downloadId}`);
-                        if (modal) {
-                            modal.classList.remove('show');
-                            setTimeout(() => modal.remove(), 300);
-                        }
-                    }, 2000);
-                    
+                // If countdown finishes, show 00 and display epic message but still maintain closed status.
+                if (distance < 0) {
+                    // reset target for another 3 days? but that could be weird. Instead show 'NOW' but keep design.
+                    // better: set a new target for +72h from now, make it rolling.
+                    // But we want to indicate 'big update' is coming, keep it cyclical.
+                    // Let's set to new future: always roll another 3d 14h after expiry (to stay 'coming soon')
+                    const freshTarget = new Date(now + (3 * 24 * 60 * 60 * 1000) + (14 * 60 * 60 * 1000) + (22 * 60 * 1000) + (10 * 1000));
+                    window.darkstoreCountdownTarget = freshTarget;
+                    // update display with new distance
+                    updateCountdown(); // recursive but safe with guard
                     return;
                 }
-                
-                // Simulate download speed
-                const increment = Math.random() * 5 + 1; // 1-6% per interval
-                progress = Math.min(progress + increment, 100);
-                
-                // Update progress bar
-                progressBar.style.width = `${progress}%`;
-                
-                // Update text
-                progressText.textContent = `Downloading... ${Math.round(progress)}%`;
-                
-                // Simulate download speed
-                const speed = Math.random() * 2 + 0.5; // 0.5-2.5 MB/s
-                speedText.textContent = `${speed.toFixed(1)} MB/s`;
-                
-            }, 200); // Update every 200ms
-            
-            // Store interval for cancellation
-            activeDownloads.set(downloadId, {
-                interval,
-                progress,
-                app,
-                startTime: Date.now()
+
+                const days = Math.floor(distance / (1000 * 60 * 60 * 24));
+                const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+                const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+
+                // pad with zeros
+                document.getElementById('days').innerText = days.toString().padStart(2, '0');
+                document.getElementById('hours').innerText = hours.toString().padStart(2, '0');
+                document.getElementById('minutes').innerText = minutes.toString().padStart(2, '0');
+                document.getElementById('seconds').innerText = seconds.toString().padStart(2, '0');
+            }
+
+            // initial call
+            updateCountdown();
+            // set interval every 1s
+            const interval = setInterval(updateCountdown, 1000);
+
+            // clean interval if page gets unloaded (good practice)
+            window.addEventListener('beforeunload', function() {
+                clearInterval(interval);
             });
-        }
 
-        window.cancelDownload = function(downloadId) {
-            const download = activeDownloads.get(downloadId);
-            if (download) {
-                clearInterval(download.interval);
-                activeDownloads.delete(downloadId);
-            }
-            
-            // Remove modal
-            const modal = document.getElementById(`download-${downloadId}`);
-            if (modal) {
-                modal.classList.remove('show');
-                setTimeout(() => modal.remove(), 300);
-            }
-            
-            showToast('Download cancelled', 'warning');
-        }
+            // Additional micro-interaction: we can mimic 'we are coming big update so this is close for some'
+            // Let's also update meta info in console? not needed.
+        })();
 
-        function startBackgroundDownload(downloadId, app) {
-            // Create invisible iframe for background download
-            const iframe = document.createElement('iframe');
-            iframe.style.display = 'none';
-            iframe.style.position = 'absolute';
-            iframe.style.left = '-9999px';
-            iframe.style.top = '-9999px';
-            iframe.style.width = '1px';
-            iframe.style.height = '1px';
-            
-            // Handle different download sources
-            let downloadUrl = app.downloadLink;
-            
-            if (downloadUrl && downloadUrl.includes('github.com')) {
-                // Convert GitHub URL to raw URL for direct download
-                downloadUrl = downloadUrl
-                    .replace('github.com', 'raw.githubusercontent.com')
-                    .replace('/blob/', '/');
-            } else if (app.apkFile) {
-                // Use relative APK file
-                downloadUrl = app.apkFile.startsWith('http') ? 
-                    app.apkFile : 
-                    `${window.location.origin}/${app.apkFile}`;
-            }
-            
-            if (downloadUrl) {
-                // Set iframe source to trigger download
-                iframe.src = downloadUrl;
-                document.body.appendChild(iframe);
-                
-                // Clean up after download starts
-                setTimeout(() => {
-                    if (iframe.parentNode) {
-                        iframe.parentNode.removeChild(iframe);
-                    }
-                }, 1000);
-                
-                // Update download count
-                updateDownloadCount(app.id);
-            } else {
-                // Show error if no download URL
-                setTimeout(() => {
-                    const download = activeDownloads.get(downloadId);
-                    if (download) {
-                        clearInterval(download.interval);
-                        activeDownloads.delete(downloadId);
-                        
-                        const modal = document.getElementById(`download-${downloadId}`);
-                        if (modal) {
-                            modal.classList.remove('show');
-                            setTimeout(() => {
-                                if (modal.parentNode) modal.parentNode.remove();
-                            }, 300);
-                        }
-                        
-                        showToast('Download link not available', 'error');
-                    }
-                }, 1000);
-            }
-        }
-
-        function updateDownloadCount(appId) {
-            // Update local statistics
-            const totalDownloads = parseInt(totalDownloadsStat.textContent.replace(/[^0-9]/g, '')) || 0;
-            totalDownloadsStat.textContent = formatNumber(totalDownloads + 1);
-            
-            // You can add Firebase update here if needed
-            console.log(`Downloaded app with ID: ${appId}`);
-        }
-
-        // =======================
-        // BACK BUTTON HANDLING (Mobile Browser)
-        // =======================
-        function setupBackButtonHandler() {
-            // Initialize history state
-            window.history.replaceState({ index: 0 }, '');
-            
-            window.onpopstate = function(event) {
-                if (event.state && event.state.index > 0) {
-                    // Go back in our navigation history
-                    goBack();
-                    
-                    // Push new state to prevent browser navigation
-                    window.history.pushState(
-                        { index: event.state.index - 1 },
-                        ''
-                    );
-                }
-            };
-            
-            // Push initial state
-            window.history.pushState({ index: 1 }, '');
-            addToHistory(getCurrentState());
-        }
-
-        // =======================
-        // HELPER FUNCTIONS
-        // =======================
-        function getStars(rating) {
-            let stars = '';
-            const fullStars = Math.floor(rating);
-            const hasHalfStar = rating % 1 >= 0.5;
-            
-            for (let i = 0; i < 5; i++) {
-                if (i < fullStars) {
-                    stars += '<i class="fas fa-star"></i>';
-                } else if (i === fullStars && hasHalfStar) {
-                    stars += '<i class="fas fa-star-half-alt"></i>';
-                } else {
-                    stars += '<i class="far fa-star" style="color:#ddd"></i>';
-                }
-            }
-            return stars;
-        }
-
-        function formatNumber(num) {
-            if (!num) return '0';
-            if (num >= 1000000) {
-                return (num / 1000000).toFixed(1) + 'M';
-            } else if (num >= 1000) {
-                return (num / 1000).toFixed(1) + 'K';
-            }
-            return num.toString();
-        }
-
-        function showToast(message, type = 'info') {
-            const toast = document.createElement('div');
-            toast.className = `toast-message toast-${type}`;
-            toast.innerHTML = `
-                <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : type === 'warning' ? 'exclamation-triangle' : 'info-circle'}"></i>
-                <span>${message}</span>
-            `;
-            
-            document.body.appendChild(toast);
-            
-            setTimeout(() => toast.classList.add('show'), 10);
-            
-            setTimeout(() => {
-                toast.classList.remove('show');
-                setTimeout(() => toast.remove(), 300);
-            }, 3000);
-        }
-
-        // =======================
-        // MODAL MANAGEMENT
-        // =======================
-        function openModalById(id) {
-            const el = document.getElementById(id);
-            if (el) {
-                el.style.display = 'flex';
-                void el.offsetWidth;
-                el.classList.add('show');
-                document.body.classList.add('modal-open');
-                addToHistory(getCurrentState());
-            }
-        }
-
-        function closeModalById(id) {
-            const el = document.getElementById(id);
-            if (el) {
-                el.classList.remove('show');
-                setTimeout(() => {
-                    el.style.display = 'none';
-                    const openModals = document.querySelectorAll('.modal.show');
-                    if (openModals.length === 0) {
-                        document.body.classList.remove('modal-open');
-                    }
-                }, 300);
-                addToHistory(getCurrentState());
-            }
-        }
-
-        function closeAllModals() {
-            document.querySelectorAll('.modal.show').forEach(modal => {
-                closeModalById(modal.id);
-            });
-        }
-
-        // =======================
-        // APP DETAILS MODAL
-        // =======================
-        window.openAppDetails = function(app) {
-            const modal = document.getElementById('appModal');
-            const priceDisplay = app.priceType === 'paid' && app.price ? 
-                `<div class="detail-meta-item">
-                    <div class="detail-meta-label">Price</div>
-                    <div class="detail-meta-value" style="color: var(--paid-color);">$${parseFloat(app.price).toFixed(2)}</div>
-                </div>` : 
-                `<div class="detail-meta-item">
-                    <div class="detail-meta-label">Price</div>
-                    <div class="detail-meta-value" style="color: var(--free-color);">Free</div>
-                </div>`;
-            
-            const tagsHtml = app.tags && Array.isArray(app.tags) && app.tags.length > 0 ? 
-                `<div class="app-detail-tags">
-                    ${app.tags.map(tag => `<span class="detail-tag">${tag}</span>`).join('')}
-                </div>` : '';
-            
-            const isPaid = app.priceType === 'paid' && app.price;
-            const downloadText = isPaid ? `Purchase ($${parseFloat(app.price).toFixed(2)})` : 'Install';
-            
-            modal.innerHTML = `
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h3 style="flex: 1; margin: 0;">App Details</h3>
-                        <span class="close-btn" data-modal-id="appModal">&times;</span>
-                    </div>
-                    <div class="app-detail-header">
-                        <div class="detail-app-icon">
-                            <img src="${app.imageSrc}" onerror="handleImageError(this)">
-                        </div>
-                        <div class="app-detail-info">
-                            <h2 class="detail-app-name">${app.name}</h2>
-                            <p class="detail-app-developer">${app.developer}</p>
-                            
-                            <div class="detail-app-rating">
-                                ${getStars(app.rating)}
-                                <span>${app.rating} (${app.downloads ? formatNumber(app.downloads) : '0'} downloads)</span>
-                            </div>
-                            
-                            <div class="detail-meta">
-                                <div class="detail-meta-item">
-                                    <div class="detail-meta-label">Version</div>
-                                    <div class="detail-meta-value">${app.version || '1.0.0'}</div>
-                                </div>
-                                ${priceDisplay}
-                                <div class="detail-meta-item">
-                                    <div class="detail-meta-label">Size</div>
-                                    <div class="detail-meta-value">${app.size ? app.size + ' MB' : 'N/A'}</div>
-                                </div>
-                                <div class="detail-meta-item">
-                                    <div class="detail-meta-label">Category</div>
-                                    <div class="detail-meta-value">${app.category || 'N/A'}</div>
-                                </div>
-                            </div>
-                            
-                            <button class="install-btn ${isPaid ? 'paid' : ''}" id="downloadBtn" data-app-id="${app.id}">
-                                <i class="fas fa-download"></i> ${downloadText}
-                            </button>
-                            
-                            ${isPaid ? `
-                                <button class="install-btn" style="margin-top: 10px; background: #666;" onclick="window.showPaymentInfo('${app.name}', ${parseFloat(app.price).toFixed(2)})">
-                                    <i class="fas fa-info-circle"></i> Payment Instructions
-                                </button>
-                            ` : ''}
-                        </div>
-                    </div>
-                    <div class="app-description">
-                        <h3 style="margin-bottom:10px;">About</h3>
-                        <p>${app.description || "No description available for this application."}</p>
-                    </div>
-                    ${tagsHtml}
-                </div>
-            `;
-            
-            modal.querySelector('#downloadBtn').onclick = function() {
-                if (isPaid) {
-                    window.showPaymentInfo(app.name, parseFloat(app.price).toFixed(2));
-                } else {
-                    window.downloadApp(app);
-                }
-            };
-            
-            modal.querySelector('.close-btn').onclick = () => closeModalById('appModal');
-            openModalById('appModal');
-        }
-
-        window.showPaymentInfo = function(appName, price) {
-            const paymentModal = document.createElement('div');
-            paymentModal.className = 'modal';
-            paymentModal.id = 'paymentModal';
-            paymentModal.innerHTML = `
-                <div class="modal-content" style="max-width: 500px;">
-                    <div class="modal-header">
-                        <h3 style="flex: 1; margin: 0;">
-                            <i class="fas fa-shopping-cart"></i> Purchase ${appName}
-                        </h3>
-                        <span class="close-btn" onclick="closeModalById('paymentModal')">&times;</span>
-                    </div>
-                    <div style="padding: 20px;">
-                        <div style="text-align: center; margin-bottom: 20px;">
-                            <div style="font-size: 48px; color: var(--primary); margin-bottom: 10px;">
-                                <i class="fas fa-lock"></i>
-                            </div>
-                            <h3 style="margin-bottom: 10px;">Premium App - $${price}</h3>
-                            <p style="color: #666; margin-bottom: 20px;">
-                                This is a premium application. To download, please complete the payment.
-                            </p>
-                        </div>
-                        
-                        <div style="background: #f8f9fa; padding: 15px; border-radius: 12px; margin-bottom: 20px;">
-                            <h4 style="margin-bottom: 10px;">
-                                <i class="fas fa-credit-card"></i> Payment Methods
-                            </h4>
-                            <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 15px;">
-                                <div style="flex: 1; min-width: 120px; padding: 10px; background: white; border-radius: 8px; text-align: center;">
-                                    <i class="fab fa-paypal" style="color: #003087; font-size: 24px;"></i>
-                                    <div style="font-size: 12px; margin-top: 5px;">PayPal</div>
-                                </div>
-                                <div style="flex: 1; min-width: 120px; padding: 10px; background: white; border-radius: 8px; text-align: center;">
-                                    <i class="fas fa-university" style="color: #28a745; font-size: 24px;"></i>
-                                    <div style="font-size: 12px; margin-top: 5px;">Bank Transfer</div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div style="background: #fff8e1; padding: 15px; border-radius: 12px; margin-bottom: 20px;">
-                            <h4 style="margin-bottom: 10px;">
-                                <i class="fas fa-envelope"></i> Contact for Payment
-                            </h4>
-                            <p style="margin-bottom: 10px;">
-                                <strong>Email:</strong> your-email@example.com
-                            </p>
-                            <p>
-                                Send payment confirmation to receive download link.
-                            </p>
-                        </div>
-                        
-                        <button class="install-btn" onclick="closeModalById('paymentModal')" style="width: 100%;">
-                            <i class="fas fa-times"></i> Close
-                        </button>
-                    </div>
-                </div>
-            `;
-            
-            document.body.appendChild(paymentModal);
-            openModalById('paymentModal');
-        }
-
-        // =======================
-        // APP RENDERING
-        // =======================
-        function renderApps(apps, container) {
-            container.innerHTML = '';
-            
-            if (apps.length === 0) {
-                container.innerHTML = `
-                    <div class="empty-state">
-                        <i class="fas fa-search"></i>
-                        <h3>No apps found</h3>
-                        <p>Try changing your search or filter criteria</p>
-                    </div>
-                `;
-                return;
-            }
-
-            apps.forEach((app, index) => {
-                const card = document.createElement('div');
-                card.className = `app-card ${app.featured ? 'featured' : ''}`;
-                card.style.animation = 'none';
-                card.offsetHeight;
-                card.style.animation = `cardEntrance 0.5s ease forwards ${index * 0.05}s`;
-
-                const priceHtml = app.priceType === 'paid' && app.price ? 
-                    `<div class="app-price price-paid">$${parseFloat(app.price).toFixed(2)}</div>` :
-                    `<div class="app-price price-free">Free</div>`;
-                
-                const tagsHtml = app.tags && Array.isArray(app.tags) && app.tags.slice(0, 2).map(tag => 
-                    `<span class="app-tag">${tag}</span>`
-                ).join('') || '';
-                
-                card.innerHTML = `
-                    ${app.status === 'inactive' ? '<div class="app-status status-inactive">INACTIVE</div>' : ''}
-                    <div class="app-icon">
-                        <img src="${app.imageSrc}" onerror="handleImageError(this)">
-                    </div>
-                    <div class="app-info">
-                        <h3 class="app-name">${app.name}</h3>
-                        <p class="app-developer">${app.developer}</p>
-                        
-                        <div class="app-meta">
-                            <div class="app-rating">
-                                ${getStars(app.rating)}
-                            </div>
-                            ${app.size ? `<div class="app-size">${app.size} MB</div>` : ''}
-                        </div>
-                        
-                        <div class="app-downloads">
-                            <i class="fas fa-download"></i> ${app.downloads ? formatNumber(app.downloads) : '0'}
-                        </div>
-                        
-                        ${tagsHtml ? `<div class="app-tags">${tagsHtml}</div>` : ''}
-                        
-                        ${priceHtml}
-                    </div>
-                `;
-                card.onclick = () => {
-                    window.openAppDetails(app);
-                    addToHistory(getCurrentState());
-                };
-                container.appendChild(card);
-            });
-        }
-
-        // =======================
-        // FILTERING & SORTING
-        // =======================
-        function filterAndSortApps() {
-            let filtered = [...allApps];
-            
-            if (currentFilter === 'Featured') {
-                filtered = filtered.filter(app => app.featured);
-            } else if (currentFilter !== 'All') {
-                filtered = filtered.filter(app => app.category && app.category.toLowerCase() === currentFilter.toLowerCase());
-            }
-            
-            if (currentPriceFilter === 'free') {
-                filtered = filtered.filter(app => app.priceType !== 'paid');
-            } else if (currentPriceFilter === 'paid') {
-                filtered = filtered.filter(app => app.priceType === 'paid' && app.price);
-            }
-            
-            filtered = filtered.filter(app => app.status !== 'inactive');
-            
-            if (advancedFilters.minRating > 0) {
-                filtered = filtered.filter(app => app.rating >= advancedFilters.minRating);
-            }
-            
-            if (advancedFilters.minDownloads > 0) {
-                filtered = filtered.filter(app => (app.downloads || 0) >= advancedFilters.minDownloads);
-            }
-            
-            const term = searchInput.value.toLowerCase();
-            if (term) {
-                filtered = filtered.filter(app => 
-                    app.name.toLowerCase().includes(term) || 
-                    app.developer.toLowerCase().includes(term) ||
-                    (app.description && app.description.toLowerCase().includes(term)) ||
-                    (app.tags && Array.isArray(app.tags) && app.tags.some(tag => tag.toLowerCase().includes(term)))
-                );
-            }
-            
-            filtered.sort((a, b) => {
-                switch(currentSort) {
-                    case 'rating': return b.rating - a.rating;
-                    case 'name': return a.name.localeCompare(b.name);
-                    case 'downloads': return (b.downloads || 0) - (a.downloads || 0);
-                    case 'newest': return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
-                    default: return b.rating - a.rating;
-                }
-            });
-            
-            appCount.textContent = filtered.length;
-            renderApps(filtered, mainAppGrid);
-            
-            if (!term) {
-                const topApps = [...allApps]
-                    .filter(app => app.status !== 'inactive')
-                    .sort((a, b) => b.rating - a.rating)
-                    .slice(0, 6);
-                renderApps(topApps, topChartsGrid);
-            } else {
-                topChartsGrid.style.display = 'none';
-                document.querySelectorAll('.filter-controls')[1].style.display = 'none';
-            }
-        }
-
-        function updateCategoryTabs() {
-            categoryTabs.querySelectorAll('button').forEach(btn => {
-                btn.classList.remove('active');
-                if (btn.dataset.category === currentFilter) {
-                    btn.classList.add('active');
-                }
-            });
-        }
-
-        // =======================
-        // INITIALIZATION
-        // =======================
-        onValue(appsRef, (snap) => {
-            const data = snap.val();
-            allApps = [];
-            for (let id in data) {
-                const app = { id, ...data[id] };
-                app.rating = parseFloat(app.rating) || 0;
-                app.downloads = parseInt(app.downloads) || 0;
-                app.price = parseFloat(app.price) || 0;
-                allApps.push(app);
-            }
-            
-            // Update statistics
-            const totalDownloads = allApps.reduce((sum, app) => sum + (parseInt(app.downloads) || 0), 0);
-            const featuredCount = allApps.filter(app => app.featured && app.status !== 'inactive').length;
-            totalDownloadsStat.textContent = formatNumber(totalDownloads);
-            featuredAppsStat.textContent = featuredCount;
-            
-            filterAndSortApps();
-            loadingScreen.classList.add('hidden');
-            
-            // Add initial state to history
-            addToHistory(getCurrentState());
-        });
-
-        function initializeSettings() {
-            const savedSettings = JSON.parse(localStorage.getItem('apkStoreSettings')) || {
-                autoUpdate: true,
-                darkMode: false,
-                dataSaver: false,
-                notifications: true
-            };
-            
-            autoUpdateToggle.checked = savedSettings.autoUpdate;
-            darkModeToggle.checked = savedSettings.darkMode;
-            dataSaverToggle.checked = savedSettings.dataSaver;
-            notificationsToggle.checked = savedSettings.notifications;
-            
-            if (savedSettings.darkMode) {
-                applyDarkTheme();
-            }
-            
-            autoUpdateToggle.addEventListener('change', saveSettings);
-            darkModeToggle.addEventListener('change', saveSettings);
-            dataSaverToggle.addEventListener('change', saveSettings);
-            notificationsToggle.addEventListener('change', saveSettings);
-        }
-
-        function saveSettings() {
-            const settings = {
-                autoUpdate: autoUpdateToggle.checked,
-                darkMode: darkModeToggle.checked,
-                dataSaver: dataSaverToggle.checked,
-                notifications: notificationsToggle.checked
-            };
-            
-            localStorage.setItem('apkStoreSettings', JSON.stringify(settings));
-            
-            if (settings.darkMode) {
-                applyDarkTheme();
-            } else {
-                applyLightTheme();
-            }
-        }
-
-        function applyDarkTheme() {
-            document.documentElement.style.setProperty('--bg-color', '#1a1a1a');
-            document.documentElement.style.setProperty('--bg-secondary', '#2d2d2d');
-            document.documentElement.style.setProperty('--card-bg', '#2d2d2d');
-            document.documentElement.style.setProperty('--text-main', '#ffffff');
-            document.documentElement.style.setProperty('--text-secondary', '#cccccc');
-            document.documentElement.style.setProperty('--text-tertiary', '#999999');
-            document.documentElement.style.setProperty('--border-color', '#444444');
-            document.documentElement.style.setProperty('--glass-bg', 'rgba(45, 45, 45, 0.95)');
-        }
-
-        function applyLightTheme() {
-            document.documentElement.style.setProperty('--bg-color', '#ffffff');
-            document.documentElement.style.setProperty('--bg-secondary', '#f8f9fa');
-            document.documentElement.style.setProperty('--card-bg', '#ffffff');
-            document.documentElement.style.setProperty('--text-main', '#1a1a1a');
-            document.documentElement.style.setProperty('--text-secondary', '#5f6368');
-            document.documentElement.style.setProperty('--text-tertiary', '#80868b');
-            document.documentElement.style.setProperty('--border-color', '#e0e0e0');
-            document.documentElement.style.setProperty('--glass-bg', 'rgba(255, 255, 255, 0.95)');
-        }
-
-        // =======================
-        // EVENT LISTENERS
-        // =======================
-        initializeSettings();
-        setupBackButtonHandler();
-
-        // History back button
-        historyBackBtn.addEventListener('click', goBack);
-
-        // Category tabs
-        categoryTabs.querySelectorAll('button').forEach(btn => {
-            btn.addEventListener('click', () => {
-                categoryTabs.querySelector('.active').classList.remove('active');
-                btn.classList.add('active');
-                currentFilter = btn.dataset.category;
-                document.getElementById('currentCategoryTitle').innerHTML = 
-                    `<i class="fas fa-th-large"></i> ${currentFilter === 'All' ? 'All Apps' : currentFilter}`;
-                addToHistory(getCurrentState());
-                filterAndSortApps();
-            });
-        });
-
-        // Search
-        let searchTimeout;
-        searchInput.addEventListener('input', () => {
-            clearTimeout(searchTimeout);
-            searchTimeout = setTimeout(() => {
-                addToHistory(getCurrentState());
-                filterAndSortApps();
-            }, 300);
-        });
-
-        // Sorting and filtering
-        sortSelector.addEventListener('change', (e) => {
-            currentSort = e.target.value;
-            addToHistory(getCurrentState());
-            filterAndSortApps();
-        });
-        
-        priceFilter.addEventListener('change', (e) => {
-            currentPriceFilter = e.target.value;
-            addToHistory(getCurrentState());
-            filterAndSortApps();
-        });
-
-        // Filter modal
-        document.getElementById('openFilterBtn').addEventListener('click', () => openModalById('filterModal'));
-        
-        document.querySelectorAll('.filter-option').forEach(option => {
-            option.addEventListener('click', function() {
-                this.parentElement.querySelectorAll('.filter-option').forEach(o => o.classList.remove('active'));
-                this.classList.add('active');
-            });
-        });
-        
-        document.getElementById('applyFiltersBtn').addEventListener('click', () => {
-            const minRating = parseFloat(document.querySelector('.filter-option[data-rating].active').dataset.rating);
-            const minDownloads = parseInt(document.querySelector('.filter-option[data-downloads].active').dataset.downloads);
-            const sort = document.querySelector('.filter-option[data-sort].active').dataset.sort;
-            
-            advancedFilters.minRating = minRating;
-            advancedFilters.minDownloads = minDownloads;
-            currentSort = sort;
-            sortSelector.value = sort;
-            
-            closeModalById('filterModal');
-            addToHistory(getCurrentState());
-            filterAndSortApps();
-        });
-        
-        document.getElementById('resetFiltersBtn').addEventListener('click', () => {
-            advancedFilters = { minRating: 0, minDownloads: 0 };
-            currentSort = 'rating';
-            currentPriceFilter = 'all';
-            
-            sortSelector.value = 'rating';
-            priceFilter.value = 'all';
-            
-            document.querySelectorAll('.filter-option').forEach(option => {
-                option.classList.remove('active');
-                if (option.dataset.rating === '0' || option.dataset.downloads === '0' || option.dataset.sort === 'rating') {
-                    option.classList.add('active');
-                }
-            });
-            
-            closeModalById('filterModal');
-            addToHistory(getCurrentState());
-            filterAndSortApps();
-        });
-
-        // Modals
-        document.getElementById('openProfileBtn').addEventListener('click', () => openModalById('profileModal'));
-        document.getElementById('openSettingsBtn').addEventListener('click', () => {
-            closeModalById('profileModal');
-            openModalById('settingsModal');
-        });
-        
-        document.getElementById('favoritesBtn').addEventListener('click', () => {
-            currentFilter = 'Featured';
-            updateCategoryTabs();
-            document.getElementById('currentCategoryTitle').innerHTML = 
-                `<i class="fas fa-heart"></i> Favorites`;
-            addToHistory(getCurrentState());
-            filterAndSortApps();
-        });
-
-        document.querySelectorAll('.close-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => closeModalById(e.target.dataset.modalId));
-        });
-
-        // Touch gestures for mobile
-        let touchStartY = 0;
-        document.addEventListener('touchstart', (e) => {
-            touchStartY = e.changedTouches[0].screenY;
-        });
-
-        document.addEventListener('touchend', (e) => {
-            const touchEndY = e.changedTouches[0].screenY;
-            const modal = document.querySelector('.modal.show');
-            
-            if (modal && touchEndY - touchStartY > 100 && window.innerWidth < 768) {
-                closeModalById(modal.id);
-            }
-        });
-
-        // Keyboard support
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                const openModals = document.querySelectorAll('.modal.show');
-                if (openModals.length > 0) {
-                    closeModalById(openModals[openModals.length - 1].id);
-                }
-            } else if (e.key === 'ArrowLeft' && e.altKey) {
-                // Alt+Left arrow for back navigation
-                e.preventDefault();
-                goBack();
-            }
-        });
-
-        // Prevent pull-to-refresh when modals are open
-        document.addEventListener('touchmove', (e) => {
-            if (document.querySelector('.modal.show')) {
-                e.preventDefault();
-            }
-        }, { passive: false });
+        // second layer: ensure countdown numbers are always lively.
+        // Also add some user interaction simulation (static but cool)
     </script>
+
+    <!-- tiny inline js for extra glitch text and dynamic effect -->
+    <script>
+        (function secondPass() {
+            // just to enhance the 'close for some' — dynamic badge with user count?
+            // We can add a subtle rotation effect: makes it feel alive.
+            console.log("DarkStore • closed for some, big update inbound.");
+            // optional: we can change the status text based on time? not needed but adds life.
+            // I'll add a simple clock independent: no need.
+
+            // However let's create a 'mock' of selected store status: 
+            const statusDiv = document.querySelector('.status span');
+            // don't change core message, but we can toggle something? but better keep as is.
+            // also make sure 'close for some' appears strong — already in badge.
+        })();
+    </script>
+
+    <!-- edge: no extra dependencies, fully self-contained. -->
+    <!-- the combined code: html, css, javascript all in one file — perfect for app store teaser. -->
 </body>
 </html>
