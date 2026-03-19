@@ -124,54 +124,172 @@ img{display:block;max-width:100%}
 }
 
 /* ============================================================
-   FEATURED BANNER SLIDER
+   FEATURED BANNER SLIDER — Logo blur background
 ============================================================ */
-.banner-wrap{position:relative;border-radius:var(--r);overflow:hidden;margin-bottom:20px;aspect-ratio:16/7;cursor:pointer}
-@media(max-width:480px){.banner-wrap{aspect-ratio:4/3}}
-.banner-slides{display:flex;height:100%;transition:transform .45s var(--ease)}
-.banner-slide{flex-shrink:0;width:100%;height:100%;position:relative;display:flex;align-items:flex-end;padding:20px}
-.banner-slide-bg{position:absolute;inset:0;background-size:cover;background-position:center}
-.banner-slide-overlay{position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.75) 0%,rgba(0,0,0,.1) 60%)}
-.banner-content{position:relative;z-index:1;color:#fff}
-.banner-chip{display:inline-flex;align-items:center;gap:5px;background:var(--p);color:#fff;padding:3px 10px;border-radius:20px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px}
-.banner-title{font-size:20px;font-weight:800;line-height:1.2;margin-bottom:4px}
-.banner-sub{font-size:12px;opacity:.8;margin-bottom:12px}
-.banner-btn{display:inline-flex;align-items:center;gap:6px;background:#fff;color:var(--t1);padding:9px 18px;border-radius:50px;font-size:13px;font-weight:700;transition:.2s}
-.banner-btn:hover{background:var(--p);color:#fff}
-.banner-dots{position:absolute;bottom:14px;right:16px;display:flex;gap:5px;z-index:2}
-.banner-dot{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.4);transition:.3s}
-.banner-dot.act{background:#fff;width:18px;border-radius:3px}
+.banner-wrap{
+  position:relative;border-radius:20px;overflow:hidden;
+  margin-bottom:24px;height:220px;cursor:pointer;
+  box-shadow:0 8px 32px rgba(0,0,0,.18);
+}
+@media(max-width:480px){.banner-wrap{height:200px;border-radius:16px}}
+@media(min-width:768px){.banner-wrap{height:260px}}
+.banner-slides{display:flex;height:100%;transition:transform .55s cubic-bezier(.77,0,.175,1)}
+.banner-slide{
+  flex-shrink:0;width:100%;height:100%;
+  position:relative;display:flex;align-items:flex-end;padding:22px 20px;
+  overflow:hidden;
+}
+/* blurred app logo fills the whole background */
+.banner-bg-blur{
+  position:absolute;inset:-20px;
+  background-size:cover;background-position:center;
+  filter:blur(28px) brightness(.55) saturate(1.4);
+  transform:scale(1.15);
+  transition:transform 6s ease;
+}
+.banner-slide:hover .banner-bg-blur{transform:scale(1.22)}
+/* colour tint layer */
+.banner-tint{
+  position:absolute;inset:0;
+  background:linear-gradient(135deg,rgba(0,0,0,.45) 0%,rgba(0,0,0,.1) 100%);
+}
+/* gradient fade from bottom */
+.banner-fade{
+  position:absolute;inset:0;
+  background:linear-gradient(to top,rgba(0,0,0,.82) 0%,rgba(0,0,0,.22) 55%,transparent 100%);
+}
+/* app icon floated right */
+.banner-app-icon{
+  position:absolute;right:20px;top:50%;transform:translateY(-56%);
+  width:84px;height:84px;border-radius:22px;
+  object-fit:cover;
+  box-shadow:0 12px 36px rgba(0,0,0,.45);
+  border:3px solid rgba(255,255,255,.18);
+  transition:.4s var(--bounce);
+  z-index:2;
+}
+.banner-slide:hover .banner-app-icon{transform:translateY(-60%) scale(1.06) rotate(-2deg)}
+@media(max-width:380px){.banner-app-icon{width:68px;height:68px;border-radius:17px}}
+/* content */
+.banner-content{position:relative;z-index:3;color:#fff;max-width:calc(100% - 115px)}
+.banner-chip{
+  display:inline-flex;align-items:center;gap:5px;
+  background:rgba(0,200,83,.9);color:#fff;
+  padding:3px 10px;border-radius:20px;
+  font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;
+  margin-bottom:8px;backdrop-filter:blur(4px);
+}
+.banner-title{
+  font-size:19px;font-weight:800;line-height:1.2;
+  margin-bottom:5px;text-shadow:0 2px 8px rgba(0,0,0,.4);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
+.banner-dev{font-size:11px;opacity:.75;margin-bottom:10px;font-weight:500}
+.banner-btn{
+  display:inline-flex;align-items:center;gap:7px;
+  background:#fff;color:#111827;
+  padding:8px 18px;border-radius:50px;
+  font-size:12px;font-weight:800;
+  transition:.2s var(--bounce);
+  box-shadow:0 4px 14px rgba(0,0,0,.25);
+}
+.banner-btn:hover{background:var(--p);color:#fff;transform:scale(1.05)}
+/* dots */
+.banner-dots{
+  position:absolute;bottom:14px;left:50%;transform:translateX(-50%);
+  display:flex;gap:5px;z-index:4;
+}
+.banner-dot{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.35);transition:.35s;cursor:pointer}
+.banner-dot.act{background:#fff;width:20px;border-radius:3px}
+/* prev/next arrows on desktop */
+.banner-arrow{
+  position:absolute;top:50%;transform:translateY(-50%);
+  width:36px;height:36px;border-radius:50%;
+  background:rgba(255,255,255,.15);backdrop-filter:blur(6px);
+  color:#fff;font-size:14px;display:flex;align-items:center;justify-content:center;
+  z-index:4;transition:.2s;cursor:pointer;border:1px solid rgba(255,255,255,.2);
+  display:none;
+}
+.banner-arrow:hover{background:rgba(255,255,255,.3)}
+.banner-arrow.prev{left:12px}
+.banner-arrow.next{right:12px}
+@media(min-width:600px){.banner-arrow{display:flex}}
 
 /* ============================================================
    SECTION
 ============================================================ */
-.sec{margin-bottom:24px}
-.sec-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
-.sec-title{font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px}
-.sec-title::before{content:'';width:3px;height:16px;background:linear-gradient(var(--p),var(--ac));border-radius:2px;flex-shrink:0}
-.see-all{font-size:12px;color:var(--p);font-weight:600;display:flex;align-items:center;gap:3px}
+.sec{margin-bottom:28px}
+.sec-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;padding:0 2px}
+.sec-title{
+  font-size:16px;font-weight:800;display:flex;align-items:center;gap:9px;color:var(--t1);
+}
+.sec-title-icon{
+  width:28px;height:28px;border-radius:8px;
+  background:linear-gradient(135deg,var(--p),var(--ac));
+  display:flex;align-items:center;justify-content:center;
+  color:#fff;font-size:12px;flex-shrink:0;
+}
+.see-all{
+  font-size:12px;color:var(--p);font-weight:700;
+  display:flex;align-items:center;gap:4px;
+  padding:4px 12px;border-radius:20px;
+  background:var(--pl);transition:.2s var(--bounce);
+}
+.see-all:hover{background:var(--p);color:#fff;transform:scale(1.05)}
 
 /* ============================================================
-   HORIZONTAL SCROLL ROW (Featured cards)
+   HORIZONTAL SCROLL ROW
 ============================================================ */
-.h-row{display:flex;gap:12px;overflow-x:auto;padding-bottom:6px;scrollbar-width:none}
+.h-row{display:flex;gap:12px;overflow-x:auto;padding:4px 2px 12px;scrollbar-width:none}
 .h-row::-webkit-scrollbar{display:none}
 /* featured card */
-.fc{flex-shrink:0;width:160px;background:var(--card);border-radius:var(--r);overflow:hidden;cursor:pointer;transition:.25s var(--bounce);border:1px solid var(--border)}
-.fc:hover{transform:translateY(-4px);box-shadow:var(--sh2);border-color:rgba(0,200,83,.25)}
-@media(min-width:480px){.fc{width:190px}}
-.fc-img-wrap{height:110px;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
-.fc-img-wrap img{width:68px;height:68px;border-radius:16px;object-fit:cover;box-shadow:0 6px 18px rgba(0,0,0,.18);transition:.3s var(--bounce);z-index:1;position:relative}
-.fc:hover .fc-img-wrap img{transform:scale(1.1) rotate(2deg)}
+.fc{
+  flex-shrink:0;width:158px;background:var(--card);border-radius:18px;
+  overflow:hidden;cursor:pointer;
+  transition:.3s var(--bounce);
+  border:1px solid var(--border);
+  box-shadow:0 2px 8px rgba(0,0,0,.06);
+}
+.fc:hover{transform:translateY(-6px) scale(1.02);box-shadow:0 14px 36px rgba(0,200,83,.2);border-color:rgba(0,200,83,.3)}
+.fc:active{transform:scale(.97)}
+@media(min-width:480px){.fc{width:182px}}
+.fc-img-wrap{
+  height:116px;display:flex;align-items:center;justify-content:center;
+  position:relative;overflow:hidden;
+}
+/* blurred bg inside card too */
+.fc-img-bg{
+  position:absolute;inset:-8px;
+  background-size:cover;background-position:center;
+  filter:blur(14px) brightness(.7) saturate(1.3);
+  transform:scale(1.1);
+}
+.fc-img-wrap img{
+  width:62px;height:62px;border-radius:15px;object-fit:cover;
+  box-shadow:0 6px 20px rgba(0,0,0,.28);
+  transition:.35s var(--bounce);z-index:1;position:relative;
+  border:2px solid rgba(255,255,255,.3);
+}
+.fc:hover .fc-img-wrap img{transform:scale(1.12) rotate(3deg)}
 .fc-body{padding:10px 12px 12px}
 .fc-name{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px}
 .fc-dev{font-size:10px;color:var(--t3);margin-bottom:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.fc-foot{display:flex;align-items:center;justify-content:space-between}
+.fc-foot{display:flex;align-items:center;justify-content:space-between;gap:4px}
 .fc-rating{font-size:11px;font-weight:700;color:var(--t2);display:flex;align-items:center;gap:3px}
 .fc-rating i{color:var(--amber);font-size:10px}
-.fc-install{padding:5px 12px;background:var(--pl);color:var(--p);border-radius:50px;font-size:11px;font-weight:700;transition:.2s}
-.fc-install:hover{background:var(--p);color:#fff}
-.fc-badge{position:absolute;top:8px;left:8px;background:linear-gradient(135deg,var(--amber),#FF6F00);color:#fff;padding:2px 8px;border-radius:20px;font-size:9px;font-weight:800;z-index:2;text-transform:uppercase}
+.fc-install{
+  padding:5px 12px;background:var(--pl);color:var(--p);
+  border-radius:50px;font-size:11px;font-weight:700;
+  transition:.2s var(--bounce);white-space:nowrap;
+}
+.fc-install:hover{background:var(--p);color:#fff;transform:scale(1.06)}
+.fc-badge{
+  position:absolute;top:8px;left:8px;
+  background:linear-gradient(135deg,var(--amber),#FF6F00);
+  color:#fff;padding:2px 8px;border-radius:20px;
+  font-size:9px;font-weight:800;z-index:2;text-transform:uppercase;
+  letter-spacing:.4px;
+}
 
 /* ============================================================
    APP GRID
@@ -183,13 +301,30 @@ img{display:block;max-width:100%}
 @media(min-width:1280px){.app-grid{grid-template-columns:repeat(6,1fr)}}
 
 /* app card */
-.ac{background:var(--card);border-radius:var(--r);overflow:hidden;cursor:pointer;transition:.25s var(--bounce);border:1px solid transparent;opacity:0;animation:acIn .4s var(--ease) forwards}
-@keyframes acIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
-.ac:hover{transform:translateY(-5px);box-shadow:0 10px 30px rgba(0,200,83,.15);border-color:rgba(0,200,83,.2)}
+.ac{
+  background:var(--card);border-radius:18px;overflow:hidden;
+  cursor:pointer;border:1px solid var(--border);
+  opacity:0;animation:acIn .45s var(--ease) forwards;
+  transition:.3s var(--bounce);
+  box-shadow:0 1px 6px rgba(0,0,0,.06);
+}
+@keyframes acIn{
+  from{opacity:0;transform:translateY(20px) scale(.95)}
+  to{opacity:1;transform:none}
+}
+.ac:hover{transform:translateY(-6px);box-shadow:0 12px 32px rgba(0,200,83,.18);border-color:rgba(0,200,83,.22)}
 .ac:active{transform:scale(.97)}
-.ac-icon-wrap{padding:16px 16px 8px;display:flex;justify-content:center}
-.ac-icon-wrap img{width:72px;height:72px;border-radius:18px;object-fit:cover;box-shadow:0 4px 14px rgba(0,0,0,.12);transition:.3s var(--bounce)}
-.ac:hover .ac-icon-wrap img{transform:scale(1.08) rotate(2deg)}
+.ac-icon-wrap{
+  padding:18px 18px 10px;display:flex;justify-content:center;
+  position:relative;
+  background:linear-gradient(160deg,var(--card2) 0%,var(--card) 100%);
+}
+.ac-icon-wrap img{
+  width:72px;height:72px;border-radius:18px;object-fit:cover;
+  box-shadow:0 6px 18px rgba(0,0,0,.14);
+  transition:.35s var(--bounce);
+}
+.ac:hover .ac-icon-wrap img{transform:scale(1.1) rotate(3deg)}
 .ac-info{padding:0 10px 12px}
 .ac-name{font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px}
 .ac-dev{font-size:10px;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:6px}
@@ -204,35 +339,70 @@ img{display:block;max-width:100%}
 /* ============================================================
    TOP CHART LIST
 ============================================================ */
-.chart-list{display:flex;flex-direction:column;gap:2px}
-.chi{display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--card);border-radius:var(--rs);cursor:pointer;transition:.2s;border:1px solid transparent}
-.chi:hover{border-color:var(--border);box-shadow:var(--sh);transform:translateX(3px)}
-.chi-rank{width:26px;font-size:15px;font-weight:800;color:var(--t3);text-align:center;flex-shrink:0}
+.chart-list{display:flex;flex-direction:column;gap:6px}
+.chi{
+  display:flex;align-items:center;gap:12px;
+  padding:12px 14px;background:var(--card);
+  border-radius:14px;cursor:pointer;
+  transition:.25s var(--bounce);border:1px solid transparent;
+  box-shadow:0 1px 4px rgba(0,0,0,.05);
+}
+.chi:hover{
+  border-color:rgba(0,200,83,.2);
+  box-shadow:0 6px 20px rgba(0,200,83,.12);
+  transform:translateX(4px);
+}
+.chi:active{transform:scale(.98)}
+.chi-rank{width:28px;font-size:15px;font-weight:800;color:var(--t3);text-align:center;flex-shrink:0}
 .chi-rank.r1{color:#FFD700}.chi-rank.r2{color:#A8A8A8}.chi-rank.r3{color:#CD7F32}
-.chi-icon{width:48px;height:48px;border-radius:13px;object-fit:cover;flex-shrink:0;border:1px solid var(--border)}
+.chi-icon{
+  width:52px;height:52px;border-radius:14px;object-fit:cover;
+  flex-shrink:0;border:1.5px solid var(--border);
+  box-shadow:0 2px 8px rgba(0,0,0,.1);
+}
 .chi-info{flex:1;min-width:0}
 .chi-name{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .chi-dev{font-size:11px;color:var(--t3);margin-bottom:2px}
 .chi-rating{font-size:11px;font-weight:700;color:var(--t2);display:flex;align-items:center;gap:3px}
 .chi-rating i{color:var(--amber);font-size:10px}
-.chi-btn{flex-shrink:0;padding:7px 14px;background:var(--pl);color:var(--p);border-radius:50px;font-size:12px;font-weight:700;transition:.2s;white-space:nowrap}
-.chi-btn:hover{background:var(--p);color:#fff}
+.chi-btn{
+  flex-shrink:0;padding:7px 16px;background:var(--pl);color:var(--p);
+  border-radius:50px;font-size:12px;font-weight:700;
+  transition:.2s var(--bounce);white-space:nowrap;
+}
+.chi-btn:hover{background:var(--p);color:#fff;transform:scale(1.06)}
 
 /* ============================================================
-   BOTTOM NAV
+   BOTTOM NAV — enhanced
 ============================================================ */
 #bNav{
   position:fixed;bottom:0;left:0;right:0;z-index:500;
+  background:rgba(255,255,255,.97);
+  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  border-top:1px solid rgba(0,0,0,.07);
+  display:flex;padding:0 4px;
+  padding-bottom:env(safe-area-inset-bottom);
   height:var(--bnav-h);
-  background:rgba(255,255,255,.96);backdrop-filter:blur(16px);
-  border-top:1px solid var(--border);
-  display:flex;padding:0 8px;padding-bottom:env(safe-area-inset-bottom);
+  box-shadow:0 -4px 20px rgba(0,0,0,.06);
 }
-.bn-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;color:var(--t3);font-size:10px;font-weight:600;transition:.2s var(--bounce);position:relative;padding:6px 0}
-.bn-item i{font-size:20px;transition:.2s var(--bounce)}
+.bn-item{
+  flex:1;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:3px;cursor:pointer;
+  color:var(--t3);font-size:10px;font-weight:600;
+  transition:.2s var(--bounce);position:relative;padding:6px 0;
+  border-radius:12px;margin:6px 2px;
+}
+.bn-item i{font-size:21px;transition:.25s var(--bounce)}
 .bn-item.act{color:var(--p)}
-.bn-item.act i{transform:scale(1.15)}
-.bn-pip{position:absolute;top:4px;right:22%;width:7px;height:7px;border-radius:50%;background:var(--red);border:2px solid #fff;display:none}
+.bn-item.act i{transform:scale(1.18)}
+.bn-item.act::before{
+  content:'';position:absolute;top:0;left:50%;transform:translateX(-50%);
+  width:32px;height:3px;background:var(--p);border-radius:0 0 4px 4px;
+}
+.bn-pip{
+  position:absolute;top:5px;right:18%;width:7px;height:7px;
+  border-radius:50%;background:var(--red);border:2px solid #fff;display:none;
+}
 .bn-pip.on{display:block}
 
 /* ============================================================
@@ -277,6 +447,34 @@ img{display:block;max-width:100%}
 .sheet-actions{padding:0 16px 16px;display:flex;gap:10px}
 .btn-install{flex:1;padding:13px;background:linear-gradient(135deg,var(--p),var(--pd));color:#fff;border-radius:50px;font-size:15px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;transition:.25s var(--bounce);box-shadow:0 4px 18px rgba(0,200,83,.3)}
 .btn-install:hover{transform:scale(1.03);box-shadow:0 8px 28px rgba(0,200,83,.4)}
+.btn-open{flex:1;padding:13px;background:linear-gradient(135deg,var(--ac),#1565c0);color:#fff;border-radius:50px;font-size:15px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;transition:.25s var(--bounce);box-shadow:0 4px 18px rgba(41,121,255,.3)}
+.btn-open:hover{transform:scale(1.03);box-shadow:0 8px 28px rgba(41,121,255,.4)}
+.btn-uninstall{padding:13px 18px;background:rgba(229,57,53,.1);border:1.5px solid rgba(229,57,53,.3);color:var(--red);border-radius:50px;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:6px;transition:.2s;flex-shrink:0}
+.btn-uninstall:hover{background:rgba(229,57,53,.18)}
+/* installed badge on cards */
+.installed-badge{position:absolute;top:8px;right:8px;background:var(--p);color:#fff;font-size:9px;font-weight:800;padding:2px 7px;border-radius:10px;display:flex;align-items:center;gap:3px;text-transform:uppercase;letter-spacing:.4px;z-index:3}
+.ac-icon-wrap{position:relative}
+/* installed chip in sheet */
+.sheet-chip.installed{background:#dcfce7;color:#166534}
+/* fc card install btn states */
+.fc-install.installed{background:#dcfce7;color:#166534}
+.fc-install.open-btn{background:var(--al);color:var(--ac)}
+/* chart install btn states */
+.chi-btn.installed{background:#dcfce7;color:#166534;cursor:default}
+.chi-btn.open-btn{background:var(--al);color:var(--ac)}
+/* installed apps list in profile */
+.installed-list{display:flex;flex-direction:column;gap:8px}
+.installed-item{display:flex;align-items:center;gap:10px;padding:10px;background:var(--card2);border-radius:var(--rs);cursor:pointer;transition:.15s}
+.installed-item:hover{background:var(--pl)}
+.installed-item img{width:40px;height:40px;border-radius:11px;object-fit:cover;flex-shrink:0}
+.inst-info{flex:1;min-width:0}
+.inst-name{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.inst-pkg{font-size:10px;color:var(--t3)}
+.inst-open{padding:6px 14px;background:var(--ac);color:#fff;border-radius:50px;font-size:11px;font-weight:700;flex-shrink:0}
+/* checking state */
+.checking-indicator{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--t3);padding:4px 0}
+.checking-dot{width:6px;height:6px;border-radius:50%;background:var(--t3);animation:checkPulse 1.2s infinite}
+@keyframes checkPulse{0%,100%{opacity:.3}50%{opacity:1}}
 .btn-wl{width:48px;height:48px;border-radius:50%;border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--t3);transition:.25s var(--bounce);flex-shrink:0}
 .btn-wl.act{border-color:var(--red);color:var(--red);background:rgba(244,67,54,.07)}
 .btn-share{width:48px;height:48px;border-radius:50%;border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:16px;color:var(--t2);transition:.2s;flex-shrink:0}
@@ -827,7 +1025,42 @@ window.S = {
     document.getElementById('dr-wls').textContent=this.wishlist.length;
     const myRvs=Object.values(this.reviews).flat().filter(r=>u&&r.user===u.email).length;
     document.getElementById('dr-rvs').textContent=myRvs;
+    // Installed apps count
+    const instCount=this.installedApps.size;
+    document.getElementById('dr-dls').textContent=this.downloads.length;
+    document.getElementById('dr-wls').textContent=this.wishlist.length;
+    // Build installed apps list for drawer
+    const installedApps=this.apps.filter(a=>this.installedApps.has(a.id));
+    const installedSection = installedApps.length ? `
+      <div class="dr-section-label"><i class="fas fa-check-circle" style="color:var(--p);margin-right:4px"></i>Installed (${instCount})</div>
+      <div class="installed-list" style="padding:0 12px 8px">
+        ${installedApps.slice(0,5).map(a=>`
+          <div class="installed-item" onclick="S.openApp('${a.id}');S.closeOverlay('profileOverlay')">
+            <img src="${a.imageSrc||''}" onerror="S.imgFallback(this)" alt="${a.name}"/>
+            <div class="inst-info">
+              <div class="inst-name">${a.name}</div>
+              <div class="inst-pkg">${a.packageName||a.developer||''}</div>
+            </div>
+            <button class="inst-open" onclick="event.stopPropagation();S.openInstalledApp('${a.id}')">Open</button>
+          </div>`).join('')}
+        ${installedApps.length>5?`<div style="text-align:center;font-size:12px;color:var(--t3);padding:6px">+${installedApps.length-5} more</div>`:''}
+      </div>
+      <div class="dr-sep"></div>` : '';
     const footer=document.getElementById('dr-footer');
+    const dr=document.getElementById('profileDrawer').querySelector('.dr-body');
+    // Insert installed section before existing nav items
+    const existingLabel=dr.querySelector('.dr-section-label');
+    if(existingLabel && installedSection){
+      existingLabel.insertAdjacentHTML('beforebegin', installedSection);
+    }
+    // Update installed count in dr-stats
+    const drStats=document.getElementById('dr-dls').closest('.dr-stats');
+    if(drStats){
+      drStats.innerHTML=`
+        <div class="dr-stat"><strong>${this.downloads.length}</strong><span>Downloads</span></div>
+        <div class="dr-stat"><strong>${this.wishlist.length}</strong><span>Wishlist</span></div>
+        <div class="dr-stat"><strong>${instCount}</strong><span>Installed</span></div>`;
+    }
     if(u){
       footer.innerHTML=`<button class="dr-signout" onclick="S.doSignOut()"><i class="fas fa-sign-out-alt"></i>Sign Out</button>`;
     } else {
@@ -894,15 +1127,183 @@ window.S = {
       : `<div class="empty"><i class="fas fa-search"></i><h3>No results for "${q}"</h3><p>Try different keywords.</p></div>`;
   },
 
+  // ─── INSTALLED APP DETECTION ─────────────────
+  // installedApps: Set of app IDs tracked locally
+  // We use three layers:
+  //  1. navigator.getInstalledRelatedApps() — Chrome 80+ Android (real detection)
+  //  2. Android Intent URL probe (try to launch, fallback = not installed)
+  //  3. localStorage fallback for PWA / desktop
+
+  installedApps: new Set(JSON.parse(localStorage.getItem('apk_installed')||'[]')),
+
+  saveInstalled(){
+    localStorage.setItem('apk_installed', JSON.stringify([...this.installedApps]));
+  },
+
+  isInstalled(id){ return this.installedApps.has(id); },
+
+  // Check via getInstalledRelatedApps (real Android detection)
+  async checkInstallationNative(app){
+    if(!app.packageName) return false;
+    try {
+      if('getInstalledRelatedApps' in navigator){
+        const related = await navigator.getInstalledRelatedApps();
+        return related.some(r => r.id === app.packageName || (r.url||'').includes(app.packageName));
+      }
+    } catch(e){}
+    return false;
+  },
+
+  // Check all apps in background on load
+  async checkAllInstallations(){
+    for(const app of this.apps){
+      if(!app.packageName) continue;
+      const installed = await this.checkInstallationNative(app);
+      if(installed) this.installedApps.add(app.id);
+    }
+    this.saveInstalled();
+  },
+
+  // Mark as installed (called after successful install)
+  markInstalled(id){
+    this.installedApps.add(id);
+    this.saveInstalled();
+  },
+
+  // Mark as uninstalled
+  markUninstalled(id){
+    this.installedApps.delete(id);
+    this.saveInstalled();
+  },
+
+  // Open installed app via Android Intent
+  openInstalledApp(id, e){
+    if(e) e.stopPropagation();
+    const app = this.apps.find(a => a.id === id);
+    if(!app) return;
+    if(app.packageName){
+      // Try Android intent to launch the app
+      const intentUrl = `intent://#Intent;package=${app.packageName};scheme=https;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;end`;
+      const link = document.createElement('a');
+      link.href = intentUrl;
+      link.click();
+      this.toast(`Opening ${app.name}…`, 'info');
+    } else if(app.downloadLink){
+      window.open(app.downloadLink, '_blank');
+      this.toast(`Opening ${app.name}…`, 'info');
+    } else {
+      this.toast('No launch URL available', 'warn');
+    }
+  },
+
+  // Uninstall — open Android uninstall intent
+  uninstallApp(id, e){
+    if(e) e.stopPropagation();
+    const app = this.apps.find(a => a.id === id);
+    if(!app) return;
+    if(app.packageName){
+      const intentUrl = `intent:#Intent;action=android.intent.action.DELETE;data=package:${app.packageName};end`;
+      const link = document.createElement('a');
+      link.href = intentUrl;
+      link.click();
+      // Optimistically remove after a delay (user confirmed in system dialog)
+      setTimeout(() => {
+        this.markUninstalled(id);
+        this.toast(`${app.name} uninstalled`,'info');
+        // Re-open app sheet to refresh state
+        this.openApp(id);
+      }, 2000);
+    } else {
+      this.markUninstalled(id);
+      this.toast('Removed from installed list','info');
+      this.openApp(id);
+    }
+  },
+
   // ─── INSTALL ────────────────────────────────
   install(id, e){
-    if(e)e.stopPropagation();
-    const app=this.apps.find(a=>a.id===id);
-    if(!app)return;
+    if(e) e.stopPropagation();
+    const app = this.apps.find(a => a.id === id);
+    if(!app) return;
     if(!this.user){ this.openAuth('login'); return; }
-    if(app.downloadLink) window.open(app.downloadLink,'_blank');
+    // If already installed → open instead
+    if(this.isInstalled(id)){
+      this.openInstalledApp(id);
+      return;
+    }
+    if(app.downloadLink) window.open(app.downloadLink, '_blank');
     this.trackDL(app);
+    this.markInstalled(id);
     this.toast(`Installing ${app.name}…`);
+    // Refresh any visible cards and sheet
+    setTimeout(() => {
+      this.refreshCardStates();
+      // If sheet is open for this app, refresh action bar
+      const sheet = document.getElementById('appSheet');
+      if(sheet.classList.contains('open')){
+        const actBar = document.getElementById(`action-bar-${id}`);
+        if(actBar) actBar.outerHTML = this.actionBarHTML(app);
+      }
+    }, 800);
+  },
+
+  // Generate action bar HTML based on install state
+  actionBarHTML(a){
+    const inst = this.isInstalled(a.id);
+    if(inst){
+      return `<div class="sheet-actions" id="action-bar-${a.id}">
+        <button class="btn-open" onclick="S.openInstalledApp('${a.id}')">
+          <i class="fas fa-external-link-alt"></i>Open App
+        </button>
+        <button class="btn-uninstall" onclick="S.uninstallApp('${a.id}')">
+          <i class="fas fa-trash-alt"></i>Uninstall
+        </button>
+        <button class="btn-wl${this.isWL(a.id)?' act':''}" id="wl-btn" onclick="S.toggleWL('${a.id}')">
+          <i class="fa${this.isWL(a.id)?'s':'r'} fa-heart"></i>
+        </button>
+        <button class="btn-share" onclick="S.share('${a.id}')"><i class="fas fa-share-alt"></i></button>
+      </div>`;
+    }
+    return `<div class="sheet-actions" id="action-bar-${a.id}">
+      <button class="btn-install" onclick="S.install('${a.id}')">
+        <i class="fas fa-download"></i>${a.priceType==='paid'?'Buy $'+a.price:'Install Free'}
+      </button>
+      <button class="btn-wl${this.isWL(a.id)?' act':''}" id="wl-btn" onclick="S.toggleWL('${a.id}')">
+        <i class="fa${this.isWL(a.id)?'s':'r'} fa-heart"></i>
+      </button>
+      <button class="btn-share" onclick="S.share('${a.id}')"><i class="fas fa-share-alt"></i></button>
+    </div>`;
+  },
+
+  // Refresh install state badges on all visible cards
+  refreshCardStates(){
+    document.querySelectorAll('[data-app-id]').forEach(el => {
+      const id = el.dataset.appId;
+      const inst = this.isInstalled(id);
+      const badge = el.querySelector('.installed-badge');
+      const btn = el.querySelector('.fc-install,.chi-btn,[data-card-btn]');
+      if(badge){
+        badge.style.display = inst ? 'flex' : 'none';
+      }
+      if(btn){
+        const app = this.apps.find(a => a.id === id);
+        if(!app) return;
+        if(btn.classList.contains('fc-install') || btn.dataset.cardBtn === 'fc'){
+          btn.className = `fc-install${inst?' open-btn':''}`;
+          btn.innerHTML = inst ? '<i class="fas fa-external-link-alt"></i>Open' : (app.priceType==='paid'?'$'+app.price:'Free');
+          btn.onclick = inst
+            ? (ev) => { ev.stopPropagation(); S.openInstalledApp(id); }
+            : (ev) => { ev.stopPropagation(); S.install(id); };
+        }
+        if(btn.classList.contains('chi-btn') || btn.dataset.cardBtn === 'chi'){
+          btn.className = `chi-btn${inst?' open-btn':''}`;
+          btn.innerHTML = inst ? '<i class="fas fa-external-link-alt"></i>Open' : (app.priceType==='paid'?'$'+app.price:'Install');
+          btn.onclick = inst
+            ? (ev) => { ev.stopPropagation(); S.openInstalledApp(id); }
+            : (ev) => { ev.stopPropagation(); S.install(id); };
+        }
+      }
+    });
   },
 
   share(id){
@@ -923,15 +1324,15 @@ window.S = {
     const top=[...this.apps].sort((a,b)=>(parseInt(b.downloads)||0)-(parseInt(a.downloads)||0));
     const topRated=[...this.apps].sort((a,b)=>(parseFloat(b.rating)||0)-(parseFloat(a.rating)||0));
     const newest=[...this.apps].slice(0,12);
-    pg.innerHTML=
-      this.bannerHTML(featured.length?featured:top.slice(0,4)) +
-      this.hRowSection('<i class="fas fa-crown" style="color:var(--amber)"></i> Editor\'s Choice', featured.length?featured:top.slice(0,8)) +
-      this.topChartSection('<i class="fas fa-chart-line" style="color:var(--red)"></i> Top Charts', top.slice(0,6)) +
-      this.hRowSection('<i class="fas fa-bolt" style="color:var(--ac)"></i> New Arrivals', newest) +
-      this.hRowSection('<i class="fas fa-medal" style="color:var(--amber)"></i> Top Rated', topRated.slice(0,8)) +
-      this.gridSection('<i class="fas fa-gamepad" style="color:var(--ac)"></i> Games', this.apps.filter(a=>a.category==='Games').slice(0,6), 'Games') +
-      this.gridSection('<i class="fas fa-tools" style="color:var(--p)"></i> Tools', this.apps.filter(a=>a.category==='Tools'||a.category==='Utility').slice(0,6), 'Tools') +
-      this.gridSection('<i class="fas fa-graduation-cap" style="color:#7B1FA2"></i> Education', this.apps.filter(a=>a.category==='Education').slice(0,6), 'Education');
+    pg.innerHTML =
+      this.bannerHTML(featured.length ? featured : top.slice(0,5)) +
+      this.hRowSection(`<div class="sec-title-icon"><i class="fas fa-crown"></i></div> Editor's Choice`, featured.length ? featured : top.slice(0,8)) +
+      this.topChartSection(`<div class="sec-title-icon" style="background:linear-gradient(135deg,#e53935,#b71c1c)"><i class="fas fa-chart-line"></i></div> Top Charts`, top.slice(0,6)) +
+      this.hRowSection(`<div class="sec-title-icon" style="background:linear-gradient(135deg,#2979FF,#1565c0)"><i class="fas fa-bolt"></i></div> New Arrivals`, newest) +
+      this.hRowSection(`<div class="sec-title-icon" style="background:linear-gradient(135deg,#FFB300,#FF6F00)"><i class="fas fa-medal"></i></div> Top Rated`, topRated.slice(0,8)) +
+      this.gridSection(`<div class="sec-title-icon" style="background:linear-gradient(135deg,#2979FF,#0d47a1)"><i class="fas fa-gamepad"></i></div> Games`, this.apps.filter(a=>a.category==='Games').slice(0,6), 'Games') +
+      this.gridSection(`<div class="sec-title-icon" style="background:linear-gradient(135deg,#00C853,#007A35)"><i class="fas fa-tools"></i></div> Tools`, this.apps.filter(a=>a.category==='Tools'||a.category==='Utility').slice(0,6), 'Tools') +
+      this.gridSection(`<div class="sec-title-icon" style="background:linear-gradient(135deg,#7B1FA2,#4a148c)"><i class="fas fa-graduation-cap"></i></div> Education`, this.apps.filter(a=>a.category==='Education').slice(0,6), 'Education');
     this.initBanner();
     this.animCards();
   },
@@ -945,42 +1346,90 @@ window.S = {
     }
     const topRated=[...apps].sort((a,b)=>(parseFloat(b.rating)||0)-(parseFloat(a.rating)||0));
     const top=[...apps].sort((a,b)=>(parseInt(b.downloads)||0)-(parseInt(a.downloads)||0));
-    pg.innerHTML=
-      this.topChartSection(`<i class="fas fa-chart-line" style="color:var(--red)"></i> Top ${cat}`, top.slice(0,5)) +
-      this.gridSection(`All ${cat}`, apps, null);
+    pg.innerHTML =
+      this.topChartSection(`<div class="sec-title-icon" style="background:linear-gradient(135deg,#e53935,#b71c1c)"><i class="fas fa-chart-line"></i></div> Top ${cat}`, top.slice(0,5)) +
+      this.gridSection(`<div class="sec-title-icon"><i class="fas fa-th-large"></i></div> All ${cat}`, apps, null);
     this.animCards();
   },
 
   // ─── BANNER ─────────────────────────────────
   bannerHTML(apps){
-    if(!apps.length)return'';
-    const grads=['linear-gradient(135deg,#0d47a1,#1565c0)','linear-gradient(135deg,#1b5e20,#2e7d32)','linear-gradient(135deg,#4a148c,#6a1b9a)','linear-gradient(135deg,#b71c1c,#c62828)'];
-    const slides=apps.slice(0,4).map((a,i)=>`
-      <div class="banner-slide" onclick="S.openApp('${a.id}')">
-        <div class="banner-slide-bg" style="background:${grads[i%grads.length]}"></div>
-        <div class="banner-slide-overlay"></div>
+    if(!apps.length) return '';
+    const accents=[
+      ['#0d47a1','#1565c0'],['#1b5e20','#2e7d32'],
+      ['#4a148c','#6a1b9a'],['#b71c1c','#c62828'],
+      ['#e65100','#bf360c'],['#006064','#00838f']
+    ];
+    const slides = apps.slice(0,5).map((a,i)=>{
+      const [c1,c2] = accents[i % accents.length];
+      const bgSrc = a.imageSrc || '';
+      const inst = this.isInstalled(a.id);
+      const btnLabel = inst ? '<i class="fas fa-external-link-alt"></i>Open' : '<i class="fas fa-download"></i>Install';
+      const btnFn   = inst ? `S.openInstalledApp('${a.id}')` : `S.install('${a.id}')`;
+      return `<div class="banner-slide" onclick="S.openApp('${a.id}')">
+        ${bgSrc
+          ? `<div class="banner-bg-blur" style="background-image:url('${bgSrc}')"></div>`
+          : `<div class="banner-bg-blur" style="background:linear-gradient(135deg,${c1},${c2})"></div>`}
+        <div class="banner-tint"></div>
+        <div class="banner-fade"></div>
+        ${bgSrc ? `<img class="banner-app-icon" src="${bgSrc}" onerror="S.imgFallback(this)" alt="${a.name}"/>` : ''}
         <div class="banner-content">
-          <div class="banner-chip"><i class="fas fa-fire"></i>${a.featured?'Featured':'Top App'}</div>
+          <div class="banner-chip"><i class="fas fa-${a.featured?'star':'fire'}"></i>${a.featured?'Featured':'Top App'}</div>
           <div class="banner-title">${a.name}</div>
-          <div class="banner-sub">${(a.description||'').slice(0,60)}${(a.description||'').length>60?'…':''}</div>
-          <div class="banner-btn" onclick="event.stopPropagation();S.install('${a.id}')"><i class="fas fa-download"></i>Install</div>
+          <div class="banner-dev"><i class="fas fa-user-circle" style="margin-right:4px"></i>${a.developer||'Unknown'}</div>
+          <div class="banner-btn" onclick="event.stopPropagation();${btnFn}">${btnLabel}</div>
         </div>
-      </div>`).join('');
-    const dots=apps.slice(0,4).map((_,i)=>`<div class="banner-dot${i===0?' act':''}" onclick="event.stopPropagation();S.goSlide(${i})"></div>`).join('');
-    return `<div class="banner-wrap" id="bannerWrap"><div class="banner-slides" id="bannerSlides">${slides}</div><div class="banner-dots" id="bannerDots">${dots}</div></div>`;
+      </div>`;
+    }).join('');
+    const dots = apps.slice(0,5).map((_,i)=>
+      `<div class="banner-dot${i===0?' act':''}" onclick="event.stopPropagation();S.goSlide(${i})"></div>`
+    ).join('');
+    return `<div class="banner-wrap" id="bannerWrap">
+      <div class="banner-slides" id="bannerSlides">${slides}</div>
+      <div class="banner-dots" id="bannerDots">${dots}</div>
+      <div class="banner-arrow prev" onclick="event.stopPropagation();S.lbNavBanner(-1)"><i class="fas fa-chevron-left"></i></div>
+      <div class="banner-arrow next" onclick="event.stopPropagation();S.lbNavBanner(1)"><i class="fas fa-chevron-right"></i></div>
+    </div>`;
+  },
+
+  lbNavBanner(dir){
+    const slides = document.getElementById('bannerSlides');
+    if(!slides) return;
+    const count = slides.children.length;
+    this.bannerIdx = (this.bannerIdx + dir + count) % count;
+    this.goSlide(this.bannerIdx);
   },
 
   initBanner(){
     clearInterval(this.bannerTimer);
-    this.bannerIdx=0;
-    const slides=document.getElementById('bannerSlides');
-    if(!slides)return;
-    const count=slides.children.length;
-    if(count<=1)return;
-    this.bannerTimer=setInterval(()=>{
-      this.bannerIdx=(this.bannerIdx+1)%count;
+    this.bannerIdx = 0;
+    const wrap = document.getElementById('bannerWrap');
+    const slides = document.getElementById('bannerSlides');
+    if(!slides) return;
+    const count = slides.children.length;
+    if(count <= 1) return;
+    // Auto-rotate
+    this.bannerTimer = setInterval(()=>{
+      this.bannerIdx = (this.bannerIdx + 1) % count;
       this.goSlide(this.bannerIdx);
-    },3500);
+    }, 4000);
+    // Touch swipe
+    if(!wrap) return;
+    let tx = 0;
+    wrap.addEventListener('touchstart', e=>{ tx = e.touches[0].clientX; }, {passive:true});
+    wrap.addEventListener('touchend', e=>{
+      const dx = e.changedTouches[0].clientX - tx;
+      if(Math.abs(dx) > 40){
+        this.bannerIdx = (this.bannerIdx + (dx < 0 ? 1 : -1) + count) % count;
+        this.goSlide(this.bannerIdx);
+        // Reset timer
+        clearInterval(this.bannerTimer);
+        this.bannerTimer = setInterval(()=>{
+          this.bannerIdx = (this.bannerIdx + 1) % count;
+          this.goSlide(this.bannerIdx);
+        }, 4000);
+      }
+    }, {passive:true});
   },
 
   goSlide(i){
@@ -991,39 +1440,64 @@ window.S = {
   },
 
   // ─── SECTION BUILDERS ───────────────────────
-  hRowSection(title, apps){
-    if(!apps.length)return'';
-    return `<div class="sec"><div class="sec-head"><div class="sec-title">${title}</div></div>
-    <div class="h-row">${apps.map(a=>this.featCardHTML(a)).join('')}</div></div>`;
+  hRowSection(title, apps, icon='fa-layer-group'){
+    if(!apps.length) return '';
+    return `<div class="sec">
+      <div class="sec-head">
+        <div class="sec-title">${title}</div>
+      </div>
+      <div class="h-row">${apps.map(a=>this.featCardHTML(a)).join('')}</div>
+    </div>`;
   },
 
   topChartSection(title, apps){
-    if(!apps.length)return'';
-    return `<div class="sec"><div class="sec-head"><div class="sec-title">${title}</div><span class="see-all" onclick="S.renderTopFull()">See all <i class="fas fa-chevron-right" style="font-size:10px"></i></span></div>
-    <div class="chart-list">${apps.map((a,i)=>this.chartItemHTML(a,i+1)).join('')}</div></div>`;
+    if(!apps.length) return '';
+    return `<div class="sec">
+      <div class="sec-head">
+        <div class="sec-title">${title}</div>
+        <span class="see-all" onclick="S.renderTopFull()">See all <i class="fas fa-chevron-right" style="font-size:10px"></i></span>
+      </div>
+      <div class="chart-list">${apps.map((a,i)=>this.chartItemHTML(a,i+1)).join('')}</div>
+    </div>`;
   },
 
   gridSection(title, apps, cat){
-    if(!apps.length)return'';
-    const seeAll=cat?`<span class="see-all" onclick="S.filterCat('${cat}')">See all <i class="fas fa-chevron-right" style="font-size:10px"></i></span>`:'';
-    return `<div class="sec"><div class="sec-head"><div class="sec-title">${title}</div>${seeAll}</div>
-    <div class="app-grid">${apps.map((a,i)=>this.appCardHTML(a,i)).join('')}</div></div>`;
+    if(!apps.length) return '';
+    const seeAll = cat
+      ? `<span class="see-all" onclick="S.filterCat('${cat}')">See all <i class="fas fa-chevron-right" style="font-size:10px"></i></span>`
+      : '';
+    return `<div class="sec">
+      <div class="sec-head">
+        <div class="sec-title">${title}</div>${seeAll}
+      </div>
+      <div class="app-grid">${apps.map((a,i)=>this.appCardHTML(a,i)).join('')}</div>
+    </div>`;
   },
 
   renderTopFull(){
     const top=[...this.apps].sort((a,b)=>(parseInt(b.downloads)||0)-(parseInt(a.downloads)||0));
     const pg=document.getElementById('page');
-    pg.innerHTML=`<div class="sec"><div class="sec-head"><div class="sec-title"><i class="fas fa-chart-line" style="color:var(--red)"></i> Top Charts</div></div>
-    <div class="chart-list">${top.map((a,i)=>this.chartItemHTML(a,i+1)).join('')}</div></div>`;
+    pg.innerHTML=this.topChartSection(`<div class="sec-title-icon" style="background:linear-gradient(135deg,#e53935,#b71c1c)"><i class="fas fa-chart-line"></i></div> Top Charts`, top);
     document.querySelectorAll('.cat-btn').forEach(b=>b.classList.remove('act'));
   },
 
   // ─── CARD HTML ──────────────────────────────
   featCardHTML(a){
-    const color=a.color||this.colorFor(a.name);
-    return `<div class="fc" onclick="S.openApp('${a.id}')">
+    const color = a.color || this.colorFor(a.name);
+    const inst = this.isInstalled(a.id);
+    const btnLabel = inst ? '<i class="fas fa-external-link-alt"></i>Open' : (a.priceType==='paid'?'$'+a.price:'Free');
+    const btnClass = inst ? 'fc-install open-btn' : 'fc-install';
+    const btnClick = inst
+      ? `event.stopPropagation();S.openInstalledApp('${a.id}')`
+      : `event.stopPropagation();S.install('${a.id}')`;
+    const bgStyle = a.imageSrc
+      ? `background-image:url('${a.imageSrc}')`
+      : `background:${color}`;
+    return `<div class="fc" onclick="S.openApp('${a.id}')" data-app-id="${a.id}">
       ${a.featured?'<div class="fc-badge"><i class="fas fa-star"></i> Featured</div>':''}
-      <div class="fc-img-wrap" style="background:${color}22">
+      ${inst?'<div class="installed-badge"><i class="fas fa-check-circle"></i>Installed</div>':''}
+      <div class="fc-img-wrap">
+        <div class="fc-img-bg" style="${bgStyle}"></div>
         <img src="${a.imageSrc||''}" onerror="S.imgFallback(this)" alt="${a.name}"/>
       </div>
       <div class="fc-body">
@@ -1031,23 +1505,27 @@ window.S = {
         <div class="fc-dev">${a.developer||'Unknown'}</div>
         <div class="fc-foot">
           <div class="fc-rating"><i class="fas fa-star"></i>${(parseFloat(a.rating)||0).toFixed(1)}</div>
-          <button class="fc-install" onclick="event.stopPropagation();S.install('${a.id}')">${a.priceType==='paid'?'$'+a.price:'Free'}</button>
+          <button class="${btnClass}" onclick="${btnClick}">${btnLabel}</button>
         </div>
       </div>
     </div>`;
   },
 
   appCardHTML(a, idx=0){
-    return `<div class="ac" onclick="S.openApp('${a.id}')" style="animation-delay:${idx*0.04}s">
+    const inst=this.isInstalled(a.id);
+    return `<div class="ac" onclick="S.openApp('${a.id}')" style="animation-delay:${idx*0.04}s" data-app-id="${a.id}">
       <div class="ac-icon-wrap">
         <img src="${a.imageSrc||''}" onerror="S.imgFallback(this)" alt="${a.name}" style="width:72px;height:72px;border-radius:18px;object-fit:cover"/>
+        ${inst?'<div class="installed-badge"><i class="fas fa-check-circle"></i>On device</div>':''}
       </div>
       <div class="ac-info">
         <div class="ac-name">${a.name}</div>
         <div class="ac-dev">${a.developer||'Unknown'}</div>
         <div class="ac-foot">
           <div class="ac-rating"><i class="fas fa-star"></i>${(parseFloat(a.rating)||0).toFixed(1)}</div>
-          <span class="ac-tag ${a.priceType==='paid'?'paid':'free'}">${a.priceType==='paid'?'$'+a.price:'Free'}</span>
+          <span class="ac-tag ${inst?'free':a.priceType==='paid'?'paid':'free'}" style="${inst?'background:#dcfce7;color:#166534':''}">
+            ${inst?'<i class="fas fa-check" style="font-size:8px"></i>':''}${inst?'Installed':a.priceType==='paid'?'$'+a.price:'Free'}
+          </span>
         </div>
         <div class="ac-dls"><i class="fas fa-download" style="font-size:8px"></i>${this.fmtNum(a.downloads)}</div>
       </div>
@@ -1063,15 +1541,21 @@ window.S = {
       : rank===3
       ? `<i class="fas fa-trophy" style="font-size:16px;color:#CD7F32"></i>`
       : `<span style="font-size:13px;font-weight:800">${rank}</span>`;
-    return `<div class="chi" onclick="S.openApp('${a.id}')">
+    const inst=this.isInstalled(a.id);
+    const chiBtnLabel = inst ? '<i class="fas fa-external-link-alt"></i>Open' : (a.priceType==='paid'?'$'+a.price:'Install');
+    const chiBtnClass = inst ? 'chi-btn open-btn' : 'chi-btn';
+    const chiBtnClick = inst
+      ? `event.stopPropagation();S.openInstalledApp('${a.id}')`
+      : `event.stopPropagation();S.install('${a.id}')`;
+    return `<div class="chi" onclick="S.openApp('${a.id}')" data-app-id="${a.id}">
       <div class="chi-rank ${cls}">${rankDisplay}</div>
       <img class="chi-icon" src="${a.imageSrc||''}" onerror="S.imgFallback(this)" alt="${a.name}"/>
       <div class="chi-info">
-        <div class="chi-name">${a.name}</div>
+        <div class="chi-name">${a.name}${inst?` <span style="font-size:9px;font-weight:800;color:var(--p);background:#dcfce7;padding:1px 6px;border-radius:8px;margin-left:4px">ON DEVICE</span>`:''}</div>
         <div class="chi-dev">${a.developer||'Unknown'}</div>
         <div class="chi-rating"><i class="fas fa-star"></i>${(parseFloat(a.rating)||0).toFixed(1)} · ${this.fmtNum(a.downloads)} installs</div>
       </div>
-      <button class="chi-btn" onclick="event.stopPropagation();S.install('${a.id}')">${a.priceType==='paid'?'$'+a.price:'Install'}</button>
+      <button class="${chiBtnClass}" onclick="${chiBtnClick}">${chiBtnLabel}</button>
     </div>`;
   },
 
@@ -1099,6 +1583,9 @@ window.S = {
             <span class="sheet-chip"><i class="fas fa-tag" style="color:var(--p)"></i>${a.category||'App'}</span>
             <span class="sheet-chip ${a.priceType==='paid'?'':'green'}">${a.priceType==='paid'?'$'+a.price:'Free'}</span>
             <span class="sheet-chip"><i class="fas fa-star" style="color:var(--amber)"></i>${avgR}</span>
+            ${this.isInstalled(a.id)
+              ? `<span class="sheet-chip installed"><i class="fas fa-check-circle"></i>Installed</span>`
+              : `<span class="sheet-chip" style="background:#fee2e2;color:#991b1b"><i class="fas fa-times-circle"></i>Not installed</span>`}
           </div>
         </div>
       </div>
@@ -1108,15 +1595,7 @@ window.S = {
         <div class="sheet-stat"><strong>${a.size||'?'}</strong><span>Size</span></div>
         <div class="sheet-stat"><strong>${totalRevs>999?this.fmtNum(totalRevs):totalRevs}</strong><span>Reviews</span></div>
       </div>
-      <div class="sheet-actions">
-        <button class="btn-install" onclick="S.install('${a.id}')">
-          <i class="fas fa-download"></i>${a.priceType==='paid'?'Buy $'+a.price:'Install Free'}
-        </button>
-        <button class="btn-wl${wl?' act':''}" id="wl-btn" onclick="S.toggleWL('${a.id}')">
-          <i class="fa${wl?'s':'r'} fa-heart"></i>
-        </button>
-        <button class="btn-share" onclick="S.share('${a.id}')"><i class="fas fa-share-alt"></i></button>
-      </div>
+      ${this.actionBarHTML(a)}
 
       <div class="s-sec">
         <div class="s-sec-title"><i class="fas fa-image"></i>Screenshots</div>
@@ -1342,11 +1821,14 @@ db.ref('apps').on('value', snap => {
   S.apps = loaded.length ? loaded : DEMO_APPS;
   S.renderHome();
   document.getElementById('loader').classList.add('out');
+  // Check real installation state in background (Android Chrome)
+  S.checkAllInstallations().catch(()=>{});
 }, err => {
   console.warn('Firebase error, using demo data:', err);
   S.apps = DEMO_APPS;
   S.renderHome();
   document.getElementById('loader').classList.add('out');
+  S.checkAllInstallations().catch(()=>{});
 });
 
 // Keyboard nav for lightbox
