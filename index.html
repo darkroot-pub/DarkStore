@@ -1,395 +1,1365 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>DarkStore • System Upgrade</title>
-    
-    <!-- PRELOAD FONTS FOR INSTANT RENDER -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+<title>APK Store</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+<style>
+/* ============================================================
+   TOKENS
+============================================================ */
+:root{
+  --p:#00C853; --pd:#009624; --pl:rgba(0,200,83,.12);
+  --ac:#2979FF; --al:rgba(41,121,255,.12);
+  --red:#F44336; --amber:#FFC107; --teal:#00BFA5;
+  --bg:#F2F4F7; --card:#fff; --card2:#F8FAFC;
+  --t1:#111827; --t2:#4B5563; --t3:#9CA3AF;
+  --border:#E5E7EB;
+  --sh:0 2px 12px rgba(0,0,0,.08);
+  --sh2:0 8px 32px rgba(0,200,83,.18);
+  --r:14px; --rs:10px;
+  --bounce:cubic-bezier(.34,1.56,.64,1);
+  --ease:cubic-bezier(.4,0,.2,1);
+  --nav-h:60px; --bnav-h:64px;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;font-family:'Poppins',sans-serif}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--t1);overflow-x:hidden;min-height:100vh}
+button{cursor:pointer;border:none;background:none;font-family:inherit}
+img{display:block;max-width:100%}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-thumb{background:#d1d5db;border-radius:3px}
 
-    <style>
-        /* --- RESET & VARIABLES --- */
-        :root {
-            --bg-dark: #050507;
-            --neon-green: #00ff88;
-            --neon-green-dim: rgba(0, 255, 136, 0.1);
-            --neon-red: #ff3333;
-            --glass-bg: rgba(255, 255, 255, 0.03);
-            --glass-border: rgba(255, 255, 255, 0.08);
-            --text-main: #ffffff;
-            --text-muted: #8899a6;
-            --ease-elastic: cubic-bezier(0.68, -0.55, 0.265, 1.55);
-        }
+/* ============================================================
+   LOADER
+============================================================ */
+#loader{position:fixed;inset:0;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;gap:20px;transition:opacity .4s,visibility .4s}
+#loader.out{opacity:0;visibility:hidden;pointer-events:none}
+.ld-icon{font-size:48px;color:var(--p);animation:ldBounce 1s infinite alternate}
+.ld-ring{width:40px;height:40px;border:4px solid var(--pl);border-top-color:var(--p);border-radius:50%;animation:ldSpin .7s linear infinite}
+.ld-text{font-size:13px;font-weight:600;color:var(--t3)}
+@keyframes ldBounce{to{transform:translateY(-10px)}}
+@keyframes ldSpin{to{transform:rotate(360deg)}}
 
-        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+/* ============================================================
+   TOAST
+============================================================ */
+#toast{
+  position:fixed;bottom:calc(var(--bnav-h) + 16px);left:50%;
+  transform:translateX(-50%) translateY(20px);
+  background:#1F2937;color:#fff;padding:10px 20px;border-radius:50px;
+  font-size:13px;font-weight:500;z-index:8000;opacity:0;
+  transition:opacity .25s,transform .25s;pointer-events:none;
+  display:flex;align-items:center;gap:8px;white-space:nowrap;
+  max-width:calc(100vw - 40px);
+}
+#toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+@media(min-width:768px){#toast{bottom:24px}}
 
-        body {
-            background-color: var(--bg-dark);
-            background-image: 
-                radial-gradient(circle at 10% 20%, rgba(0, 255, 136, 0.05) 0%, transparent 20%),
-                radial-gradient(circle at 90% 80%, rgba(255, 51, 51, 0.05) 0%, transparent 20%);
-            color: var(--text-main);
-            font-family: 'Inter', sans-serif;
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            overflow: hidden;
-            position: relative;
-        }
+/* ============================================================
+   TOP NAV
+============================================================ */
+#topNav{
+  position:fixed;top:0;left:0;right:0;z-index:500;
+  height:var(--nav-h);
+  background:rgba(255,255,255,.92);
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  border-bottom:1px solid var(--border);
+  display:flex;align-items:center;padding:0 16px;gap:12px;
+}
+.nav-logo{display:flex;align-items:center;gap:8px;flex-shrink:0;cursor:pointer}
+.nav-logo-icon{width:34px;height:34px;background:linear-gradient(135deg,var(--p),var(--ac));border-radius:9px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px}
+.nav-logo-name{font-size:17px;font-weight:800;background:linear-gradient(90deg,var(--p),var(--ac));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+/* search */
+.nav-search{flex:1;position:relative;max-width:480px}
+.nav-search input{
+  width:100%;padding:9px 16px 9px 40px;
+  border-radius:50px;border:1.5px solid transparent;
+  background:#F3F4F6;font-size:14px;outline:none;
+  transition:.25s var(--ease);color:var(--t1);
+}
+.nav-search input:focus{background:#fff;border-color:var(--p);box-shadow:0 0 0 3px var(--pl)}
+.nav-search .ns-ic{position:absolute;left:13px;top:50%;transform:translateY(-50%);color:var(--t3);font-size:14px;pointer-events:none}
+/* right */
+.nav-right{display:flex;align-items:center;gap:8px;margin-left:auto;flex-shrink:0}
+.nav-icon-btn{width:36px;height:36px;border-radius:50%;background:#F3F4F6;display:flex;align-items:center;justify-content:center;color:var(--t2);font-size:15px;position:relative;transition:.2s var(--bounce)}
+.nav-icon-btn:hover{background:var(--p);color:#fff;transform:scale(1.1)}
+.nav-icon-btn .dot{position:absolute;top:1px;right:1px;width:8px;height:8px;border-radius:50%;background:var(--red);border:2px solid #fff}
+.nav-avatar{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--p),var(--ac));color:#fff;font-size:14px;font-weight:800;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:.2s var(--bounce)}
+.nav-avatar:hover{transform:scale(1.1)}
+.btn-signin{padding:7px 18px;background:linear-gradient(135deg,var(--p),var(--ac));color:#fff;border-radius:50px;font-size:13px;font-weight:700;transition:.2s var(--bounce)}
+.btn-signin:hover{transform:scale(1.05);box-shadow:0 4px 14px rgba(0,200,83,.35)}
 
-        /* --- SCANLINE OVERLAY --- */
-        body::after {
-            content: "";
-            position: fixed;
-            inset: 0;
-            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%);
-            background-size: 100% 4px;
-            pointer-events: none;
-            z-index: 100;
-        }
+/* ============================================================
+   CATEGORY BAR
+============================================================ */
+#catBar{
+  position:fixed;top:var(--nav-h);left:0;right:0;z-index:400;
+  background:#fff;border-bottom:1px solid var(--border);
+  overflow-x:auto;scrollbar-width:none;
+  display:flex;padding:0 8px;
+}
+#catBar::-webkit-scrollbar{display:none}
+.cat-btn{
+  flex-shrink:0;padding:0 14px;height:44px;
+  font-size:12px;font-weight:600;color:var(--t2);
+  border-bottom:2.5px solid transparent;
+  white-space:nowrap;transition:.2s;display:flex;align-items:center;gap:5px;
+}
+.cat-btn:hover{color:var(--p)}
+.cat-btn.act{color:var(--p);border-bottom-color:var(--p)}
 
-        /* --- MAIN CONTAINER --- */
-        .container {
-            width: 90%;
-            max-width: 480px;
-            position: relative;
-            z-index: 10;
-            padding: 20px;
-        }
+/* ============================================================
+   PAGE BODY
+============================================================ */
+#page{
+  margin-top:calc(var(--nav-h) + 44px);
+  padding:16px 12px calc(var(--bnav-h) + 20px);
+  max-width:720px;margin-left:auto;margin-right:auto;
+}
+@media(min-width:768px){
+  #page{padding:24px 20px calc(var(--bnav-h) + 20px);max-width:1280px}
+}
 
-        /* --- GLASS CARD --- */
-        .glass-panel {
-            background: var(--glass-bg);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border: 1px solid var(--glass-border);
-            border-radius: 32px;
-            padding: 40px 24px;
-            text-align: center;
-            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
-            position: relative;
-            overflow: hidden;
-            animation: cardFloat 6s ease-in-out infinite;
-        }
+/* ============================================================
+   FEATURED BANNER SLIDER
+============================================================ */
+.banner-wrap{position:relative;border-radius:var(--r);overflow:hidden;margin-bottom:20px;aspect-ratio:16/7;cursor:pointer}
+@media(max-width:480px){.banner-wrap{aspect-ratio:4/3}}
+.banner-slides{display:flex;height:100%;transition:transform .45s var(--ease)}
+.banner-slide{flex-shrink:0;width:100%;height:100%;position:relative;display:flex;align-items:flex-end;padding:20px}
+.banner-slide-bg{position:absolute;inset:0;background-size:cover;background-position:center}
+.banner-slide-overlay{position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.75) 0%,rgba(0,0,0,.1) 60%)}
+.banner-content{position:relative;z-index:1;color:#fff}
+.banner-chip{display:inline-flex;align-items:center;gap:5px;background:var(--p);color:#fff;padding:3px 10px;border-radius:20px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px}
+.banner-title{font-size:20px;font-weight:800;line-height:1.2;margin-bottom:4px}
+.banner-sub{font-size:12px;opacity:.8;margin-bottom:12px}
+.banner-btn{display:inline-flex;align-items:center;gap:6px;background:#fff;color:var(--t1);padding:9px 18px;border-radius:50px;font-size:13px;font-weight:700;transition:.2s}
+.banner-btn:hover{background:var(--p);color:#fff}
+.banner-dots{position:absolute;bottom:14px;right:16px;display:flex;gap:5px;z-index:2}
+.banner-dot{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.4);transition:.3s}
+.banner-dot.act{background:#fff;width:18px;border-radius:3px}
 
-        /* Animated Border Gradient */
-        .glass-panel::before {
-            content: '';
-            position: absolute;
-            inset: 0;
-            border-radius: 32px;
-            padding: 1px;
-            background: linear-gradient(135deg, rgba(0,255,136,0.5), transparent 50%, rgba(255,51,51,0.3));
-            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-            -webkit-mask-composite: xor;
-            mask-composite: exclude;
-            pointer-events: none;
-        }
+/* ============================================================
+   SECTION
+============================================================ */
+.sec{margin-bottom:24px}
+.sec-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.sec-title{font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px}
+.sec-title::before{content:'';width:3px;height:16px;background:linear-gradient(var(--p),var(--ac));border-radius:2px;flex-shrink:0}
+.see-all{font-size:12px;color:var(--p);font-weight:600;display:flex;align-items:center;gap:3px}
 
-        @keyframes cardFloat {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-10px); }
-        }
+/* ============================================================
+   HORIZONTAL SCROLL ROW (Featured cards)
+============================================================ */
+.h-row{display:flex;gap:12px;overflow-x:auto;padding-bottom:6px;scrollbar-width:none}
+.h-row::-webkit-scrollbar{display:none}
+/* featured card */
+.fc{flex-shrink:0;width:160px;background:var(--card);border-radius:var(--r);overflow:hidden;cursor:pointer;transition:.25s var(--bounce);border:1px solid var(--border)}
+.fc:hover{transform:translateY(-4px);box-shadow:var(--sh2);border-color:rgba(0,200,83,.25)}
+@media(min-width:480px){.fc{width:190px}}
+.fc-img-wrap{height:110px;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
+.fc-img-wrap img{width:68px;height:68px;border-radius:16px;object-fit:cover;box-shadow:0 6px 18px rgba(0,0,0,.18);transition:.3s var(--bounce);z-index:1;position:relative}
+.fc:hover .fc-img-wrap img{transform:scale(1.1) rotate(2deg)}
+.fc-body{padding:10px 12px 12px}
+.fc-name{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px}
+.fc-dev{font-size:10px;color:var(--t3);margin-bottom:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fc-foot{display:flex;align-items:center;justify-content:space-between}
+.fc-rating{font-size:11px;font-weight:700;color:var(--t2);display:flex;align-items:center;gap:3px}
+.fc-rating i{color:var(--amber);font-size:10px}
+.fc-install{padding:5px 12px;background:var(--pl);color:var(--p);border-radius:50px;font-size:11px;font-weight:700;transition:.2s}
+.fc-install:hover{background:var(--p);color:#fff}
+.fc-badge{position:absolute;top:8px;left:8px;background:linear-gradient(135deg,var(--amber),#FF6F00);color:#fff;padding:2px 8px;border-radius:20px;font-size:9px;font-weight:800;z-index:2;text-transform:uppercase}
 
-        /* --- LOGO & HEADER --- */
-        .brand-pill {
-            display: inline-flex;
-            align-items: center;
-            gap: 10px;
-            background: rgba(0, 0, 0, 0.4);
-            border: 1px solid var(--glass-border);
-            padding: 8px 20px;
-            border-radius: 50px;
-            margin-bottom: 30px;
-        }
+/* ============================================================
+   APP GRID
+============================================================ */
+.app-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+@media(min-width:480px){.app-grid{grid-template-columns:repeat(3,1fr)}}
+@media(min-width:768px){.app-grid{grid-template-columns:repeat(4,1fr);gap:14px}}
+@media(min-width:1024px){.app-grid{grid-template-columns:repeat(5,1fr)}}
+@media(min-width:1280px){.app-grid{grid-template-columns:repeat(6,1fr)}}
 
-        .brand-icon {
-            color: var(--neon-green);
-            font-size: 1.2rem;
-            animation: pulse 2s infinite;
-        }
+/* app card */
+.ac{background:var(--card);border-radius:var(--r);overflow:hidden;cursor:pointer;transition:.25s var(--bounce);border:1px solid transparent;opacity:0;animation:acIn .4s var(--ease) forwards}
+@keyframes acIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+.ac:hover{transform:translateY(-5px);box-shadow:0 10px 30px rgba(0,200,83,.15);border-color:rgba(0,200,83,.2)}
+.ac:active{transform:scale(.97)}
+.ac-icon-wrap{padding:16px 16px 8px;display:flex;justify-content:center}
+.ac-icon-wrap img{width:72px;height:72px;border-radius:18px;object-fit:cover;box-shadow:0 4px 14px rgba(0,0,0,.12);transition:.3s var(--bounce)}
+.ac:hover .ac-icon-wrap img{transform:scale(1.08) rotate(2deg)}
+.ac-info{padding:0 10px 12px}
+.ac-name{font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px}
+.ac-dev{font-size:10px;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:6px}
+.ac-foot{display:flex;align-items:center;justify-content:space-between;gap:4px}
+.ac-rating{font-size:10px;font-weight:700;color:var(--t2);display:flex;align-items:center;gap:2px}
+.ac-rating i{color:var(--amber);font-size:9px}
+.ac-tag{font-size:9px;padding:2px 7px;border-radius:20px;font-weight:700}
+.ac-tag.free{background:var(--pl);color:var(--p)}
+.ac-tag.paid{background:rgba(244,67,54,.1);color:var(--red)}
+.ac-dls{font-size:9px;color:var(--t3);padding-top:4px;display:flex;align-items:center;gap:3px}
 
-        .brand-text {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.8rem;
-            letter-spacing: 2px;
-            color: var(--text-muted);
-            text-transform: uppercase;
-        }
+/* ============================================================
+   TOP CHART LIST
+============================================================ */
+.chart-list{display:flex;flex-direction:column;gap:2px}
+.chi{display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--card);border-radius:var(--rs);cursor:pointer;transition:.2s;border:1px solid transparent}
+.chi:hover{border-color:var(--border);box-shadow:var(--sh);transform:translateX(3px)}
+.chi-rank{width:26px;font-size:15px;font-weight:800;color:var(--t3);text-align:center;flex-shrink:0}
+.chi-rank.r1{color:#FFD700}.chi-rank.r2{color:#A8A8A8}.chi-rank.r3{color:#CD7F32}
+.chi-icon{width:48px;height:48px;border-radius:13px;object-fit:cover;flex-shrink:0;border:1px solid var(--border)}
+.chi-info{flex:1;min-width:0}
+.chi-name{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chi-dev{font-size:11px;color:var(--t3);margin-bottom:2px}
+.chi-rating{font-size:11px;font-weight:700;color:var(--t2);display:flex;align-items:center;gap:3px}
+.chi-rating i{color:var(--amber);font-size:10px}
+.chi-btn{flex-shrink:0;padding:7px 14px;background:var(--pl);color:var(--p);border-radius:50px;font-size:12px;font-weight:700;transition:.2s;white-space:nowrap}
+.chi-btn:hover{background:var(--p);color:#fff}
 
-        /* --- GLITCH TITLE --- */
-        .glitch-wrapper {
-            position: relative;
-            margin-bottom: 20px;
-        }
+/* ============================================================
+   BOTTOM NAV
+============================================================ */
+#bNav{
+  position:fixed;bottom:0;left:0;right:0;z-index:500;
+  height:var(--bnav-h);
+  background:rgba(255,255,255,.96);backdrop-filter:blur(16px);
+  border-top:1px solid var(--border);
+  display:flex;padding:0 8px;padding-bottom:env(safe-area-inset-bottom);
+}
+.bn-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;color:var(--t3);font-size:10px;font-weight:600;transition:.2s var(--bounce);position:relative;padding:6px 0}
+.bn-item i{font-size:20px;transition:.2s var(--bounce)}
+.bn-item.act{color:var(--p)}
+.bn-item.act i{transform:scale(1.15)}
+.bn-pip{position:absolute;top:4px;right:22%;width:7px;height:7px;border-radius:50%;background:var(--red);border:2px solid #fff;display:none}
+.bn-pip.on{display:block}
 
-        .main-title {
-            font-size: 3rem;
-            font-weight: 800;
-            line-height: 1;
-            text-transform: uppercase;
-            letter-spacing: -2px;
-            color: #fff;
-            position: relative;
-            z-index: 1;
-        }
-        
-        /* Mobile Scaling */
-        @media (max-width: 400px) {
-            .main-title { font-size: 2.4rem; }
-        }
+/* ============================================================
+   APP DETAIL SHEET (full modal on mobile)
+============================================================ */
+#appSheet{
+  position:fixed;inset:0;z-index:700;
+  display:flex;align-items:flex-end;
+  background:rgba(0,0,0,0);pointer-events:none;transition:background .3s;
+}
+#appSheet.open{background:rgba(0,0,0,.5);pointer-events:all}
+.app-sheet-box{
+  width:100%;max-height:95dvh;
+  background:var(--card);border-radius:24px 24px 0 0;
+  overflow-y:auto;overflow-x:hidden;
+  transform:translateY(100%);transition:transform .4s var(--ease);
+  -webkit-overflow-scrolling:touch;
+}
+#appSheet.open .app-sheet-box{transform:none}
+@media(min-width:600px){
+  #appSheet{align-items:center;padding:20px}
+  .app-sheet-box{border-radius:24px;max-height:90dvh;max-width:680px;margin:0 auto}
+}
+/* pill */
+.sheet-pill{width:40px;height:4px;background:var(--border);border-radius:2px;margin:12px auto 0}
+/* hero */
+.sheet-hero{padding:20px 20px 16px;display:flex;gap:16px}
+.sheet-icon{width:88px;height:88px;border-radius:22px;object-fit:cover;flex-shrink:0;box-shadow:0 8px 24px rgba(0,0,0,.15)}
+.sheet-meta{flex:1;min-width:0}
+.sheet-name{font-size:20px;font-weight:800;margin-bottom:3px;line-height:1.2}
+.sheet-dev{font-size:13px;color:var(--ac);font-weight:600;margin-bottom:10px}
+.sheet-chips{display:flex;flex-wrap:wrap;gap:6px}
+.sheet-chip{font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;background:var(--card2);color:var(--t2);display:flex;align-items:center;gap:4px}
+.sheet-chip.green{background:var(--pl);color:var(--p)}
+/* stats row */
+.sheet-stats{display:flex;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:0 0 16px}
+.sheet-stat{flex:1;padding:12px 6px;text-align:center;border-right:1px solid var(--border)}
+.sheet-stat:last-child{border-right:none}
+.sheet-stat strong{display:block;font-size:16px;font-weight:800;color:var(--t1)}
+.sheet-stat span{font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.4px}
+/* action row */
+.sheet-actions{padding:0 16px 16px;display:flex;gap:10px}
+.btn-install{flex:1;padding:13px;background:linear-gradient(135deg,var(--p),var(--pd));color:#fff;border-radius:50px;font-size:15px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;transition:.25s var(--bounce);box-shadow:0 4px 18px rgba(0,200,83,.3)}
+.btn-install:hover{transform:scale(1.03);box-shadow:0 8px 28px rgba(0,200,83,.4)}
+.btn-wl{width:48px;height:48px;border-radius:50%;border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--t3);transition:.25s var(--bounce);flex-shrink:0}
+.btn-wl.act{border-color:var(--red);color:var(--red);background:rgba(244,67,54,.07)}
+.btn-share{width:48px;height:48px;border-radius:50%;border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:16px;color:var(--t2);transition:.2s;flex-shrink:0}
+.btn-share:hover{border-color:var(--ac);color:var(--ac)}
+/* section inside sheet */
+.s-sec{padding:0 16px 16px;border-top:1px solid var(--border)}
+.s-sec-title{font-size:14px;font-weight:700;padding:14px 0 10px;display:flex;align-items:center;gap:7px}
+.s-sec-title i{color:var(--p)}
+/* screenshots */
+.screenshots{display:flex;gap:10px;overflow-x:auto;padding:4px 0 6px;scrollbar-width:none}
+.screenshots::-webkit-scrollbar{display:none}
+.ss-frame{flex-shrink:0;width:110px;height:190px;border-radius:12px;background:linear-gradient(135deg,#e8f5e9,#e3f2fd);border:1px solid var(--border);overflow:hidden;display:flex;align-items:center;justify-content:center;color:var(--t3);font-size:11px;cursor:pointer;transition:.2s}
+.ss-frame:hover{transform:scale(1.04);box-shadow:0 6px 20px rgba(0,0,0,.15)}
+.ss-frame img{width:100%;height:100%;object-fit:cover}
+/* info grid */
+.info-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.info-tile{background:var(--card2);border-radius:var(--rs);padding:12px;text-align:center}
+.info-tile i{font-size:18px;color:var(--p);margin-bottom:6px;display:block}
+.info-tile .iv{font-size:13px;font-weight:700;margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.info-tile .il{font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.4px}
+/* tags */
+.tags-wrap{display:flex;flex-wrap:wrap;gap:6px}
+.tag-p{padding:5px 12px;background:var(--pl);color:var(--p);border-radius:50px;font-size:11px;font-weight:600}
+/* rating */
+.rating-area{display:flex;gap:16px;align-items:center;margin-bottom:14px}
+.big-r .bnum{font-size:48px;font-weight:800;line-height:1;color:var(--t1)}
+.big-r .bstars{color:var(--amber);font-size:14px;margin:4px 0}
+.big-r .bcount{font-size:10px;color:var(--t3)}
+.r-bars{flex:1;display:flex;flex-direction:column;gap:5px}
+.r-bar-row{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--t2)}
+.r-bar-row span{width:8px;flex-shrink:0}
+.r-track{flex:1;height:5px;background:var(--border);border-radius:3px;overflow:hidden}
+.r-fill{height:100%;background:linear-gradient(90deg,var(--amber),var(--p));border-radius:3px;transition:width 1s var(--ease)}
+/* reviews */
+.review-list{display:flex;flex-direction:column;gap:10px}
+.rv{background:var(--card2);border-radius:var(--rs);padding:12px}
+.rv-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.rv-user{display:flex;align-items:center;gap:8px}
+.rv-ava{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,var(--p),var(--ac));color:#fff;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.rv-name{font-size:12px;font-weight:700}
+.rv-date{font-size:10px;color:var(--t3)}
+.rv-stars{color:var(--amber);font-size:12px}
+.rv-text{font-size:12px;color:var(--t2);line-height:1.5}
+/* add review */
+.add-rv{background:var(--card2);border-radius:var(--rs);padding:14px;margin-top:10px}
+.add-rv-title{font-size:13px;font-weight:700;margin-bottom:10px}
+.star-row{display:flex;gap:8px;font-size:26px;margin-bottom:10px}
+.star-row i{cursor:pointer;color:var(--border);transition:.2s}
+.star-row i.lit{color:var(--amber)}
+.rv-ta{width:100%;padding:10px;border:2px solid var(--border);border-radius:10px;font-size:13px;resize:none;outline:none;font-family:inherit;transition:.2s;background:#fff}
+.rv-ta:focus{border-color:var(--p)}
+.rv-submit{margin-top:8px;padding:9px 20px;background:var(--p);color:#fff;border-radius:50px;font-size:13px;font-weight:700;display:flex;align-items:center;gap:6px;transition:.2s var(--bounce)}
+.rv-submit:hover{background:var(--pd);transform:scale(1.04)}
+/* sheet close */
+.sheet-close-btn{position:absolute;top:16px;right:16px;width:30px;height:30px;border-radius:50%;background:var(--card2);display:flex;align-items:center;justify-content:center;color:var(--t2);font-size:14px;transition:.2s;cursor:pointer;z-index:10}
+.sheet-close-btn:hover{background:rgba(244,67,54,.1);color:var(--red);transform:rotate(90deg)}
+/* relative pos for close */
+.sheet-top-wrap{position:relative}
 
-        .sub-text {
-            color: var(--text-muted);
-            font-size: 1rem;
-            line-height: 1.6;
-            margin-bottom: 40px;
-            padding: 0 10px;
-        }
+/* ============================================================
+   DRAWERS (Profile, Auth, Settings, Wishlist)
+============================================================ */
+.overlay{
+  position:fixed;inset:0;z-index:600;
+  display:flex;background:rgba(0,0,0,0);
+  pointer-events:none;transition:background .3s;
+}
+.overlay.open{background:rgba(0,0,0,.45);pointer-events:all}
+/* RIGHT drawer */
+.drawer-r{
+  width:min(300px,88vw);height:100%;background:var(--card);
+  margin-left:auto;
+  transform:translateX(100%);transition:transform .35s var(--ease);
+  overflow-y:auto;display:flex;flex-direction:column;
+}
+.overlay.open .drawer-r{transform:none}
+/* BOTTOM sheet */
+.bottom-sheet{
+  width:100%;margin-top:auto;
+  background:var(--card);border-radius:24px 24px 0 0;
+  transform:translateY(100%);transition:transform .35s var(--ease);
+  max-height:90dvh;overflow-y:auto;
+}
+.overlay.open .bottom-sheet{transform:none}
 
-        /* --- COUNTDOWN TIMER --- */
-        .countdown-grid {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 10px;
-            margin-bottom: 40px;
-        }
+/* profile drawer */
+.dr-header{background:linear-gradient(135deg,#111827,#1f2937);color:#fff;padding:28px 20px 20px;position:relative}
+.dr-close{position:absolute;top:14px;right:14px;width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;cursor:pointer;color:#fff;font-size:13px;transition:.2s}
+.dr-close:hover{background:rgba(244,67,54,.5)}
+.dr-ava{width:62px;height:62px;border-radius:50%;background:linear-gradient(135deg,var(--p),var(--ac));color:#fff;font-size:24px;font-weight:800;display:flex;align-items:center;justify-content:center;margin-bottom:12px}
+.dr-name{font-size:17px;font-weight:800;margin-bottom:2px}
+.dr-email{font-size:11px;opacity:.6}
+.dr-stats{display:flex;border-top:1px solid rgba(255,255,255,.1);margin-top:16px}
+.dr-stat{flex:1;text-align:center;padding:12px 0}
+.dr-stat+.dr-stat{border-left:1px solid rgba(255,255,255,.1)}
+.dr-stat strong{display:block;font-size:18px;font-weight:800;color:var(--p)}
+.dr-stat span{font-size:9px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.5px}
+.dr-body{flex:1;padding:12px 0}
+.dr-section-label{font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.7px;padding:10px 18px 4px}
+.dr-item{display:flex;align-items:center;gap:14px;padding:13px 18px;cursor:pointer;transition:.15s;font-size:14px;font-weight:500}
+.dr-item:hover{background:var(--card2)}
+.dr-item i{width:16px;color:var(--p);font-size:15px}
+.dr-item .arr{margin-left:auto;color:var(--t3);font-size:11px}
+.dr-sep{height:1px;background:var(--border);margin:6px 18px}
+.dr-signout{margin:14px 16px;padding:12px;background:linear-gradient(135deg,var(--red),#c62828);color:#fff;border-radius:50px;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;transition:.2s var(--bounce)}
+.dr-signout:hover{transform:scale(1.02);box-shadow:0 5px 18px rgba(244,67,54,.3)}
 
-        .time-box {
-            background: rgba(255,255,255,0.03);
-            border-radius: 16px;
-            padding: 15px 5px;
-            border: 1px solid rgba(255,255,255,0.05);
-            transition: transform 0.2s var(--ease-elastic);
-        }
+/* auth bottom sheet */
+.bs-pill{width:40px;height:4px;background:var(--border);border-radius:2px;margin:12px auto 20px}
+.bs-header{text-align:center;padding:0 20px 20px}
+.bs-icon{font-size:40px;color:var(--p);margin-bottom:12px}
+.bs-title{font-size:20px;font-weight:800;margin-bottom:4px}
+.bs-sub{font-size:13px;color:var(--t2)}
+.auth-tabs{display:flex;border-bottom:2px solid var(--border);margin:0 20px 20px}
+.auth-tab{flex:1;padding:12px;text-align:center;font-size:14px;font-weight:700;color:var(--t3);cursor:pointer;border-bottom:2.5px solid transparent;margin-bottom:-2px;transition:.2s}
+.auth-tab.act{color:var(--p);border-bottom-color:var(--p)}
+.auth-form{padding:0 20px 24px;display:flex;flex-direction:column;gap:12px}
+.auth-err{background:#fce8e6;color:var(--red);padding:10px 14px;border-radius:10px;font-size:13px;border-left:3px solid var(--red);display:none}
+.auth-err.on{display:block}
+.af-label{font-size:11px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;display:block}
+.af-input{width:100%;padding:11px 14px;border:2px solid var(--border);border-radius:10px;font-size:14px;outline:none;transition:.2s;background:var(--card2);font-family:inherit}
+.af-input:focus{border-color:var(--p);background:#fff}
+.auth-submit{padding:13px;background:linear-gradient(135deg,var(--p),var(--ac));color:#fff;border-radius:50px;font-size:15px;font-weight:700;transition:.2s var(--bounce)}
+.auth-submit:hover{transform:scale(1.03);box-shadow:0 5px 18px rgba(0,200,83,.3)}
+.auth-guest{text-align:center;font-size:13px;color:var(--p);font-weight:600;cursor:pointer;padding-top:4px}
 
-        .time-box:active { transform: scale(0.95); }
+/* wishlist sheet */
+.wl-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:4px 0}
+.wl-card{background:var(--card2);border-radius:var(--rs);padding:12px;display:flex;gap:10px;align-items:center;cursor:pointer;transition:.2s;position:relative;overflow:hidden}
+.wl-card:hover{background:var(--pl)}
+.wl-icon{width:44px;height:44px;border-radius:12px;object-fit:cover;flex-shrink:0}
+.wl-info .wln{font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wl-info .wlc{font-size:10px;color:var(--t3)}
+.wl-rm{position:absolute;top:6px;right:6px;color:var(--red);font-size:12px;opacity:0;transition:.2s;background:none;border:none;cursor:pointer}
+.wl-card:hover .wl-rm{opacity:1}
 
-        .time-val {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 1.8rem;
-            font-weight: 700;
-            color: var(--neon-green);
-            display: block;
-            line-height: 1;
-            margin-bottom: 5px;
-            text-shadow: 0 0 10px var(--neon-green-dim);
-        }
+/* settings */
+.set-row{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border)}
+.set-info strong{display:block;font-size:14px;font-weight:600}
+.set-info small{color:var(--t3);font-size:12px}
+.tgl{position:relative;width:42px;height:24px;flex-shrink:0}
+.tgl input{opacity:0;width:0;height:0;position:absolute}
+.tgl-sl{position:absolute;inset:0;background:#ddd;border-radius:24px;cursor:pointer;transition:.35s}
+.tgl-sl::before{content:'';position:absolute;width:18px;height:18px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.35s cubic-bezier(.68,-0.55,.27,1.55);box-shadow:0 1px 4px rgba(0,0,0,.2)}
+.tgl input:checked+.tgl-sl{background:var(--p)}
+.tgl input:checked+.tgl-sl::before{transform:translateX(18px)}
 
-        .time-label {
-            font-size: 0.6rem;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            color: #556677;
-        }
+/* empty state */
+.empty{text-align:center;padding:48px 20px;color:var(--t3)}
+.empty i{font-size:44px;display:block;margin-bottom:14px;opacity:.4}
+.empty h3{font-size:17px;font-weight:700;color:var(--t2);margin-bottom:6px}
+.empty p{font-size:13px}
 
-        /* --- STATUS BADGES --- */
-        .status-container {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
+/* ===== SCREENSHOT LIGHTBOX ===== */
+#ssLightbox{
+  position:fixed;inset:0;z-index:900;background:rgba(0,0,0,.92);
+  display:none;align-items:center;justify-content:center;
+  flex-direction:column;gap:12px;
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+}
+#ssLightbox.on{display:flex}
+#ssLightbox img{max-width:90vw;max-height:80dvh;border-radius:12px;object-fit:contain;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.lb-close{position:absolute;top:16px;right:16px;width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.15);color:#fff;font-size:18px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:.2s}
+.lb-close:hover{background:rgba(229,57,53,.7)}
+.lb-nav{position:absolute;top:50%;transform:translateY(-50%);width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.12);color:#fff;font-size:20px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:.2s}
+.lb-nav:hover{background:rgba(255,255,255,.25)}
+.lb-prev{left:12px}
+.lb-next{right:12px}
+.lb-counter{color:rgba(255,255,255,.6);font-size:12px;font-weight:600;margin-top:4px}
+.lb-dots{display:flex;gap:6px;margin-top:6px}
+.lb-dot{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.3);cursor:pointer;transition:.2s}
+.lb-dot.act{background:#fff;width:18px;border-radius:3px}
 
-        .status-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background: rgba(255,255,255,0.02);
-            padding: 12px 16px;
-            border-radius: 12px;
-            font-size: 0.85rem;
-        }
 
-        .status-label {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            color: var(--text-muted);
-        }
+@media(min-width:768px){#searchState{max-width:1280px;padding:24px 20px}}
 
-        .dot {
-            width: 6px;
-            height: 6px;
-            border-radius: 50%;
-        }
-        .dot.red { background: var(--neon-red); box-shadow: 0 0 8px var(--neon-red); animation: blink 1s infinite; }
-        .dot.green { background: var(--neon-green); box-shadow: 0 0 8px var(--neon-green); }
-
-        .status-val {
-            font-weight: 600;
-            font-family: 'JetBrains Mono', monospace;
-        }
-        .status-val.locked { color: var(--neon-red); }
-        .status-val.active { color: var(--neon-green); }
-
-        /* --- ANIMATIONS --- */
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
-
-        /* --- FOOTER --- */
-        .footer {
-            margin-top: 30px;
-            font-size: 0.75rem;
-            color: #445566;
-            letter-spacing: 1px;
-        }
-        
-        .progress-bar {
-            width: 100%;
-            height: 4px;
-            background: #111;
-            border-radius: 4px;
-            margin-top: 20px;
-            overflow: hidden;
-            position: relative;
-        }
-        
-        .progress-fill {
-            height: 100%;
-            background: var(--neon-green);
-            width: 85%;
-            box-shadow: 0 0 10px var(--neon-green);
-            position: relative;
-        }
-        
-        .progress-fill::after {
-            content: '';
-            position: absolute;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.8), transparent);
-            transform: translateX(-100%);
-            animation: shimmer 2s infinite;
-        }
-
-        @keyframes shimmer {
-            100% { transform: translateX(100%); }
-        }
-
-    </style>
+</style>
 </head>
 <body>
 
-    <div class="container">
-        <div class="glass-panel">
-            <!-- Brand -->
-            <div class="brand-pill">
-                <span class="brand-icon">◆</span>
-                <span class="brand-text">DARKSTORE SYS</span>
-            </div>
+<!-- ===== LOADER ===== -->
+<div id="loader">
+  <div class="ld-icon"><i class="fab fa-google-play"></i></div>
+  <div class="ld-ring"></div>
+  <div class="ld-text">Loading APK Store…</div>
+</div>
 
-            <!-- Title -->
-            <div class="glitch-wrapper">
-                <h1 class="main-title">SYSTEM<br><span style="color:var(--neon-green);">UPDATE</span></h1>
-            </div>
+<!-- ===== TOAST ===== -->
+<div id="toast"><i id="t-ic" class="fas fa-check-circle"></i><span id="t-msg"></span></div>
 
-            <p class="sub-text">
-                Core infrastructure is rebuilding. Access is temporarily restricted to whitelisted IPs.
-            </p>
+<!-- ===== TOP NAV ===== -->
+<nav id="topNav">
+  <div class="nav-logo" onclick="S.filterCat('All')">
+    <div class="nav-logo-icon"><i class="fab fa-google-play"></i></div>
+    <div class="nav-logo-name">APK Store</div>
+  </div>
+  <div class="nav-search">
+    <i class="fas fa-search ns-ic"></i>
+    <input type="text" id="searchInput" placeholder="Search apps, games…" autocomplete="off"/>
+  </div>
+  <div class="nav-right">
+    <button class="nav-icon-btn" id="notifBtn" title="Notifications">
+      <i class="fas fa-bell"></i>
+      <div class="dot" id="notifDot" style="display:none"></div>
+    </button>
+    <button class="nav-icon-btn" id="wlHeaderBtn" title="Wishlist" style="display:none" onclick="S.openWishlist()">
+      <i class="fas fa-heart"></i>
+    </button>
+    <div class="nav-avatar" id="navAvatar" style="display:none" onclick="S.openProfile()"></div>
+    <button class="btn-signin" id="signinBtn" onclick="S.openAuth('login')">Sign In</button>
+  </div>
+</nav>
 
-            <!-- Countdown -->
-            <div class="countdown-grid" id="timer">
-                <div class="time-box">
-                    <span class="time-val" id="d">02</span>
-                    <span class="time-label">Days</span>
-                </div>
-                <div class="time-box">
-                    <span class="time-val" id="h">14</span>
-                    <span class="time-label">Hrs</span>
-                </div>
-                <div class="time-box">
-                    <span class="time-val" id="m">30</span>
-                    <span class="time-label">Min</span>
-                </div>
-                <div class="time-box">
-                    <span class="time-val" id="s">05</span>
-                    <span class="time-label">Sec</span>
-                </div>
-            </div>
+<!-- ===== CATEGORY BAR ===== -->
+<div id="catBar">
+  <button class="cat-btn act" data-cat="All" onclick="S.filterCat('All')"><i class="fas fa-th-large"></i>For You</button>
+  <button class="cat-btn" data-cat="Games" onclick="S.filterCat('Games')"><i class="fas fa-gamepad"></i>Games</button>
+  <button class="cat-btn" data-cat="Tools" onclick="S.filterCat('Tools')"><i class="fas fa-tools"></i>Tools</button>
+  <button class="cat-btn" data-cat="Productivity" onclick="S.filterCat('Productivity')"><i class="fas fa-briefcase"></i>Productivity</button>
+  <button class="cat-btn" data-cat="Social" onclick="S.filterCat('Social')"><i class="fas fa-users"></i>Social</button>
+  <button class="cat-btn" data-cat="Entertainment" onclick="S.filterCat('Entertainment')"><i class="fas fa-film"></i>Entertainment</button>
+  <button class="cat-btn" data-cat="Education" onclick="S.filterCat('Education')"><i class="fas fa-graduation-cap"></i>Education</button>
+  <button class="cat-btn" data-cat="Finance" onclick="S.filterCat('Finance')"><i class="fas fa-wallet"></i>Finance</button>
+  <button class="cat-btn" data-cat="Business" onclick="S.filterCat('Business')"><i class="fas fa-building"></i>Business</button>
+  <button class="cat-btn" data-cat="Utility" onclick="S.filterCat('Utility')"><i class="fas fa-cog"></i>Utility</button>
+</div>
 
-            <!-- Status Rows -->
-            <div class="status-container">
-                <div class="status-row">
-                    <span class="status-label"><div class="dot red"></div> Public Access</span>
-                    <span class="status-val locked">LOCKED</span>
-                </div>
-                <div class="status-row">
-                    <span class="status-label"><div class="dot green"></div> Dev Server</span>
-                    <span class="status-val active">ONLINE</span>
-                </div>
-            </div>
-            
-            <!-- Fake Progress -->
-            <div class="progress-bar">
-                <div class="progress-fill"></div>
-            </div>
+<!-- ===== MAIN PAGE ===== -->
+<div id="page"></div>
 
-            <div class="footer">
-                ID: 885-ACCESS-DENIED • V2.0.4
-            </div>
-        </div>
+<!-- ===== SEARCH STATE ===== -->
+<div id="searchState"></div>
+
+<!-- ===== BOTTOM NAV ===== -->
+<div id="bNav">
+  <div class="bn-item act" id="bn-home" onclick="S.bnav('home',this)"><i class="fas fa-home"></i><span>Home</span></div>
+  <div class="bn-item" id="bn-games" onclick="S.bnav('games',this)"><i class="fas fa-gamepad"></i><span>Games</span></div>
+  <div class="bn-item" id="bn-search" onclick="S.bnav('search',this)"><i class="fas fa-search"></i><span>Search</span></div>
+  <div class="bn-item" id="bn-wishlist" onclick="S.bnav('wishlist',this)"><i class="fas fa-heart"></i><span>Wishlist</span><div class="bn-pip" id="wl-pip"></div></div>
+  <div class="bn-item" id="bn-profile" onclick="S.bnav('profile',this)"><i class="fas fa-user"></i><span>Profile</span></div>
+</div>
+
+<!-- ===== APP DETAIL SHEET ===== -->
+<div id="appSheet" onclick="S.closeSheet(event)">
+  <div class="app-sheet-box" id="appSheetBox"></div>
+</div>
+
+<!-- ===== PROFILE DRAWER ===== -->
+<div class="overlay" id="profileOverlay" onclick="S.closeOverlay('profileOverlay',event)">
+  <div class="drawer-r" id="profileDrawer">
+    <div class="dr-header">
+      <div class="dr-close" onclick="S.closeOverlay('profileOverlay')"><i class="fas fa-times"></i></div>
+      <div class="dr-ava" id="dr-ava"></div>
+      <div class="dr-name" id="dr-name">Guest</div>
+      <div class="dr-email" id="dr-email">Not signed in</div>
+      <div class="dr-stats">
+        <div class="dr-stat"><strong id="dr-dls">0</strong><span>Downloads</span></div>
+        <div class="dr-stat"><strong id="dr-wls">0</strong><span>Wishlist</span></div>
+        <div class="dr-stat"><strong id="dr-rvs">0</strong><span>Reviews</span></div>
+      </div>
     </div>
+    <div class="dr-body">
+      <div class="dr-section-label">My Library</div>
+      <div class="dr-item" onclick="S.openWishlist()"><i class="fas fa-heart"></i>My Wishlist<i class="fas fa-chevron-right arr"></i></div>
+      <div class="dr-item" onclick="S.showDownloads()"><i class="fas fa-download"></i>Downloads<i class="fas fa-chevron-right arr"></i></div>
+      <div class="dr-section-label">Preferences</div>
+      <div class="dr-item" onclick="S.openSettings()"><i class="fas fa-cog"></i>Settings<i class="fas fa-chevron-right arr"></i></div>
+      <div class="dr-sep"></div>
+      <div class="dr-item" onclick="S.toast('Help coming soon','info')"><i class="fas fa-headset"></i>Help & Support<i class="fas fa-chevron-right arr"></i></div>
+    </div>
+    <div id="dr-footer"></div>
+  </div>
+</div>
 
-    <script>
-        // --- PERSISTENT COUNTDOWN LOGIC ---
-        (function() {
-            const STORAGE_KEY = 'darkstore_update_date';
-            const DURATION_DAYS = 25;
-            
-            function getTargetDate() {
-                let stored = localStorage.getItem(STORAGE_KEY);
-                let target;
+<!-- ===== AUTH SHEET ===== -->
+<div class="overlay" id="authOverlay" onclick="S.closeOverlay('authOverlay',event)">
+  <div class="bottom-sheet" id="authSheet">
+    <div class="bs-pill"></div>
+    <div class="bs-header">
+      <div class="bs-icon"><i class="fab fa-google-play"></i></div>
+      <div class="bs-title">Welcome to APK Store</div>
+      <div class="bs-sub">Sign in for personalized experience</div>
+    </div>
+    <div class="auth-tabs">
+      <div class="auth-tab act" id="atab-login" onclick="S.switchAuth('login')">Sign In</div>
+      <div class="auth-tab" id="atab-reg" onclick="S.switchAuth('reg')">Register</div>
+    </div>
+    <div id="authFormWrap"></div>
+  </div>
+</div>
 
-                if (stored && new Date(stored) > new Date()) {
-                    target = new Date(stored);
-                } else {
-                    // Set new target: Now + 3 Days + Random hours
-                    target = new Date();
-                    target.setDate(target.getDate() + DURATION_DAYS);
-                    target.setHours(target.getHours() + Math.floor(Math.random() * 12));
-                    localStorage.setItem(STORAGE_KEY, target.toISOString());
-                }
-                return target;
-            }
+<!-- ===== WISHLIST SHEET ===== -->
+<div class="overlay" id="wishlistOverlay" onclick="S.closeOverlay('wishlistOverlay',event)">
+  <div class="bottom-sheet">
+    <div class="bs-pill"></div>
+    <div style="padding:0 20px 16px;display:flex;align-items:center;justify-content:space-between">
+      <h2 style="font-size:18px;font-weight:800;display:flex;align-items:center;gap:8px"><i class="fas fa-heart" style="color:var(--red)"></i>My Wishlist</h2>
+      <button onclick="S.closeOverlay('wishlistOverlay')" style="font-size:18px;color:var(--t2)"><i class="fas fa-times"></i></button>
+    </div>
+    <div id="wlContent" style="padding:0 20px 28px"></div>
+  </div>
+</div>
 
-            const targetDate = getTargetDate();
-            
-            function updateTimer() {
-                const now = new Date();
-                const diff = targetDate - now;
+<!-- ===== SETTINGS SHEET ===== -->
+<div class="overlay" id="settingsOverlay" onclick="S.closeOverlay('settingsOverlay',event)">
+  <div class="bottom-sheet">
+    <div class="bs-pill"></div>
+    <div style="padding:0 20px 12px;display:flex;align-items:center;justify-content:space-between">
+      <h2 style="font-size:18px;font-weight:800"><i class="fas fa-cog" style="color:var(--p);margin-right:8px"></i>Settings</h2>
+      <button onclick="S.closeOverlay('settingsOverlay')" style="font-size:18px;color:var(--t2)"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="set-row"><div class="set-info"><strong>Auto-update apps</strong><small>Wi-Fi only</small></div><label class="tgl"><input type="checkbox" checked/><span class="tgl-sl"></span></label></div>
+    <div class="set-row"><div class="set-info"><strong>Notifications</strong><small>App updates and offers</small></div><label class="tgl"><input type="checkbox" checked/><span class="tgl-sl"></span></label></div>
+    <div class="set-row"><div class="set-info"><strong>Download on Wi-Fi only</strong><small>Save mobile data</small></div><label class="tgl"><input type="checkbox" checked/><span class="tgl-sl"></span></label></div>
+    <div class="set-row"><div class="set-info"><strong>Parental Controls</strong><small>Restrict content by age</small></div><label class="tgl"><input type="checkbox"/><span class="tgl-sl"></span></label></div>
+    <div class="set-row"><div class="set-info"><strong>Dark Mode</strong><small>Coming soon</small></div><label class="tgl"><input type="checkbox" disabled/><span class="tgl-sl"></span></label></div>
+    <div style="height:env(safe-area-inset-bottom)"></div>
+  </div>
+</div>
 
-                if (diff <= 0) {
-                    // Reset if expired
-                    localStorage.removeItem(STORAGE_KEY);
-                    location.reload(); 
-                    return;
-                }
+<!-- ===== SCREENSHOT LIGHTBOX ===== -->
+<div id="ssLightbox" onclick="S.lbClose(event)">
+  <div class="lb-close" onclick="S.lbClose()"><i class="fas fa-times"></i></div>
+  <div class="lb-nav lb-prev" onclick="event.stopPropagation();S.lbNav(-1)"><i class="fas fa-chevron-left"></i></div>
+  <img id="lbImg" src="" alt="screenshot"/>
+  <div class="lb-nav lb-next" onclick="event.stopPropagation();S.lbNav(1)"><i class="fas fa-chevron-right"></i></div>
+  <div class="lb-counter" id="lbCounter"></div>
+  <div class="lb-dots" id="lbDots"></div>
+</div>
 
-                const d = Math.floor(diff / (1000 * 60 * 60 * 24));
-                const h = Math.floor((diff / (1000 * 60 * 60)) % 24);
-                const m = Math.floor((diff / 1000 / 60) % 60);
-                const s = Math.floor((diff / 1000) % 60);
+<!-- ===== FIREBASE + MAIN LOGIC (regular script, NOT module) ===== -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script>
+// ═══════════════════════════════════════════════
+// FIREBASE INIT
+// ═══════════════════════════════════════════════
+firebase.initializeApp({
+  apiKey:"AIzaSyDEOY44CcIrvvqZnCwrSe9GHiwPCigIpzc",
+  authDomain:"play-store-e84dc.firebaseapp.com",
+  databaseURL:"https://play-store-e84dc-default-rtdb.firebaseio.com",
+  projectId:"play-store-e84dc",
+  storageBucket:"play-store-e84dc.firebasestorage.app",
+  messagingSenderId:"674515432381",
+  appId:"1:674515432381:web:42ec7a05351d6e28a298d4"
+});
+const db   = firebase.database();
+const auth = firebase.auth();
 
-                document.getElementById('d').innerText = d.toString().padStart(2, '0');
-                document.getElementById('h').innerText = h.toString().padStart(2, '0');
-                document.getElementById('m').innerText = m.toString().padStart(2, '0');
-                document.getElementById('s').innerText = s.toString().padStart(2, '0');
-            }
+// ═══════════════════════════════════════════════
+// GLOBAL STATE  ← everything is on window.S
+// ═══════════════════════════════════════════════
+window.S = {
+  apps: [],          // master list
+  user: null,
+  currentCat: 'All',
+  wishlist: JSON.parse(localStorage.getItem('apk_wl')||'[]'),
+  reviews:  JSON.parse(localStorage.getItem('apk_rv')||'{}'),
+  downloads: JSON.parse(localStorage.getItem('apk_dl')||'[]'),
+  pickedStars: 0,
+  bannerIdx: 0,
+  bannerTimer: null,
 
-            setInterval(updateTimer, 1000);
-            updateTimer(); // Init immediately
-        })();
+  // ─── HELPERS ────────────────────────────────
+  toast(msg, type='ok'){
+    const t=document.getElementById('toast');
+    const ic=document.getElementById('t-ic');
+    const colors={ok:'#14532d',err:'#7f1d1d',info:'#1e3a5f',warn:'#78350f'};
+    const icons={ok:'fas fa-check-circle',err:'fas fa-times-circle',info:'fas fa-info-circle',warn:'fas fa-exclamation-triangle'};
+    t.style.background=colors[type]||colors.ok;
+    ic.className=icons[type]||icons.ok;
+    document.getElementById('t-msg').textContent=msg;
+    t.classList.add('on');
+    clearTimeout(this._toastTimer);
+    this._toastTimer=setTimeout(()=>t.classList.remove('on'),2800);
+  },
 
-        // --- HAPTIC FEEDBACK SIMULATION (Mobile) ---
-        // Adds subtle vibration when touching timer elements (Android only)
-        document.querySelectorAll('.time-box').forEach(box => {
-            box.addEventListener('click', () => {
-                if (navigator.vibrate) navigator.vibrate(10);
-            });
-        });
-    </script>
+  fmtNum(n){
+    if(!n||isNaN(n))return'0';
+    n=parseInt(n);
+    if(n>=1e6)return(n/1e6).toFixed(1)+'M';
+    if(n>=1e3)return(n/1e3).toFixed(0)+'K';
+    return n+'';
+  },
+
+  starsHTML(r,sz=12){
+    r=parseFloat(r)||0;
+    let s='';
+    for(let i=0;i<5;i++){
+      if(i<Math.floor(r)) s+=`<i class="fas fa-star" style="font-size:${sz}px;color:var(--amber)"></i>`;
+      else if(i===Math.floor(r)&&r%1>=.5) s+=`<i class="fas fa-star-half-alt" style="font-size:${sz}px;color:var(--amber)"></i>`;
+      else s+=`<i class="far fa-star" style="font-size:${sz}px;color:#ddd"></i>`;
+    }
+    return s;
+  },
+
+  imgFallback(img){
+    img.onerror=null;
+    img.src=`data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="%23e8f5e9"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-size="28" fill="%2300C853" font-family="sans-serif">?</text></svg>`;
+  },
+
+  colorFor(name){
+    const colors=['#0d47a1','#1b5e20','#b71c1c','#4a148c','#e65100','#006064','#37474f','#880e4f','#1a237e','#33691e'];
+    let h=0; for(const c of (name||'A')) h=(h<<5)-h+c.charCodeAt(0);
+    return colors[Math.abs(h)%colors.length];
+  },
+
+  // ─── WISHLIST ────────────────────────────────
+  saveWL(){
+    localStorage.setItem('apk_wl',JSON.stringify(this.wishlist));
+    const pip=document.getElementById('wl-pip');
+    if(pip){pip.classList.toggle('on',this.wishlist.length>0);}
+  },
+
+  isWL(id){ return this.wishlist.includes(id); },
+
+  toggleWL(id, e){
+    if(e)e.stopPropagation();
+    if(!this.user){ this.openAuth('login'); return; }
+    if(this.wishlist.includes(id)){
+      this.wishlist=this.wishlist.filter(x=>x!==id);
+      this.toast('Removed from wishlist','info');
+    } else {
+      this.wishlist.push(id);
+      this.toast('Added to wishlist');
+    }
+    this.saveWL();
+    // update wl button if sheet is open
+    const btn=document.getElementById('wl-btn');
+    if(btn){
+      btn.classList.toggle('act',this.wishlist.includes(id));
+      btn.innerHTML=`<i class="fa${this.wishlist.includes(id)?'s':'r'} fa-heart"></i>`;
+    }
+  },
+
+  openWishlist(){
+    if(!this.user){ this.openAuth('login'); return; }
+    const apps=this.apps.filter(a=>this.wishlist.includes(a.id));
+    const c=document.getElementById('wlContent');
+    if(!apps.length){
+      c.innerHTML=`<div class="empty"><i class="far fa-heart"></i><h3>No saved apps</h3><p>Tap the heart icon on any app to save it here.</p></div>`;
+    } else {
+      c.innerHTML=`<div class="wl-grid">${apps.map(a=>`
+        <div class="wl-card" onclick="S.openApp('${a.id}');S.closeOverlay('wishlistOverlay')">
+          <img class="wl-icon" src="${a.imageSrc||''}" onerror="S.imgFallback(this)"/>
+          <div class="wl-info" style="min-width:0">
+            <div class="wln">${a.name}</div>
+            <div class="wlc">${a.category||''}</div>
+          </div>
+          <button class="wl-rm" onclick="event.stopPropagation();S.toggleWL('${a.id}');S.openWishlist()"><i class="fas fa-times"></i></button>
+        </div>`).join('')}
+      </div>`;
+    }
+    this.openOverlay('wishlistOverlay');
+  },
+
+  // ─── DOWNLOADS ──────────────────────────────
+  trackDL(app){
+    if(!this.downloads.find(d=>d.id===app.id)){
+      this.downloads.unshift({id:app.id,name:app.name,date:new Date().toISOString()});
+      this.downloads=this.downloads.slice(0,100);
+      localStorage.setItem('apk_dl',JSON.stringify(this.downloads));
+    }
+  },
+
+  showDownloads(){
+    const n=this.downloads.length;
+    this.toast(n?`${n} downloaded app${n>1?'s':''}. Opening…`:'No downloads yet.','info');
+  },
+
+  // ─── OVERLAY HELPERS ────────────────────────
+  openOverlay(id){ document.getElementById(id).classList.add('open'); document.body.style.overflow='hidden'; },
+  closeOverlay(id,e){
+    const el=document.getElementById(id);
+    if(!e||e.target===el){ el.classList.remove('open'); document.body.style.overflow=''; }
+  },
+
+  // ─── AUTH ────────────────────────────────────
+  openAuth(tab='login'){
+    this.switchAuth(tab);
+    this.openOverlay('authOverlay');
+  },
+
+  switchAuth(tab){
+    document.getElementById('atab-login').classList.toggle('act',tab==='login');
+    document.getElementById('atab-reg').classList.toggle('act',tab==='reg');
+    const w=document.getElementById('authFormWrap');
+    const err='<div class="auth-err" id="authErr"></div>';
+    if(tab==='login'){
+      w.innerHTML=`<div class="auth-form">${err}
+        <div><label class="af-label">Email</label><input class="af-input" type="email" id="af-em" placeholder="you@example.com"/></div>
+        <div><label class="af-label">Password</label><input class="af-input" type="password" id="af-pw" placeholder="••••••••"/></div>
+        <button class="auth-submit" onclick="S.doLogin()"><i class="fas fa-sign-in-alt"></i> Sign In</button>
+        <div class="auth-guest" onclick="S.closeOverlay('authOverlay')">Continue as Guest →</div>
+      </div>`;
+    } else {
+      w.innerHTML=`<div class="auth-form">${err}
+        <div><label class="af-label">Display Name</label><input class="af-input" type="text" id="af-nm" placeholder="Your name"/></div>
+        <div><label class="af-label">Email</label><input class="af-input" type="email" id="af-em" placeholder="you@example.com"/></div>
+        <div><label class="af-label">Password</label><input class="af-input" type="password" id="af-pw" placeholder="At least 6 characters"/></div>
+        <button class="auth-submit" onclick="S.doRegister()"><i class="fas fa-user-plus"></i> Create Account</button>
+      </div>`;
+    }
+  },
+
+  showAuthErr(msg){
+    const el=document.getElementById('authErr');
+    if(el){el.textContent=msg;el.classList.add('on');}
+  },
+
+  async doLogin(){
+    const em=document.getElementById('af-em').value.trim();
+    const pw=document.getElementById('af-pw').value;
+    try{
+      await auth.signInWithEmailAndPassword(em,pw);
+      this.closeOverlay('authOverlay');
+      this.toast('Welcome back!');
+    }catch(e){ this.showAuthErr(e.message.replace('Firebase: ','').replace(/\(.*\)/,'')); }
+  },
+
+  async doRegister(){
+    const nm=document.getElementById('af-nm').value.trim();
+    const em=document.getElementById('af-em').value.trim();
+    const pw=document.getElementById('af-pw').value;
+    if(!nm){this.showAuthErr('Display name is required.');return;}
+    try{
+      const cred=await auth.createUserWithEmailAndPassword(em,pw);
+      await cred.user.updateProfile({displayName:nm});
+      this.closeOverlay('authOverlay');
+      this.toast('Account created!');
+    }catch(e){ this.showAuthErr(e.message.replace('Firebase: ','').replace(/\(.*\)/,'')); }
+  },
+
+  async doSignOut(){
+    await auth.signOut();
+    this.closeOverlay('profileOverlay');
+    this.toast('Signed out','info');
+  },
+
+  // ─── PROFILE DRAWER ─────────────────────────
+  openProfile(){
+    const u=this.user;
+    document.getElementById('dr-ava').textContent=u?(u.displayName||u.email||'U')[0].toUpperCase():'G';
+    document.getElementById('dr-name').textContent=u?u.displayName||'User':'Guest';
+    document.getElementById('dr-email').textContent=u?u.email:'Not signed in';
+    document.getElementById('dr-dls').textContent=this.downloads.length;
+    document.getElementById('dr-wls').textContent=this.wishlist.length;
+    const myRvs=Object.values(this.reviews).flat().filter(r=>u&&r.user===u.email).length;
+    document.getElementById('dr-rvs').textContent=myRvs;
+    const footer=document.getElementById('dr-footer');
+    if(u){
+      footer.innerHTML=`<button class="dr-signout" onclick="S.doSignOut()"><i class="fas fa-sign-out-alt"></i>Sign Out</button>`;
+    } else {
+      footer.innerHTML=`<button class="dr-signout" onclick="S.openAuth('login');S.closeOverlay('profileOverlay')" style="background:linear-gradient(135deg,var(--p),var(--ac))"><i class="fas fa-sign-in-alt"></i>Sign In</button>`;
+    }
+    this.openOverlay('profileOverlay');
+  },
+
+  openSettings(){
+    this.closeOverlay('profileOverlay');
+    this.openOverlay('settingsOverlay');
+  },
+
+  // ─── BOTTOM NAV ──────────────────────────────
+  bnav(action, el){
+    document.querySelectorAll('.bn-item').forEach(b=>b.classList.remove('act'));
+    el.classList.add('act');
+    if(action==='home'){ this.filterCat('All'); }
+    else if(action==='games'){ this.filterCat('Games'); }
+    else if(action==='search'){ document.getElementById('searchInput').focus(); window.scrollTo({top:0,behavior:'smooth'}); }
+    else if(action==='wishlist'){ this.openWishlist(); }
+    else if(action==='profile'){ this.openProfile(); }
+  },
+
+  // ─── CATEGORY FILTER ────────────────────────
+  filterCat(cat){
+    this.currentCat=cat;
+    document.getElementById('searchInput').value='';
+    document.getElementById('searchState').style.display='none';
+    document.getElementById('page').style.display='';
+    document.querySelectorAll('.cat-btn').forEach(b=>b.classList.toggle('act',b.dataset.cat===cat));
+    if(cat==='All') this.renderHome();
+    else this.renderCategoryPage(cat);
+    window.scrollTo({top:0,behavior:'smooth'});
+    // sync bottom nav
+    const navMap={All:'bn-home',Games:'bn-games'};
+    document.querySelectorAll('.bn-item').forEach(b=>b.classList.remove('act'));
+    const nb=document.getElementById(navMap[cat]||'bn-home');
+    if(nb)nb.classList.add('act');
+  },
+
+  // ─── SEARCH ─────────────────────────────────
+  handleSearch(q){
+    q=q.trim().toLowerCase();
+    if(!q){
+      document.getElementById('searchState').style.display='none';
+      document.getElementById('page').style.display='';
+      this.renderHome();
+      return;
+    }
+    const res=this.apps.filter(a=>{
+      const t=(a.name||'').toLowerCase();
+      const d=(a.developer||'').toLowerCase();
+      const c=(a.category||'').toLowerCase();
+      const tags=(a.tags||[]).join(' ').toLowerCase();
+      const desc=(a.description||'').toLowerCase();
+      return t.includes(q)||d.includes(q)||c.includes(q)||tags.includes(q)||desc.includes(q);
+    });
+    document.getElementById('page').style.display='none';
+    const ss=document.getElementById('searchState');
+    ss.style.display='block';
+    ss.innerHTML=res.length
+      ? `<div class="sec"><div class="sec-head"><div class="sec-title">Results for "${q}"</div></div><div class="app-grid">${res.map((a,i)=>this.appCardHTML(a,i)).join('')}</div></div>`
+      : `<div class="empty"><i class="fas fa-search"></i><h3>No results for "${q}"</h3><p>Try different keywords.</p></div>`;
+  },
+
+  // ─── INSTALL ────────────────────────────────
+  install(id, e){
+    if(e)e.stopPropagation();
+    const app=this.apps.find(a=>a.id===id);
+    if(!app)return;
+    if(!this.user){ this.openAuth('login'); return; }
+    if(app.downloadLink) window.open(app.downloadLink,'_blank');
+    this.trackDL(app);
+    this.toast(`Installing ${app.name}…`);
+  },
+
+  share(id){
+    const app=this.apps.find(a=>a.id===id);
+    if(!app)return;
+    if(navigator.share){
+      navigator.share({title:app.name,text:`Check out ${app.name} by ${app.developer||'Unknown'}`,url:window.location.href});
+    } else {
+      navigator.clipboard.writeText(window.location.href).then(()=>this.toast('Link copied!','info'));
+    }
+  },
+
+  // ─── RENDER HOME ────────────────────────────
+  renderHome(){
+    const pg=document.getElementById('page');
+    if(!this.apps.length){ pg.innerHTML=`<div class="empty"><i class="fas fa-box-open"></i><h3>No apps yet</h3><p>Check back soon!</p></div>`; return; }
+    const featured=this.apps.filter(a=>a.featured);
+    const top=[...this.apps].sort((a,b)=>(parseInt(b.downloads)||0)-(parseInt(a.downloads)||0));
+    const topRated=[...this.apps].sort((a,b)=>(parseFloat(b.rating)||0)-(parseFloat(a.rating)||0));
+    const newest=[...this.apps].slice(0,12);
+    pg.innerHTML=
+      this.bannerHTML(featured.length?featured:top.slice(0,4)) +
+      this.hRowSection('<i class="fas fa-crown" style="color:var(--amber)"></i> Editor\'s Choice', featured.length?featured:top.slice(0,8)) +
+      this.topChartSection('<i class="fas fa-chart-line" style="color:var(--red)"></i> Top Charts', top.slice(0,6)) +
+      this.hRowSection('<i class="fas fa-bolt" style="color:var(--ac)"></i> New Arrivals', newest) +
+      this.hRowSection('<i class="fas fa-medal" style="color:var(--amber)"></i> Top Rated', topRated.slice(0,8)) +
+      this.gridSection('<i class="fas fa-gamepad" style="color:var(--ac)"></i> Games', this.apps.filter(a=>a.category==='Games').slice(0,6), 'Games') +
+      this.gridSection('<i class="fas fa-tools" style="color:var(--p)"></i> Tools', this.apps.filter(a=>a.category==='Tools'||a.category==='Utility').slice(0,6), 'Tools') +
+      this.gridSection('<i class="fas fa-graduation-cap" style="color:#7B1FA2"></i> Education', this.apps.filter(a=>a.category==='Education').slice(0,6), 'Education');
+    this.initBanner();
+    this.animCards();
+  },
+
+  renderCategoryPage(cat){
+    const apps=this.apps.filter(a=>a.category===cat);
+    const pg=document.getElementById('page');
+    if(!apps.length){
+      pg.innerHTML=`<div class="empty"><i class="fas fa-search"></i><h3>No ${cat} apps yet</h3><p>Check back soon.</p></div>`;
+      return;
+    }
+    const topRated=[...apps].sort((a,b)=>(parseFloat(b.rating)||0)-(parseFloat(a.rating)||0));
+    const top=[...apps].sort((a,b)=>(parseInt(b.downloads)||0)-(parseInt(a.downloads)||0));
+    pg.innerHTML=
+      this.topChartSection(`<i class="fas fa-chart-line" style="color:var(--red)"></i> Top ${cat}`, top.slice(0,5)) +
+      this.gridSection(`All ${cat}`, apps, null);
+    this.animCards();
+  },
+
+  // ─── BANNER ─────────────────────────────────
+  bannerHTML(apps){
+    if(!apps.length)return'';
+    const grads=['linear-gradient(135deg,#0d47a1,#1565c0)','linear-gradient(135deg,#1b5e20,#2e7d32)','linear-gradient(135deg,#4a148c,#6a1b9a)','linear-gradient(135deg,#b71c1c,#c62828)'];
+    const slides=apps.slice(0,4).map((a,i)=>`
+      <div class="banner-slide" onclick="S.openApp('${a.id}')">
+        <div class="banner-slide-bg" style="background:${grads[i%grads.length]}"></div>
+        <div class="banner-slide-overlay"></div>
+        <div class="banner-content">
+          <div class="banner-chip"><i class="fas fa-fire"></i>${a.featured?'Featured':'Top App'}</div>
+          <div class="banner-title">${a.name}</div>
+          <div class="banner-sub">${(a.description||'').slice(0,60)}${(a.description||'').length>60?'…':''}</div>
+          <div class="banner-btn" onclick="event.stopPropagation();S.install('${a.id}')"><i class="fas fa-download"></i>Install</div>
+        </div>
+      </div>`).join('');
+    const dots=apps.slice(0,4).map((_,i)=>`<div class="banner-dot${i===0?' act':''}" onclick="event.stopPropagation();S.goSlide(${i})"></div>`).join('');
+    return `<div class="banner-wrap" id="bannerWrap"><div class="banner-slides" id="bannerSlides">${slides}</div><div class="banner-dots" id="bannerDots">${dots}</div></div>`;
+  },
+
+  initBanner(){
+    clearInterval(this.bannerTimer);
+    this.bannerIdx=0;
+    const slides=document.getElementById('bannerSlides');
+    if(!slides)return;
+    const count=slides.children.length;
+    if(count<=1)return;
+    this.bannerTimer=setInterval(()=>{
+      this.bannerIdx=(this.bannerIdx+1)%count;
+      this.goSlide(this.bannerIdx);
+    },3500);
+  },
+
+  goSlide(i){
+    this.bannerIdx=i;
+    const sl=document.getElementById('bannerSlides');
+    if(sl)sl.style.transform=`translateX(-${i*100}%)`;
+    document.querySelectorAll('.banner-dot').forEach((d,j)=>d.classList.toggle('act',j===i));
+  },
+
+  // ─── SECTION BUILDERS ───────────────────────
+  hRowSection(title, apps){
+    if(!apps.length)return'';
+    return `<div class="sec"><div class="sec-head"><div class="sec-title">${title}</div></div>
+    <div class="h-row">${apps.map(a=>this.featCardHTML(a)).join('')}</div></div>`;
+  },
+
+  topChartSection(title, apps){
+    if(!apps.length)return'';
+    return `<div class="sec"><div class="sec-head"><div class="sec-title">${title}</div><span class="see-all" onclick="S.renderTopFull()">See all <i class="fas fa-chevron-right" style="font-size:10px"></i></span></div>
+    <div class="chart-list">${apps.map((a,i)=>this.chartItemHTML(a,i+1)).join('')}</div></div>`;
+  },
+
+  gridSection(title, apps, cat){
+    if(!apps.length)return'';
+    const seeAll=cat?`<span class="see-all" onclick="S.filterCat('${cat}')">See all <i class="fas fa-chevron-right" style="font-size:10px"></i></span>`:'';
+    return `<div class="sec"><div class="sec-head"><div class="sec-title">${title}</div>${seeAll}</div>
+    <div class="app-grid">${apps.map((a,i)=>this.appCardHTML(a,i)).join('')}</div></div>`;
+  },
+
+  renderTopFull(){
+    const top=[...this.apps].sort((a,b)=>(parseInt(b.downloads)||0)-(parseInt(a.downloads)||0));
+    const pg=document.getElementById('page');
+    pg.innerHTML=`<div class="sec"><div class="sec-head"><div class="sec-title"><i class="fas fa-chart-line" style="color:var(--red)"></i> Top Charts</div></div>
+    <div class="chart-list">${top.map((a,i)=>this.chartItemHTML(a,i+1)).join('')}</div></div>`;
+    document.querySelectorAll('.cat-btn').forEach(b=>b.classList.remove('act'));
+  },
+
+  // ─── CARD HTML ──────────────────────────────
+  featCardHTML(a){
+    const color=a.color||this.colorFor(a.name);
+    return `<div class="fc" onclick="S.openApp('${a.id}')">
+      ${a.featured?'<div class="fc-badge"><i class="fas fa-star"></i> Featured</div>':''}
+      <div class="fc-img-wrap" style="background:${color}22">
+        <img src="${a.imageSrc||''}" onerror="S.imgFallback(this)" alt="${a.name}"/>
+      </div>
+      <div class="fc-body">
+        <div class="fc-name">${a.name}</div>
+        <div class="fc-dev">${a.developer||'Unknown'}</div>
+        <div class="fc-foot">
+          <div class="fc-rating"><i class="fas fa-star"></i>${(parseFloat(a.rating)||0).toFixed(1)}</div>
+          <button class="fc-install" onclick="event.stopPropagation();S.install('${a.id}')">${a.priceType==='paid'?'$'+a.price:'Free'}</button>
+        </div>
+      </div>
+    </div>`;
+  },
+
+  appCardHTML(a, idx=0){
+    return `<div class="ac" onclick="S.openApp('${a.id}')" style="animation-delay:${idx*0.04}s">
+      <div class="ac-icon-wrap">
+        <img src="${a.imageSrc||''}" onerror="S.imgFallback(this)" alt="${a.name}" style="width:72px;height:72px;border-radius:18px;object-fit:cover"/>
+      </div>
+      <div class="ac-info">
+        <div class="ac-name">${a.name}</div>
+        <div class="ac-dev">${a.developer||'Unknown'}</div>
+        <div class="ac-foot">
+          <div class="ac-rating"><i class="fas fa-star"></i>${(parseFloat(a.rating)||0).toFixed(1)}</div>
+          <span class="ac-tag ${a.priceType==='paid'?'paid':'free'}">${a.priceType==='paid'?'$'+a.price:'Free'}</span>
+        </div>
+        <div class="ac-dls"><i class="fas fa-download" style="font-size:8px"></i>${this.fmtNum(a.downloads)}</div>
+      </div>
+    </div>`;
+  },
+
+  chartItemHTML(a, rank){
+    const cls=rank===1?'r1':rank===2?'r2':rank===3?'r3':'';
+    const rankDisplay = rank===1
+      ? `<i class="fas fa-trophy" style="font-size:16px;color:#FFD700"></i>`
+      : rank===2
+      ? `<i class="fas fa-trophy" style="font-size:16px;color:#A8A8A8"></i>`
+      : rank===3
+      ? `<i class="fas fa-trophy" style="font-size:16px;color:#CD7F32"></i>`
+      : `<span style="font-size:13px;font-weight:800">${rank}</span>`;
+    return `<div class="chi" onclick="S.openApp('${a.id}')">
+      <div class="chi-rank ${cls}">${rankDisplay}</div>
+      <img class="chi-icon" src="${a.imageSrc||''}" onerror="S.imgFallback(this)" alt="${a.name}"/>
+      <div class="chi-info">
+        <div class="chi-name">${a.name}</div>
+        <div class="chi-dev">${a.developer||'Unknown'}</div>
+        <div class="chi-rating"><i class="fas fa-star"></i>${(parseFloat(a.rating)||0).toFixed(1)} · ${this.fmtNum(a.downloads)} installs</div>
+      </div>
+      <button class="chi-btn" onclick="event.stopPropagation();S.install('${a.id}')">${a.priceType==='paid'?'$'+a.price:'Install'}</button>
+    </div>`;
+  },
+
+  // ─── APP DETAIL SHEET ────────────────────────
+  openApp(id){
+    const a=this.apps.find(x=>x.id===id);
+    if(!a)return;
+    const wl=this.isWL(id);
+    const appRevs=this.reviews[id]||[];
+    const allRevs=[...appRevs,...this.demoReviews()];
+    const totalRevs=appRevs.length+Math.floor((parseInt(a.downloads)||100)/60);
+    const avgR=appRevs.length?(appRevs.reduce((s,r)=>s+r.stars,0)/appRevs.length).toFixed(1):(parseFloat(a.rating)||4.5).toFixed(1);
+    const box=document.getElementById('appSheetBox');
+    box.innerHTML=`
+      <div class="sheet-top-wrap">
+        <div class="sheet-pill"></div>
+        <div class="sheet-close-btn" onclick="S.closeSheet()"><i class="fas fa-times"></i></div>
+      </div>
+      <div class="sheet-hero">
+        <img class="sheet-icon" src="${a.imageSrc||''}" onerror="S.imgFallback(this)" alt="${a.name}"/>
+        <div class="sheet-meta">
+          <div class="sheet-name">${a.name}</div>
+          <div class="sheet-dev">${a.developer||'Unknown Developer'}</div>
+          <div class="sheet-chips">
+            <span class="sheet-chip"><i class="fas fa-tag" style="color:var(--p)"></i>${a.category||'App'}</span>
+            <span class="sheet-chip ${a.priceType==='paid'?'':'green'}">${a.priceType==='paid'?'$'+a.price:'Free'}</span>
+            <span class="sheet-chip"><i class="fas fa-star" style="color:var(--amber)"></i>${avgR}</span>
+          </div>
+        </div>
+      </div>
+      <div class="sheet-stats">
+        <div class="sheet-stat"><strong>${this.fmtNum(a.downloads)}</strong><span>Downloads</span></div>
+        <div class="sheet-stat"><strong>${a.version||'1.0'}</strong><span>Version</span></div>
+        <div class="sheet-stat"><strong>${a.size||'?'}</strong><span>Size</span></div>
+        <div class="sheet-stat"><strong>${totalRevs>999?this.fmtNum(totalRevs):totalRevs}</strong><span>Reviews</span></div>
+      </div>
+      <div class="sheet-actions">
+        <button class="btn-install" onclick="S.install('${a.id}')">
+          <i class="fas fa-download"></i>${a.priceType==='paid'?'Buy $'+a.price:'Install Free'}
+        </button>
+        <button class="btn-wl${wl?' act':''}" id="wl-btn" onclick="S.toggleWL('${a.id}')">
+          <i class="fa${wl?'s':'r'} fa-heart"></i>
+        </button>
+        <button class="btn-share" onclick="S.share('${a.id}')"><i class="fas fa-share-alt"></i></button>
+      </div>
+
+      <div class="s-sec">
+        <div class="s-sec-title"><i class="fas fa-image"></i>Screenshots</div>
+        <div class="screenshots">
+          ${(a.screenshots&&a.screenshots.length)
+            ? a.screenshots.map((src,i)=>`
+                <div class="ss-frame" onclick="S.lbOpen(${JSON.stringify(a.screenshots||[]).replace(/"/g,'&quot;')},${i})">
+                  <img src="${src}" onerror="S.imgFallback(this)" alt="Screenshot ${i+1}"/>
+                </div>`).join('')
+            : `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;padding:20px;color:var(--t3);font-size:12px;text-align:center">
+                 <i class="fas fa-images" style="font-size:32px;margin-bottom:8px;opacity:.35"></i>
+                 No screenshots available
+               </div>`}
+        </div>
+      </div>
+
+      <div class="s-sec">
+        <div class="s-sec-title"><i class="fas fa-info-circle"></i>About</div>
+        <p style="font-size:13px;color:var(--t2);line-height:1.7">${a.description||'No description available.'}</p>
+        ${a.tags&&a.tags.length?`<div class="tags-wrap" style="margin-top:12px">${a.tags.map(t=>`<span class="tag-p">#${t}</span>`).join('')}</div>`:''}
+      </div>
+
+      <div class="s-sec">
+        <div class="s-sec-title"><i class="fas fa-cube"></i>App Info</div>
+        <div class="info-grid">
+          <div class="info-tile"><i class="fas fa-tag"></i><div class="iv">${a.category||'—'}</div><div class="il">Category</div></div>
+          <div class="info-tile"><i class="fas fa-code-branch"></i><div class="iv">${a.version||'1.0'}</div><div class="il">Version</div></div>
+          <div class="info-tile"><i class="fas fa-hdd"></i><div class="iv">${a.size||'—'}</div><div class="il">Size</div></div>
+          <div class="info-tile"><i class="fas fa-wallet"></i><div class="iv">${a.priceType==='paid'?'$'+a.price:'Free'}</div><div class="il">Price</div></div>
+          <div class="info-tile"><i class="fas fa-download"></i><div class="iv">${this.fmtNum(a.downloads)}</div><div class="il">Installs</div></div>
+          <div class="info-tile"><i class="fas fa-box"></i><div class="iv" style="font-size:10px">${(a.packageName||'—').slice(0,14)}</div><div class="il">Package</div></div>
+        </div>
+      </div>
+
+      <div class="s-sec">
+        <div class="s-sec-title"><i class="fas fa-star"></i>Ratings & Reviews</div>
+        <div class="rating-area">
+          <div class="big-r">
+            <div class="bnum">${avgR}</div>
+            <div class="bstars">${this.starsHTML(parseFloat(avgR),14)}</div>
+            <div class="bcount">${this.fmtNum(totalRevs)} ratings</div>
+          </div>
+          <div class="r-bars">
+            ${[5,4,3,2,1].map(s=>{
+              const pct=s===5?60:s===4?22:s===3?10:s===2?5:3;
+              return`<div class="r-bar-row"><span>${s}</span><div class="r-track"><div class="r-fill" style="width:${pct}%"></div></div></div>`;
+            }).join('')}
+          </div>
+        </div>
+        <div class="review-list">
+          ${allRevs.slice(0,3).map(r=>`
+            <div class="rv">
+              <div class="rv-top">
+                <div class="rv-user">
+                  <div class="rv-ava">${(r.user||r.name||'U')[0].toUpperCase()}</div>
+                  <div><div class="rv-name">${r.user||r.name||'Anonymous'}</div><div class="rv-date">${r.date||'Recently'}</div></div>
+                </div>
+                <div class="rv-stars">${Array.from({length:r.stars||5},()=>'<i class="fas fa-star" style="color:var(--amber);font-size:12px"></i>').join('')}</div>
+              </div>
+              <div class="rv-text">${r.text||r.comment||''}</div>
+            </div>`).join('')}
+        </div>
+        ${this.user?`
+          <div class="add-rv">
+            <div class="add-rv-title">Write a Review</div>
+            <div class="star-row" id="star-row">
+              ${[1,2,3,4,5].map(s=>`<i class="far fa-star" data-s="${s}" onclick="S.pickStar(${s},'${a.id}')"></i>`).join('')}
+            </div>
+            <textarea class="rv-ta" id="rv-ta" rows="3" placeholder="Share your experience…"></textarea>
+            <button class="rv-submit" onclick="S.submitReview('${a.id}')"><i class="fas fa-paper-plane"></i> Post Review</button>
+          </div>`
+          :`<div style="text-align:center;padding:14px;font-size:13px;color:var(--t3)"><span style="color:var(--p);font-weight:700;cursor:pointer" onclick="S.openAuth('login')">Sign in</span> to write a review</div>`}
+      </div>
+      <div style="height:env(safe-area-inset-bottom)"></div>
+    `;
+    this.pickedStars=0;
+    document.getElementById('appSheet').classList.add('open');
+    document.body.style.overflow='hidden';
+  },
+
+  closeSheet(e){
+    const sh=document.getElementById('appSheet');
+    if(!e||e.target===sh){
+      sh.classList.remove('open');
+      document.body.style.overflow='';
+    }
+  },
+
+  // ─── SCREENSHOT LIGHTBOX ─────────────────────
+  _lbImgs: [],
+  _lbIdx: 0,
+
+  lbOpen(imgs, idx){
+    // imgs may arrive as a JSON string from HTML attribute
+    if(typeof imgs==='string'){
+      try{ imgs=JSON.parse(imgs); }catch(e){ imgs=[imgs]; }
+    }
+    if(!imgs||!imgs.length)return;
+    this._lbImgs=imgs;
+    this._lbIdx=idx||0;
+    this._lbRender();
+    document.getElementById('ssLightbox').classList.add('on');
+    document.body.style.overflow='hidden';
+  },
+
+  lbClose(e){
+    if(!e||e.target===document.getElementById('ssLightbox')||e.currentTarget===document.getElementById('ssLightbox')){
+      document.getElementById('ssLightbox').classList.remove('on');
+      document.body.style.overflow='hidden'; // keep app sheet scroll locked
+    }
+  },
+
+  lbNav(dir){
+    const n=this._lbImgs.length;
+    this._lbIdx=(this._lbIdx+dir+n)%n;
+    this._lbRender();
+  },
+
+  _lbRender(){
+    const imgs=this._lbImgs, idx=this._lbIdx;
+    document.getElementById('lbImg').src=imgs[idx];
+    document.getElementById('lbCounter').textContent=`${idx+1} / ${imgs.length}`;
+    document.getElementById('lbDots').innerHTML=imgs.map((_,i)=>`<div class="lb-dot${i===idx?' act':''}" onclick="event.stopPropagation();S._lbIdx=${i};S._lbRender()"></div>`).join('');
+  },
+
+  pickStar(s, appId){
+    this.pickedStars=s;
+    document.querySelectorAll('#star-row i').forEach((el,i)=>{
+      el.className=i<s?'fas fa-star lit':'far fa-star';
+    });
+  },
+
+  submitReview(appId){
+    const ta=document.getElementById('rv-ta');
+    const text=(ta&&ta.value||'').trim();
+    if(!this.pickedStars){ this.toast('Please select a star rating','warn'); return; }
+    if(!text){ this.toast('Please write something','warn'); return; }
+    if(!this.reviews[appId]) this.reviews[appId]=[];
+    this.reviews[appId].unshift({
+      stars:this.pickedStars,text,
+      user:this.user.displayName||this.user.email,
+      date:'Just now'
+    });
+    localStorage.setItem('apk_rv',JSON.stringify(this.reviews));
+    this.toast('Review posted! Thank you');
+    this.openApp(appId);
+  },
+
+  demoReviews(){
+    return[
+      {name:'Alex M.',stars:5,comment:'Really good app, works perfectly!',date:'2 days ago'},
+      {name:'Priya K.',stars:4,comment:'Solid app, some minor issues but overall great.',date:'1 week ago'},
+      {name:'James R.',stars:5,comment:'Best in its category. Highly recommend!',date:'2 weeks ago'},
+    ];
+  },
+
+  // ─── ANIMATIONS ──────────────────────────────
+  animCards(){
+    document.querySelectorAll('.ac').forEach((c,i)=>{ c.style.animationDelay=`${i*0.04}s`; });
+  },
+
+  // ─── AUTH STATE SYNC ─────────────────────────
+  syncAuthUI(user){
+    this.user=user;
+    const signBtn=document.getElementById('signinBtn');
+    const ava=document.getElementById('navAvatar');
+    const wlBtn=document.getElementById('wlHeaderBtn');
+    const notifDot=document.getElementById('notifDot');
+    if(user){
+      signBtn.style.display='none';
+      ava.style.display='flex';
+      ava.textContent=(user.displayName||user.email||'U')[0].toUpperCase();
+      wlBtn.style.display='flex';
+      notifDot.style.display='block';
+    } else {
+      signBtn.style.display='';
+      ava.style.display='none';
+      wlBtn.style.display='none';
+      notifDot.style.display='none';
+    }
+  },
+};  // end S
+
+// ═══════════════════════════════════════════════
+// DEMO DATA (fallback when Firebase is empty)
+// ═══════════════════════════════════════════════
+const DEMO_APPS = [
+  {id:'d1',name:'PixelCraft Studio',developer:'PixelLabs',category:'Tools',rating:4.8,downloads:128000,imageSrc:'https://placehold.co/100x100/00C853/white?text=PC',description:'Professional pixel art editor with 200+ filters, layers, and export options.',version:'4.2.1',size:'48MB',priceType:'free',featured:true,tags:['photo','editor','creative'],packageName:'com.pixel.craft'},
+  {id:'d2',name:'Puzzle Quest 3D',developer:'GameForge',category:'Games',rating:4.6,downloads:892000,imageSrc:'https://placehold.co/100x100/2979FF/white?text=PQ',description:'Immersive 3D puzzle adventure with 500+ levels and weekly challenges.',version:'2.1.0',size:'320MB',priceType:'free',featured:true,tags:['puzzle','3d','adventure'],packageName:'com.game.puzzle'},
+  {id:'d3',name:'FlowNote Pro',developer:'NoteLabs',category:'Productivity',rating:4.9,downloads:54000,imageSrc:'https://placehold.co/100x100/FF6F00/white?text=FN',description:'Smart note-taking with AI suggestions, markdown, voice notes, and cloud sync.',version:'3.0.0',size:'38MB',priceType:'paid',price:'2.99',featured:false,tags:['notes','productivity','ai'],packageName:'com.note.flow'},
+  {id:'d4',name:'BeatMaker X',developer:'AudioDev',category:'Entertainment',rating:4.5,downloads:320000,imageSrc:'https://placehold.co/100x100/9C27B0/white?text=BM',description:'Professional beat making studio with 1000+ samples, mixer, and MP3 export.',version:'5.1',size:'210MB',priceType:'free',featured:false,tags:['music','audio','beats'],packageName:'com.beat.maker'},
+  {id:'d5',name:'SpendTrack',developer:'FinanceIO',category:'Finance',rating:4.7,downloads:210000,imageSrc:'https://placehold.co/100x100/1B5E20/white?text=ST',description:'Personal budget tracker with charts, bill reminders, and multi-currency.',version:'2.4.0',size:'24MB',priceType:'free',featured:true,tags:['budget','finance'],packageName:'com.spend.track'},
+  {id:'d6',name:'QuickLearn',developer:'EduSoft',category:'Education',rating:4.8,downloads:155000,imageSrc:'https://placehold.co/100x100/0277BD/white?text=QL',description:'Flashcard learning with spaced repetition and 10,000+ decks.',version:'1.8.2',size:'45MB',priceType:'free',featured:false,tags:['learning','flashcards'],packageName:'com.quick.learn'},
+  {id:'d7',name:'VoiceClone AI',developer:'AIVoice',category:'Tools',rating:4.3,downloads:78000,imageSrc:'https://placehold.co/100x100/E53935/white?text=VC',description:'Clone any voice with AI. Perfect for dubbing and accessibility.',version:'1.2.0',size:'92MB',priceType:'paid',price:'4.99',featured:false,tags:['ai','voice'],packageName:'com.ai.voice'},
+  {id:'d8',name:'RunTrack Pro',developer:'FitApps',category:'Utility',rating:4.6,downloads:445000,imageSrc:'https://placehold.co/100x100/00897B/white?text=RT',description:'GPS running tracker with pace analysis, heart rate zones, and plans.',version:'6.0.1',size:'60MB',priceType:'free',featured:false,tags:['fitness','running'],packageName:'com.run.track'},
+  {id:'d9',name:'SocialHub',developer:'SocialDev',category:'Social',rating:4.2,downloads:672000,imageSrc:'https://placehold.co/100x100/F57F17/white?text=SH',description:'All your social accounts in one place. Post, schedule, monitor.',version:'3.1.0',size:'78MB',priceType:'free',featured:false,tags:['social','marketing'],packageName:'com.social.hub'},
+  {id:'d10',name:'StratoDefense',developer:'GameForge',category:'Games',rating:4.5,downloads:1200000,imageSrc:'https://placehold.co/100x100/37474F/white?text=SD',description:'Real-time strategy tower defense with 8 worlds and online PvP.',version:'4.5.2',size:'450MB',priceType:'free',featured:true,tags:['strategy','pvp'],packageName:'com.strato.defense'},
+  {id:'d11',name:'DocuScan AI',developer:'ScanLabs',category:'Business',rating:4.7,downloads:88000,imageSrc:'https://placehold.co/100x100/880E4F/white?text=DS',description:'Scan docs, extract text with OCR, and sign PDFs anywhere.',version:'2.0.0',size:'55MB',priceType:'free',featured:false,tags:['scan','ocr','pdf'],packageName:'com.docu.scan'},
+  {id:'d12',name:'CodeRunner IDE',developer:'DevTools',category:'Tools',rating:4.9,downloads:34000,imageSrc:'https://placehold.co/100x100/1A237E/white?text=CR',description:'Mobile IDE supporting 40+ languages with syntax highlighting and Git.',version:'7.1',size:'120MB',priceType:'paid',price:'6.99',featured:true,tags:['coding','ide'],packageName:'com.code.runner'},
+];
+
+// ═══════════════════════════════════════════════
+// BOOT
+// ═══════════════════════════════════════════════
+// Search input binding
+document.getElementById('searchInput').addEventListener('input', function(){
+  S.handleSearch(this.value);
+});
+
+// Auth state
+auth.onAuthStateChanged(user => {
+  S.syncAuthUI(user);
+});
+
+// Load from Firebase, fallback to demo
+db.ref('apps').on('value', snap => {
+  const data = snap.val() || {};
+  const loaded = Object.entries(data).map(([id,v]) => ({
+    id, ...v,
+    rating: parseFloat(v.rating) || 0,
+    downloads: parseInt(v.downloads) || 0,
+  }));
+  S.apps = loaded.length ? loaded : DEMO_APPS;
+  S.renderHome();
+  document.getElementById('loader').classList.add('out');
+}, err => {
+  console.warn('Firebase error, using demo data:', err);
+  S.apps = DEMO_APPS;
+  S.renderHome();
+  document.getElementById('loader').classList.add('out');
+});
+
+// Keyboard nav for lightbox
+document.addEventListener('keydown', e => {
+  const lb = document.getElementById('ssLightbox');
+  if(!lb.classList.contains('on')) return;
+  if(e.key==='ArrowLeft')  S.lbNav(-1);
+  if(e.key==='ArrowRight') S.lbNav(1);
+  if(e.key==='Escape')     S.lbClose();
+});
+
+// Wishlist pip init
+S.saveWL();
+</script>
 </body>
 </html>
