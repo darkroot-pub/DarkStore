@@ -1428,27 +1428,34 @@ fun PlayStoreMainDashboard(
                         }
                     }
             ) { targetTab ->
+                // PERF: build once per actual data change (see DiscoveryFeedState doc),
+                // reused by both tabs below so DiscoveryTabContent stays skippable.
+                val discoveryFeedState = remember(apps, downloads, installedAppsInfo, installedPackages, localAppRatings, purchasedAppIds, preRegisteredAppIds) {
+                    DiscoveryFeedState(
+                        apps = apps,
+                        downloads = downloads,
+                        installedAppsInfo = installedAppsInfo,
+                        installedPackages = installedPackages,
+                        localAppRatings = localAppRatings,
+                        purchasedAppIds = purchasedAppIds,
+                        preRegisteredAppIds = preRegisteredAppIds
+                    )
+                }
                 when (targetTab) {
                     "Games" -> {
                         DiscoveryTabContent(
                             isDarkMode = isDarkMode,
                             category = "Games",
                             searchQuery = searchQuery,
-                            apps = apps,
-                            downloads = downloads,
-                            installedAppsInfo = installedAppsInfo,
-                            installedPackages = installedPackages,
+                            feedState = discoveryFeedState,
                             isRefreshing = isRefreshing,
                             onRefresh = { viewModel.refreshMarketplace(force = true) },
-                            localAppRatings = localAppRatings,
                             accentGreen = accentGreen,
                             textPrimary = textPrimary,
                             textSecondary = textSecondary,
                             cardBgColor = cardBgColor,
                             cardBorderColor = cardBorderColor,
                             onAppClick = onAppClick,
-                            purchasedAppIds = purchasedAppIds,
-                            preRegisteredAppIds = preRegisteredAppIds,
                             onBuyPremiumClick = { purchaseAppTarget = it },
                             onPreRegisterClick = { app ->
                                 viewModel.preRegisterApp(app.id)
@@ -1463,13 +1470,9 @@ fun PlayStoreMainDashboard(
                             isDarkMode = isDarkMode,
                             category = selectedCategory,
                             searchQuery = searchQuery,
-                            apps = apps,
-                            downloads = downloads,
-                            installedAppsInfo = installedAppsInfo,
-                            installedPackages = installedPackages,
+                            feedState = discoveryFeedState,
                             isRefreshing = isRefreshing,
                             onRefresh = { viewModel.refreshMarketplace(force = true) },
-                            localAppRatings = localAppRatings,
                             accentGreen = accentGreen,
                             textPrimary = textPrimary,
                             textSecondary = textSecondary,
@@ -1479,8 +1482,6 @@ fun PlayStoreMainDashboard(
                             showPillNavbar = true,
                             selectedPill = selectedCategory,
                             onPillSelect = { viewModel.selectCategory(it) },
-                            purchasedAppIds = purchasedAppIds,
-                            preRegisteredAppIds = preRegisteredAppIds,
                             onBuyPremiumClick = { purchaseAppTarget = it },
                             onPreRegisterClick = { app ->
                                 viewModel.preRegisterApp(app.id)
@@ -1777,19 +1778,41 @@ fun SectionHeader(
 }
 
 // ========================================================
+/**
+ * PERF: bundles every List/Map/Set the home feed needs into one object marked
+ * @Immutable. Compose treats bare List/Map/Set parameters as unconditionally
+ * unstable (they're just interfaces — could be backed by a mutable
+ * implementation), which forces the ENTIRE composable that receives them to
+ * be non-skippable: it will fully re-execute every time anything in its
+ * parent recomposes, regardless of whether these values actually changed.
+ * That was true of DiscoveryTabContent, so literally any unrelated state
+ * change elsewhere on the home screen (a dialog opening, a toast, a snackbar,
+ * search text) was forcing the whole scrollable feed — including rebuilding
+ * every row's content — to recompose, competing with active scrolling for
+ * frame time. @Immutable tells the compiler to trust structural equality
+ * instead, making DiscoveryTabContent skippable again: it now only
+ * re-executes when one of these collections has actually changed.
+ */
+@Immutable
+data class DiscoveryFeedState(
+    val apps: List<AppEntity>,
+    val downloads: List<DownloadEntity>,
+    val installedAppsInfo: Map<String, com.example.utils.ApkInstaller.InstalledAppInfo>,
+    val installedPackages: Set<String>,
+    val localAppRatings: Map<String, Pair<String, Int>>,
+    val purchasedAppIds: Set<String>,
+    val preRegisteredAppIds: Set<String>
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DiscoveryTabContent(
     isDarkMode: Boolean,
     category: String,
     searchQuery: String = "",
-    apps: List<AppEntity>,
-    downloads: List<DownloadEntity>,
-    installedAppsInfo: Map<String, com.example.utils.ApkInstaller.InstalledAppInfo>,
-    installedPackages: Set<String> = emptySet(),
+    feedState: DiscoveryFeedState,
     isRefreshing: Boolean,
     onRefresh: () -> Unit = {},
-    localAppRatings: Map<String, Pair<String, Int>>,
     accentGreen: Color,
     textPrimary: Color,
     textSecondary: Color,
@@ -1799,12 +1822,13 @@ fun DiscoveryTabContent(
     showPillNavbar: Boolean = false,
     selectedPill: String = "All",
     onPillSelect: (String) -> Unit = {},
-    purchasedAppIds: Set<String> = emptySet(),
-    preRegisteredAppIds: Set<String> = emptySet(),
     onBuyPremiumClick: (AppEntity) -> Unit = {},
     onPreRegisterClick: (AppEntity) -> Unit = {},
     onActionClick: (AppEntity) -> Unit
 ) {
+    // Unpack into the original local names — zero changes needed below this line.
+    val (apps, downloads, installedAppsInfo, installedPackages, localAppRatings, purchasedAppIds, preRegisteredAppIds) = feedState
+
     val categories = remember { listOf("All", "Utilities", "Games", "Tools", "Entertainment") }
 
     // PERF: hold the latest callback lambdas via rememberUpdatedState so that
