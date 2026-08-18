@@ -391,8 +391,8 @@ class MainActivity : ComponentActivity() {
                         if (isSplash) {
                             PlayStoreSplashScreen(onSkip = { showSplash = false })
                         } else {
-                            when (updateState) {
-                                is UpdateState.Checking -> {
+                            when {
+                                updateState is UpdateState.Checking -> {
                                     // Lightweight loading screen
                                     Box(
                                         modifier = Modifier
@@ -411,7 +411,9 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
                                 }
-                                is UpdateState.UpdateRequired -> {
+                                // Forced updates still block the whole app full-screen — there's
+                                // no way to use the app on an unsupported version.
+                                updateState is UpdateState.UpdateRequired && (updateState as UpdateState.UpdateRequired).forceUpdate -> {
                                     UpdateRequiredScreen(
                                         update = updateState as UpdateState.UpdateRequired,
                                         context = context,
@@ -420,7 +422,9 @@ class MainActivity : ComponentActivity() {
                                         }
                                     )
                                 }
-                                is UpdateState.NoUpdateNeeded -> {
+                                // Everything else (no update, OR an optional/non-forced update):
+                                // the app itself renders normally and stays fully usable.
+                                else -> {
                                     if (!isLoggedIn) {
                                         com.example.view.AuthScreen(
                                             viewModel = viewModel
@@ -437,6 +441,20 @@ class MainActivity : ComponentActivity() {
                                             viewModel = viewModel,
                                             isDarkMode = isDarkMode,
                                             onThemeToggle = { viewModel.setDarkMode(!isDarkMode) }
+                                        )
+                                    }
+
+                                    // A non-forced update is available: show it as a dismissible
+                                    // popup on top of the (still fully usable) app, instead of
+                                    // blocking the whole screen like a forced update does.
+                                    val optionalUpdate = updateState as? UpdateState.UpdateRequired
+                                    if (optionalUpdate != null && !optionalUpdate.forceUpdate) {
+                                        OptionalUpdateDialog(
+                                            update = optionalUpdate,
+                                            context = context,
+                                            onDismiss = {
+                                                updateState = UpdateState.NoUpdateNeeded
+                                            }
                                         )
                                     }
                                 }
@@ -725,7 +743,17 @@ fun AppLogo(
         val imageRequest = remember(actualUrl, context) {
             coil.request.ImageRequest.Builder(context)
                 .data(actualUrl)
-                .crossfade(true)
+                // PERF: crossfade is a ~300ms animated transition that keeps
+                // ticking/recomposing for every image while it plays. Slow
+                // scrolling only ever has one or two icons loading at a time,
+                // so it's invisible — but a fast fling brings a dozen+ new,
+                // never-before-seen icons on screen within the same second,
+                // each starting its own crossfade animation simultaneously.
+                // That's extra concurrent per-frame work stacked exactly when
+                // frame budget is already tightest. These are small 54dp list
+                // thumbnails, so the fade adds little and costs more than it's
+                // worth here.
+                .crossfade(false)
                 .diskCachePolicy(coil.request.CachePolicy.ENABLED)
                 .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
                 .placeholder(R.drawable.img_app_logo_new)
@@ -1611,7 +1639,7 @@ fun PlayStoreMainDashboard(
             version = originalSub.version,
             size = "18 MB",
             category = originalSub.category,
-            rating = "4.8",
+            rating = "0.0",
             description = originalSub.description,
             logo = originalSub.logo,
             screenshots = originalSub.screenshots,
@@ -2433,6 +2461,7 @@ fun PremiumAppCardView(
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = cardBgColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         border = BorderStroke(1.dp, cardBorderColor)
     ) {
         Column(modifier = Modifier.padding(10.dp)) {
@@ -2519,6 +2548,7 @@ fun UpcomingAppCardView(
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = cardBgColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         border = BorderStroke(1.dp, cardBorderColor)
     ) {
         Column(modifier = Modifier.padding(10.dp)) {
@@ -2890,6 +2920,7 @@ fun FeaturedAppCardView(
                 .clickable(onClick = onClick),
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = cardBgColor),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
             border = BorderStroke(1.dp, cardBorderColor)
         ) {
             Box(modifier = Modifier.fillMaxWidth()) {
@@ -2999,6 +3030,13 @@ fun AppItemCardView(
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = cardBgColor),
+        // PERF: Material3's default Card elevation renders a soft shadow via
+        // an extra graphics layer per card. With a visible border already
+        // providing separation between rows, that shadow adds nothing here
+        // but costs a compositing pass on every row, every frame it's on
+        // screen — multiplied by however many rows a fast fling brings on
+        // screen at once. Pinning it to 0 removes that cost outright.
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         border = BorderStroke(1.dp, cardBorderColor)
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
@@ -4517,14 +4555,14 @@ fun ProfileTabContent(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     val liveCount = submissions.count { it.status.equals("approved", ignoreCase = true) || it.status.equals("live", ignoreCase = true) }
+                    val pendingCount = submissions.count { !it.status.equals("approved", ignoreCase = true) && !it.status.equals("live", ignoreCase = true) && !it.status.equals("rejected", ignoreCase = true) }
                     val rejectedCount = submissions.count { it.status.equals("rejected", ignoreCase = true) }
                     
                     class StatData(val countStr: String, val label: String)
                     listOf(
-                        StatData("1.25K", "Followers"),
-                        StatData(liveCount.toString(), "Published"),
-                        StatData(rejectedCount.toString(), "Rejected"),
-                        StatData("256K", "Total Downloads")
+                        StatData(liveCount.toString(), "Approved"),
+                        StatData(pendingCount.toString(), "Pending"),
+                        StatData(rejectedCount.toString(), "Rejected")
                     ).forEach { item ->
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally
@@ -4563,12 +4601,17 @@ fun ProfileTabContent(
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))
-                var selectedSubTab by remember { mutableStateOf("My Work") }
+                var selectedSubTab by remember { mutableStateOf("Approved") }
                 val devAppGroups = remember(submissions) { buildDeveloperAppGroups(submissions) }
-                val liveGroups = devAppGroups.filter { it.liveSub != null }
-                val trackerGroups = devAppGroups.filter { it.liveSub == null || it.pendingSub != null || it.rejectedSub != null }
+                val approvedGroups = devAppGroups.filter { it.liveSub != null }
+                val pendingGroups = devAppGroups.filter { it.pendingSub != null }
+                val rejectedGroups = devAppGroups.filter { it.rejectedSub != null }
 
-                // Systematic Submissions Tab Selector
+                // My Work: three clear status buckets — Approved / Pending / Rejected —
+                // each showing only the submissions actually in that state. (Previously
+                // this was "My Work" / "Followers" / "Post" — leftover labels from a
+                // social-profile template, where "Followers" and "My Work" both showed
+                // the same approved-apps list, and "Post" was actually the rejected list.)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -4576,13 +4619,42 @@ fun ProfileTabContent(
                         .border(1.dp, borderCol, RoundedCornerShape(12.dp))
                         .padding(4.dp)
                 ) {
-                    // Tab 1: My Work
+                    // Tab 1: Approved
                     Box(
                         modifier = Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(8.dp))
-                            .background(if (selectedSubTab == "My Work") Color(0xFF3B82F6) else Color.Transparent)
-                            .clickable { selectedSubTab = "My Work" }
+                            .background(if (selectedSubTab == "Approved") Color(0xFF3B82F6) else Color.Transparent)
+                            .clickable { selectedSubTab = "Approved" }
+                            .padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = if (selectedSubTab == "Approved") Color.White else Color(0xFF3B82F6),
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = "Approved",
+                                color = if (selectedSubTab == "Approved") Color.White else textPrimaryCol,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    // Tab 2: Pending
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (selectedSubTab == "Pending") Color(0xFF3B82F6) else Color.Transparent)
+                            .clickable { selectedSubTab = "Pending" }
                             .padding(vertical = 10.dp),
                         contentAlignment = Alignment.Center
                     ) {
@@ -4593,25 +4665,25 @@ fun ProfileTabContent(
                             Icon(
                                 imageVector = Icons.Default.Build,
                                 contentDescription = null,
-                                tint = if (selectedSubTab == "My Work") Color.White else Color(0xFF3B82F6),
+                                tint = if (selectedSubTab == "Pending") Color.White else Color(0xFF3B82F6),
                                 modifier = Modifier.size(14.dp)
                             )
                             Text(
-                                text = "My Work",
-                                color = if (selectedSubTab == "My Work") Color.White else textPrimaryCol,
+                                text = "Pending",
+                                color = if (selectedSubTab == "Pending") Color.White else textPrimaryCol,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         }
                     }
 
-                    // Tab 2: Followers
+                    // Tab 3: Rejected
                     Box(
                         modifier = Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(8.dp))
-                            .background(if (selectedSubTab == "Followers") Color(0xFF3B82F6) else Color.Transparent)
-                            .clickable { selectedSubTab = "Followers" }
+                            .background(if (selectedSubTab == "Rejected") Color(0xFF3B82F6) else Color.Transparent)
+                            .clickable { selectedSubTab = "Rejected" }
                             .padding(vertical = 10.dp),
                         contentAlignment = Alignment.Center
                     ) {
@@ -4620,43 +4692,14 @@ fun ProfileTabContent(
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Person,
+                                imageVector = Icons.Default.Close,
                                 contentDescription = null,
-                                tint = if (selectedSubTab == "Followers") Color.White else Color(0xFF3B82F6),
+                                tint = if (selectedSubTab == "Rejected") Color.White else Color(0xFF3B82F6),
                                 modifier = Modifier.size(14.dp)
                             )
                             Text(
-                                text = "Followers",
-                                color = if (selectedSubTab == "Followers") Color.White else textPrimaryCol,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-
-                    // Tab 3: Post
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (selectedSubTab == "Post") Color(0xFF3B82F6) else Color.Transparent)
-                            .clickable { selectedSubTab = "Post" }
-                            .padding(vertical = 10.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Email,
-                                contentDescription = null,
-                                tint = if (selectedSubTab == "Post") Color.White else Color(0xFF3B82F6),
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Text(
-                                text = "Post",
-                                color = if (selectedSubTab == "Post") Color.White else textPrimaryCol,
+                                text = "Rejected",
+                                color = if (selectedSubTab == "Rejected") Color.White else textPrimaryCol,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -4665,7 +4708,11 @@ fun ProfileTabContent(
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
-                val activeList = if (selectedSubTab == "My Work") liveGroups else if (selectedSubTab == "Followers") liveGroups else trackerGroups
+                val activeList = when (selectedSubTab) {
+                    "Approved" -> approvedGroups
+                    "Pending" -> pendingGroups
+                    else -> rejectedGroups
+                }
 
                 if (activeList.isEmpty()) {
                     Card(
@@ -4683,21 +4730,33 @@ fun ProfileTabContent(
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Icon(
-                                imageVector = if (selectedSubTab == "Live") Icons.Default.CheckCircle else Icons.Default.Build,
+                                imageVector = when (selectedSubTab) {
+                                    "Approved" -> Icons.Default.CheckCircle
+                                    "Pending" -> Icons.Default.Build
+                                    else -> Icons.Default.Close
+                                },
                                 contentDescription = "Empty submissions",
                                 tint = textSecondaryCol.copy(alpha = 0.5f),
                                 modifier = Modifier.size(44.dp)
                             )
                             Spacer(modifier = Modifier.height(14.dp))
                             Text(
-                                text = if (selectedSubTab == "Live") "No live applications yet" else "No pending submissions",
+                                text = when (selectedSubTab) {
+                                    "Approved" -> "No approved applications yet"
+                                    "Pending" -> "No pending submissions"
+                                    else -> "No rejected submissions"
+                                },
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = textPrimaryCol
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = if (selectedSubTab == "Live") "Deploy your submitted software package or await administrator audit feedback logs." else "Register a new software catalog item above to initialize tracking logs.",
+                                text = when (selectedSubTab) {
+                                    "Approved" -> "Apps you submit will appear here once approved and live."
+                                    "Pending" -> "Register a new software catalog item above to initialize tracking logs."
+                                    else -> "Apps that were not approved will appear here with admin feedback."
+                                },
                                 fontSize = 11.sp,
                                 color = textSecondaryCol,
                                 textAlign = TextAlign.Center,
@@ -4713,20 +4772,25 @@ fun ProfileTabContent(
                     ) {
                         Column {
                             Text(
-                                text = if (selectedSubTab == "My Work") "My Work" else if (selectedSubTab == "Followers") "Followers (Published Apps)" else "Post (Rejected Apps)",
+                                text = when (selectedSubTab) {
+                                    "Approved" -> "Approved"
+                                    "Pending" -> "Pending"
+                                    else -> "Rejected"
+                                },
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = textPrimaryCol
                             )
-                            if (selectedSubTab != "My Work") {
-                                Text(
-                                    text = if (selectedSubTab == "Followers") "Apps published and live on DarkRoot Store" else "Apps that were not approved",
-                                    fontSize = 11.sp,
-                                    color = textSecondaryCol
-                                )
-                            }
+                            Text(
+                                text = when (selectedSubTab) {
+                                    "Approved" -> "Apps published and live on DarkRoot Store"
+                                    "Pending" -> "Apps awaiting administrator review"
+                                    else -> "Apps that were not approved"
+                                },
+                                fontSize = 11.sp,
+                                color = textSecondaryCol
+                            )
                         }
-                        Text(text = "View all", fontSize = 12.sp, color = Color(0xFF3B82F6), fontWeight = FontWeight.Medium)
                     }
                     activeList.chunked(2).forEach { rowGroups ->
                         Row(
@@ -7149,9 +7213,9 @@ fun SettingsTabContent(
 
                     Text(
                         text = if (isPremiumMember) {
-                            "Thank you for supporting DarkStore! You have unlocked supreme features, a luxury visual workspace, and prioritized cloud deployments."
+                            "Thank you for supporting DarkStore! You have unlocked the custom theme and a luxury visual workspace."
                         } else {
-                            "Upgrade your repository workspace to DarkStore Premium. Support independent development and unlock high-speed channels and luxury aesthetics."
+                            "Upgrade your repository workspace to DarkStore Premium. Support independent development and unlock a luxury custom theme."
                         },
                         fontSize = 12.sp,
                         color = textPrimary,
@@ -7164,9 +7228,6 @@ fun SettingsTabContent(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         PremiumBenefitItem("Golden Accent Theme", "Transforms your catalog interface with a high-fidelity amber look.", isPremiumMember, premiumGold, textSecondary)
-                        PremiumBenefitItem("Unlimited High-Speed Sync", "Bypass queue restrictions and pull application archives with multi-channel threads.", isPremiumMember, premiumGold, textSecondary)
-                        PremiumBenefitItem("Priority Edge CDN Replication", "Your submitted console packages deploy with zero replication lag.", isPremiumMember, premiumGold, textSecondary)
-                        PremiumBenefitItem("Exclusive Beta Channel Access", "Be first to download and evaluate early test versions of upcoming software.", isPremiumMember, premiumGold, textSecondary)
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
@@ -7284,209 +7345,7 @@ fun SettingsTabContent(
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(20.dp))
-                        Divider(color = cardBorderColor.copy(alpha = 0.5f))
-                        Spacer(modifier = Modifier.height(14.dp))
-                        
-                        Text(
-                            text = "TURBO SPEED MULTI-CHANNEL CONNECTIONS",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = premiumGold,
-                            letterSpacing = 1.sp,
-                            modifier = Modifier.padding(bottom = 6.dp)
-                        )
-                        Text(
-                            text = "Optimize parallel streaming channels and observe simulated edge delivery metrics.",
-                            fontSize = 11.sp,
-                            color = textSecondary,
-                            lineHeight = 14.sp,
-                            modifier = Modifier.padding(bottom = 12.dp)
-                        )
-                        
-                        var isCdnActive by remember { mutableStateOf(true) }
-                        var maxParallelChannels by remember { mutableStateOf(4) }
-                        var liveNetworkLatency by remember { mutableStateOf(42) }
-                        
-                        LaunchedEffect(Unit) {
-                            while(true) {
-                                kotlinx.coroutines.delay(2000)
-                                liveNetworkLatency = (35..55).random()
-                            }
-                        }
-                        
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(textSecondary.copy(alpha = 0.05f), RoundedCornerShape(10.dp))
-                                .border(0.5.dp, textSecondary.copy(alpha = 0.15f), RoundedCornerShape(10.dp))
-                                .padding(12.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("Edge CDN Status", fontSize = 12.sp, color = textPrimary, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(8.dp)
-                                            .background(if (isCdnActive) Color(0xFF10B981) else Color(0xFFEF4444), CircleShape)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = if (isCdnActive) "ACTIVE (PRIORITY)" else "OFFLINE",
-                                        fontSize = 10.sp,
-                                        color = if (isCdnActive) Color(0xFF10B981) else Color(0xFFEF4444),
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-                            
-                            Spacer(modifier = Modifier.height(8.dp))
-                            
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("Simulation Latency", fontSize = 12.sp, color = textPrimary, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("$liveNetworkLatency ms (Optimized)", fontSize = 11.sp, color = premiumGold, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-                            }
-                            
-                            Spacer(modifier = Modifier.height(8.dp))
-                            
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("Parallel Stream Threads", fontSize = 12.sp, color = textPrimary, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    IconButton(
-                                        onClick = { if (maxParallelChannels > 2) maxParallelChannels -= 2 },
-                                        modifier = Modifier.size(24.dp)
-                                    ) {
-                                        Text("-", fontSize = 16.sp, color = textPrimary, fontWeight = FontWeight.Bold)
-                                    }
-                                    Text("$maxParallelChannels Channels", fontSize = 11.sp, color = textPrimary, fontWeight = FontWeight.Bold)
-                                    IconButton(
-                                        onClick = { if (maxParallelChannels < 16) maxParallelChannels += 2 },
-                                        modifier = Modifier.size(24.dp)
-                                    ) {
-                                        Text("+", fontSize = 16.sp, color = textPrimary, fontWeight = FontWeight.Bold)
-                                    }
-                                }
-                            }
-                        }
 
-                        Spacer(modifier = Modifier.height(20.dp))
-                        Divider(color = cardBorderColor.copy(alpha = 0.5f))
-                        Spacer(modifier = Modifier.height(14.dp))
-                        
-                        Text(
-                            text = "EXCLUSIVE BETA SANDBOX INSPECTOR",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = premiumGold,
-                            letterSpacing = 1.sp,
-                            modifier = Modifier.padding(bottom = 6.dp)
-                        )
-                        Text(
-                            text = "Deploy, inspect, and evaluate application binaries inside a secure isolated sandbox container.",
-                            fontSize = 11.sp,
-                            color = textSecondary,
-                            lineHeight = 14.sp,
-                            modifier = Modifier.padding(bottom = 12.dp)
-                        )
-                        
-                        var sandboxRunning by remember { mutableStateOf(false) }
-                        val sandboxLogs = remember { mutableStateListOf<String>() }
-                        
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(if (isDarkMode) Color(0xFF0F172A) else Color(0xFFF1F5F9), RoundedCornerShape(10.dp))
-                                .border(0.5.dp, textSecondary.copy(alpha = 0.2f), RoundedCornerShape(10.dp))
-                                .padding(12.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "Virtual Container Environment",
-                                    fontSize = 12.sp,
-                                    color = textPrimary,
-                                    fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.weight(1f),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Button(
-                                    onClick = {
-                                        if (sandboxRunning) {
-                                            sandboxRunning = false
-                                            sandboxLogs.clear()
-                                        } else {
-                                            sandboxRunning = true
-                                            sandboxLogs.clear()
-                                            sandboxLogs.add("[$] Initializing container runtime...")
-                                            coroutineScope.launch {
-                                                kotlinx.coroutines.delay(800)
-                                                sandboxLogs.add("[$] Attaching secure virtual loopbacks...")
-                                                kotlinx.coroutines.delay(600)
-                                                sandboxLogs.add("[$] Checking application signatures: OK")
-                                                kotlinx.coroutines.delay(800)
-                                                sandboxLogs.add("[$] Sandbox sandbox_process_104 active.")
-                                                kotlinx.coroutines.delay(1000)
-                                                sandboxLogs.add("[$] Port allocations bound to dev_channel.")
-                                            }
-                                        }
-                                    },
-                                    shape = RoundedCornerShape(14.dp),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = if (sandboxRunning) Color(0xFFEF4444) else premiumGold,
-                                        contentColor = Color.White
-                                    ),
-                                    contentPadding = PaddingValues(horizontal = 12.dp),
-                                    modifier = Modifier.height(28.dp)
-                                ) {
-                                    Text(if (sandboxRunning) "TERMINATE" else "BOOT CONTAINER", fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                            
-                            if (sandboxRunning) {
-                                Spacer(modifier = Modifier.height(10.dp))
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(Color.Black, RoundedCornerShape(6.dp))
-                                        .padding(8.dp)
-                                        .heightIn(max = 100.dp)
-                                        .verticalScroll(rememberScrollState())
-                                ) {
-                                    sandboxLogs.forEach { log ->
-                                        Text(
-                                            text = log,
-                                            color = Color(0xFF34D399),
-                                            fontSize = 9.sp,
-                                            fontFamily = FontFamily.Monospace,
-                                            lineHeight = 12.sp
-                                        )
-                                    }
-                                }
-                            }
-                        }
                     }
                 }
             }
@@ -9559,7 +9418,7 @@ fun ConsoleTabContent(
             AddNewAppForm(
                 existingApp = AppEntity(
                     id = sub.id, name = sub.name, developer = sub.developer, version = sub.version,
-                    size = "18 MB", category = sub.category, rating = "4.5", description = sub.description,
+                    size = "18 MB", category = sub.category, rating = "0.0", description = sub.description,
                     logo = sub.logo, screenshots = sub.screenshots, apkUrl = sub.apkUrl,
                     packageName = sub.packageName, isFeatured = false, isPopular = true,
                     isRecent = true, versionCode = 1, isApproved = true, submittedBy = sub.submittedBy, hasAds = sub.hasAds
@@ -9591,7 +9450,7 @@ fun ConsoleTabContent(
                 version = originalSub.version,
                 size = "18 MB",
                 category = originalSub.category,
-                rating = "4.5",
+                rating = "0.0",
                 description = originalSub.description,
                 logo = originalSub.logo,
                 screenshots = originalSub.screenshots,
@@ -12347,20 +12206,12 @@ fun AddNewAppForm(
                                 }
                             }
 
-                            if (isForAdmin) {
-                                OutlinedTextField(
-                                    value = rating,
-                                    onValueChange = { rating = it },
-                                    label = { Text("Initial Community Rating (e.g., 4.8)") },
-                                    leadingIcon = { Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFF01875F)) },
-                                    shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            } else {
-                                LaunchedEffect(Unit) {
-                                    if (rating.isBlank()) {
-                                        rating = "4.5"
-                                    }
+                            // Ratings always come from real user reviews — no one (including
+                            // admins) can hand-set a starting rating for an app anymore. Every
+                            // new/edited submission starts at 0.0 until it earns real reviews.
+                            LaunchedEffect(Unit) {
+                                if (rating.isBlank()) {
+                                    rating = "0.0"
                                 }
                             }
 
@@ -14170,6 +14021,136 @@ private fun isNetworkAvailable(context: android.content.Context): Boolean {
 }
 
 @Composable
+fun OptionalUpdateDialog(
+    update: UpdateState.UpdateRequired,
+    context: android.content.Context,
+    onDismiss: () -> Unit
+) {
+    val coroutineScope = rememberCoroutineScope()
+    var downloadProgress by remember { mutableStateOf<Int?>(null) }
+    var downloadError by remember { mutableStateOf<String?>(null) }
+    var isDownloading by remember { mutableStateOf(false) }
+    val hasInternet = remember { isNetworkAvailable(context) }
+
+    Dialog(onDismissRequest = { if (!isDownloading) onDismiss() }) {
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = Color(0xFF161B22)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = "Update available",
+                    tint = Color(0xFF34D399),
+                    modifier = Modifier.size(48.dp)
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = update.updateTitle.ifBlank { "Update Available" },
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    ),
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = update.updateMessage.ifBlank { "A new version (${update.latestVersionName}) of Dark Store is available." },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.7f),
+                    textAlign = TextAlign.Center
+                )
+
+                if (isDownloading) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    if (downloadProgress != null) {
+                        LinearProgressIndicator(
+                            progress = downloadProgress!! / 100f,
+                            color = Color(0xFF34D399),
+                            trackColor = Color.White.copy(alpha = 0.15f),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Downloading... ${downloadProgress}%",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(alpha = 0.7f)
+                        )
+                    } else {
+                        CircularProgressIndicator(color = Color(0xFF34D399), modifier = Modifier.size(24.dp))
+                    }
+                }
+
+                downloadError?.let { err ->
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Download Failed: $err",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFFFF5252)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        enabled = !isDownloading,
+                        modifier = Modifier.weight(1f),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
+                        shape = RoundedCornerShape(24.dp)
+                    ) {
+                        Text("Later", color = Color.White)
+                    }
+                    Button(
+                        onClick = {
+                            if (!hasInternet) {
+                                downloadError = "No active internet connection."
+                                return@Button
+                            }
+                            isDownloading = true
+                            downloadError = null
+                            coroutineScope.launch {
+                                try {
+                                    val appDao = com.example.data.AppDao(context.applicationContext)
+                                    val repository = com.example.data.AppRepository(appDao)
+                                    val downloadManager = com.example.utils.CustomDownloadManager(context, repository)
+                                    val downloadedFile = downloadManager.downloadSelfUpdate(update.apkDownloadUrl) { progress ->
+                                        downloadProgress = progress
+                                    }
+                                    isDownloading = false
+                                    com.example.utils.ApkInstaller.installApk(context, downloadedFile)
+                                } catch (e: Exception) {
+                                    isDownloading = false
+                                    downloadError = e.message ?: "Unknown error"
+                                }
+                            }
+                        },
+                        enabled = !isDownloading && hasInternet,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF34D399),
+                            contentColor = Color.Black
+                        ),
+                        shape = RoundedCornerShape(24.dp)
+                    ) {
+                        Text("Update Now", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun UpdateRequiredScreen(
     update: UpdateState.UpdateRequired,
     context: android.content.Context,
@@ -14458,7 +14439,7 @@ fun com.example.data.SubmissionEntity.toAppEntity() = com.example.data.AppEntity
     version = version,
     size = "18 MB",
     category = category,
-    rating = "4.5",
+    rating = "0.0",
     description = description,
     logo = logo,
     screenshots = screenshots,

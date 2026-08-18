@@ -1035,6 +1035,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         refreshSubmissions()
         syncUserProfile()
         startInstalledAppMonitoring()
+        clearOrphanedDownloadRecords()
         // NOTE: startPeriodicSync() removed — it ran a 12s network-polling loop
         // forever (apps + notices) for as long as the process stayed alive, which
         // is exactly the "background work for notifications" that was asked to be
@@ -1054,6 +1055,34 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 }
         } catch (e: Exception) {
             Log.e("StoreViewModel", "FirebaseMessaging is not initialized: ${e.message}")
+        }
+    }
+
+    /**
+     * The Library screen sometimes showed a download that looked "in progress"
+     * but wasn't actually moving — a frozen progress bar and speed reading with
+     * no real transfer behind it. Root cause: if the app process is killed while
+     * a download is running (force-stop, crash, or an aggressive OEM battery
+     * manager on devices like Redmi/Samsung), the download's row in local
+     * storage is left permanently stuck at status="DOWNLOADING" with whatever
+     * progress/speed values it last had — nothing ever resumes or clears it. At
+     * cold start, no download job can legitimately be running yet, so any
+     * "DOWNLOADING" row still present at this exact point is necessarily a
+     * leftover from a previous session, not a real active transfer. Mark it
+     * failed so the Library shows an accurate, retryable state instead.
+     */
+    private fun clearOrphanedDownloadRecords() {
+        viewModelScope.launch {
+            // Read directly from the repository's flow (which already holds its
+            // fully-loaded value at this point) rather than this ViewModel's own
+            // `downloads` StateFlow, whose `stateIn` collector may not have picked
+            // up its first value yet this early in init{} — avoids a startup race
+            // where this silently no-ops because `downloads.value` still reads its
+            // emptyList() fallback.
+            val orphaned = repository.allDownloads.first().filter { it.status == "DOWNLOADING" }
+            orphaned.forEach { stale ->
+                repository.insertDownload(stale.copy(status = "FAILED"))
+            }
         }
     }
 
@@ -1610,7 +1639,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                         version = submission.version,
                         size = "18 MB",
                         category = submission.category,
-                        rating = "4.5",
+                        rating = "0.0",
                         description = submission.description,
                         logo = submission.logo.ifBlank { if (submission.screenshots.contains(",")) submission.screenshots.substringBefore(",") else submission.screenshots },
                         screenshots = submission.screenshots,
