@@ -25,6 +25,11 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            // Signed with the debug keystore so this build is actually installable
+            // for sideloading/testing (an unsigned release APK can't be installed
+            // at all). This is NOT a substitute for a real release signing key —
+            // before any real distribution, replace this with a proper keystore.
+            signingConfig = signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -37,6 +42,16 @@ android {
     }
     kotlinOptions {
         jvmTarget = "17"
+        // Strong Skipping Mode makes the Compose compiler far more willing to skip
+        // recomposing a composable even when it has "unstable" parameters (raw
+        // List/Map/Set, lambdas capturing mutable state, etc.) by comparing values
+        // instead of assuming the worst. This project has many composables with
+        // exactly that shape; this is a broad, low-risk win on top of the specific
+        // @Immutable fixes already made by hand.
+        freeCompilerArgs += listOf(
+            "-P",
+            "plugin:androidx.compose.compiler.plugins.kotlin:experimentalStrongSkipping=true"
+        )
     }
     buildFeatures {
         compose = true
