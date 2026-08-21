@@ -14,6 +14,14 @@ object PaginationCache {
     private val memoryLRUList = mutableListOf<String>()
     private const val MAX_MEMORY_PAGES = 5 // maximum categories in RAM
 
+    // PERF: previously a brand new Moshi instance (and its reflection-based
+    // adapter setup) was built from scratch on every single save/load call —
+    // wasteful, since Moshi instances are stateless and safe to reuse. Built
+    // once, lazily, and shared.
+    private val moshi: Moshi by lazy { Moshi.Builder().build() }
+    private val appListType = Types.newParameterizedType(List::class.java, AppEntity::class.java)
+    private val appListAdapter by lazy { moshi.adapter<List<AppEntity>>(appListType) }
+
     fun getApps(context: Context, key: String): List<AppEntity>? {
         // Check memory cache first
         if (memoryCache.containsKey(key)) {
@@ -72,10 +80,7 @@ object PaginationCache {
     private fun saveToDisk(context: Context, key: String, apps: List<AppEntity>) {
         try {
             val file = getDiskFile(context, key)
-            val moshi = Moshi.Builder().build()
-            val type = Types.newParameterizedType(List::class.java, AppEntity::class.java)
-            val adapter = moshi.adapter<List<AppEntity>>(type)
-            val json = adapter.toJson(apps)
+            val json = appListAdapter.toJson(apps)
             file.writeText(json)
             Log.d("PaginationCache", "Saved key to disk cache: $key")
         } catch (e: Exception) {
@@ -88,10 +93,7 @@ object PaginationCache {
             val file = getDiskFile(context, key)
             if (file.exists()) {
                 val json = file.readText()
-                val moshi = Moshi.Builder().build()
-                val type = Types.newParameterizedType(List::class.java, AppEntity::class.java)
-                val adapter = moshi.adapter<List<AppEntity>>(type)
-                return adapter.fromJson(json)
+                return appListAdapter.fromJson(json)
             }
         } catch (e: Exception) {
             Log.e("PaginationCache", "Failed to load from disk cache: $key", e)

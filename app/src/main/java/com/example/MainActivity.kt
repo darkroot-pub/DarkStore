@@ -54,12 +54,13 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -1009,10 +1010,19 @@ fun PlayStoreMainDashboard(
         { id: String -> viewModel.cancelDownload(id) }
     }
 
+    val installCoroutineScope = rememberCoroutineScope()
     val onInstallClick = remember(context) {
         { dl: DownloadEntity ->
             if (dl.localFilePath != null) {
-                ApkInstaller.installApk(context, File(dl.localFilePath))
+                // BUG FIX: ApkInstaller.installApk() first attempts a silent install
+                // via Runtime.exec(...) + process.waitFor(), which blocks the calling
+                // thread for however long the shell command takes (potentially
+                // several seconds, tried up to 3 times). This was called directly
+                // from a click handler, i.e. on the main thread — freezing the whole
+                // UI every time "Install" was tapped. Dispatch to IO instead.
+                installCoroutineScope.launch(Dispatchers.IO) {
+                    ApkInstaller.installApk(context, File(dl.localFilePath))
+                }
             }
         }
     }
@@ -1382,51 +1392,29 @@ fun PlayStoreMainDashboard(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .pointerInput(tabsList, activeTab) {
-                        awaitPointerEventScope {
-                            while (true) {
-                                // 1. Wait for any down event
-                                val downEvent = awaitPointerEvent(PointerEventPass.Main)
-                                val down = downEvent.changes.firstOrNull() ?: continue
-                                if (down.isConsumed) continue
-                                var pointerId = down.id
-                                val startX = down.position.x
-                                val startY = down.position.y
-                                var dragAmountAccumulated = 0f
-                                var isHorizontalSwipe = false
-                                
-                                // 2. Track subsequent move events
-                                do {
-                                    val moveEvent = awaitPointerEvent(PointerEventPass.Main)
-                                    val change = moveEvent.changes.find { it.id == pointerId }
-                                    if (change != null && change.pressed) {
-                                        if (change.isConsumed) {
-                                            // A child like LazyRow consumed this horizontal drag
-                                            isHorizontalSwipe = false
-                                            break
-                                        }
-                                        val dx = change.position.x - startX
-                                        val dy = change.position.y - startY
-                                        
-                                        // Determine if it is a primary horizontal movement
-                                        if (kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.8f) {
-                                            dragAmountAccumulated = dx
-                                            isHorizontalSwipe = true
-                                        } else {
-                                            // If it becomes primarily vertical or is random, reset/cancel swipe detection
-                                            if (kotlin.math.abs(dy) > kotlin.math.abs(dx) * 1.5f && kotlin.math.abs(dy) > 30f) {
-                                                isHorizontalSwipe = false
-                                                break
-                                            }
-                                        }
-                                        pointerId = change.id
-                                    } else {
-                                        break
-                                    }
-                                } while (change != null && change.pressed)
-
+                    // PERF: this used to be a hand-rolled awaitPointerEventScope loop
+                    // that called awaitPointerEvent() on every single touch-move
+                    // sample of ANY gesture anywhere in this subtree — including
+                    // every frame of every vertical scroll on every tab (Apps, Games,
+                    // Library, Console, Profile, Settings all share this wrapper).
+                    // Once a child like the feed's LazyColumn started consuming a
+                    // vertical scroll, the loop's outer `while(true)` kept
+                    // re-suspending and resuming on every remaining move sample of
+                    // that same gesture instead of stepping aside, adding real
+                    // continuous per-frame overhead for the whole scroll — exactly
+                    // coincident with the reported lag.
+                    // detectHorizontalDragGestures is Compose Foundation's own
+                    // built-in utility for this exact job: it uses an internal
+                    // touch-slop check that recognizes non-horizontal gestures
+                    // quickly and steps aside for the child to handle them, instead
+                    // of continuing to poll every subsequent move sample by hand.
+                    // Same threshold-based swipe-to-change-tab behavior as before.
+                    .pointerInput(tabsList, activeTab, selectedCategory) {
+                        var dragAmountAccumulated = 0f
+                        detectHorizontalDragGestures(
+                            onDragEnd = {
                                 val threshold = 180f
-                                if (isHorizontalSwipe && kotlin.math.abs(dragAmountAccumulated) > threshold) {
+                                if (kotlin.math.abs(dragAmountAccumulated) > threshold) {
                                     val currentIdx = tabsList.indexOf(activeTab)
                                     if (dragAmountAccumulated < 0) {
                                         // Swipe Left -> Next tab
@@ -1452,7 +1440,12 @@ fun PlayStoreMainDashboard(
                                         }
                                     }
                                 }
-                            }
+                                dragAmountAccumulated = 0f
+                            },
+                            onDragCancel = { dragAmountAccumulated = 0f }
+                        ) { change, dragAmount ->
+                            change.consume()
+                            dragAmountAccumulated += dragAmount
                         }
                     }
             ) { targetTab ->
@@ -1935,7 +1928,15 @@ fun DiscoveryTabContent(
 
     // Load initial page or restore from cache
     LaunchedEffect(cacheKey, standardApps) {
-        val cached = if (searchQuery.isNotEmpty()) null else com.example.data.PaginationCache.getApps(context, cacheKey)
+        // PERF/BUG: this used to run on the composition's default (Main) dispatcher.
+        // PaginationCache's disk read/write is real synchronous file I/O (plus, until
+        // just now, a from-scratch Moshi/reflection setup on every call) — running it
+        // on the main thread caused a real stall right when reached, not just here on
+        // initial load but far more importantly in the auto-pagination effect below,
+        // which fires repeatedly *during* active scrolling. Dispatch to IO.
+        val cached = if (searchQuery.isNotEmpty()) null else withContext(Dispatchers.IO) {
+            com.example.data.PaginationCache.getApps(context, cacheKey)
+        }
         if (cached != null && cached.isNotEmpty()) {
             loadedApps.clear()
             loadedApps.addAll(cached)
@@ -1963,7 +1964,9 @@ fun DiscoveryTabContent(
                 val initialChunk = standardApps.take(initialSize)
                 loadedApps.addAll(initialChunk)
                 if (searchQuery.isEmpty()) {
-                    com.example.data.PaginationCache.saveApps(context, cacheKey, initialChunk)
+                    withContext(Dispatchers.IO) {
+                        com.example.data.PaginationCache.saveApps(context, cacheKey, initialChunk)
+                    }
                 }
             }
             isLoadingDiscovery = false
@@ -2000,7 +2003,19 @@ fun DiscoveryTabContent(
                     }
                     isPageLoading = false
                     if (searchQuery.isEmpty()) {
-                        com.example.data.PaginationCache.saveApps(context, cacheKey, loadedApps.filterNotNull())
+                        // PERF/BUG: this was the big one — this fires roughly every ~17
+                        // rows scrolled (each time pagination triggers) for as long as
+                        // the user keeps scrolling down, re-serializing the ENTIRE
+                        // (ever-growing) loaded list to JSON and writing it to disk,
+                        // synchronously, directly on the main thread — a real freeze
+                        // landing exactly mid-scroll, repeatedly, for long scroll
+                        // sessions. Snapshot the list before hopping off the main
+                        // thread (SnapshotStateList isn't safe to read from a
+                        // background thread while still attached to composition).
+                        val snapshot = loadedApps.filterNotNull()
+                        withContext(Dispatchers.IO) {
+                            com.example.data.PaginationCache.saveApps(context, cacheKey, snapshot)
+                        }
                     }
                 }
             }
@@ -4335,6 +4350,48 @@ fun ProfileTabContent(
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 val initialLetter = userName.trim().take(1).uppercase()
+                                val profilePhotoUrl by viewModel.profilePhotoUrl.collectAsStateWithLifecycle()
+                                var isUploadingPhoto by remember { mutableStateOf(false) }
+
+                                // FEATURE: profile picture upload — visible to other users when
+                                // they view this developer's public profile elsewhere in the app.
+                                val photoPickerLauncher = rememberLauncherForActivityResult(
+                                    contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+                                ) { uri ->
+                                    if (uri != null) {
+                                        isUploadingPhoto = true
+                                        coroutineScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                            try {
+                                                val inputStream = context.contentResolver.openInputStream(uri)
+                                                val bytes = inputStream?.readBytes()
+                                                inputStream?.close()
+                                                if (bytes != null) {
+                                                    val url = uploadImageToImgBB(context, bytes) { errorMsg ->
+                                                        coroutineScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+                                                            Toast.makeText(context, errorMsg, Toast.LENGTH_LONG).show()
+                                                        }
+                                                    }
+                                                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                                        isUploadingPhoto = false
+                                                        if (url != null) {
+                                                            viewModel.updateProfilePhoto(url)
+                                                            Toast.makeText(context, "Profile photo updated!", Toast.LENGTH_SHORT).show()
+                                                        }
+                                                    }
+                                                } else {
+                                                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                                        isUploadingPhoto = false
+                                                    }
+                                                }
+                                            } catch (e: Exception) {
+                                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                                    isUploadingPhoto = false
+                                                    Toast.makeText(context, "Failed to read image: ${e.message}", Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                                 
                                 Box(
                                     modifier = Modifier.padding(bottom = 8.dp)
@@ -4345,16 +4402,48 @@ fun ProfileTabContent(
                                             .clip(CircleShape)
                                             .background(if (isDarkMode) Color(0xFF0F172A) else Color(0xFF1E293B))
                                             .border(4.dp, surfaceCol, CircleShape)
-                                            .clickable {
-                                                Toast.makeText(context, "App icon clicked!", Toast.LENGTH_SHORT).show()
+                                            .clickable(enabled = !isUploadingPhoto) {
+                                                photoPickerLauncher.launch("image/*")
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (isUploadingPhoto) {
+                                            CircularProgressIndicator(color = Color(0xFF3B82F6), strokeWidth = 3.dp, modifier = Modifier.size(36.dp))
+                                        } else if (profilePhotoUrl.isNotBlank()) {
+                                            coil.compose.AsyncImage(
+                                                model = profilePhotoUrl,
+                                                contentDescription = "Profile photo",
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier.fillMaxSize().clip(CircleShape)
+                                            )
+                                        } else {
+                                            Icon(
+                                                imageVector = Icons.Default.Security,
+                                                contentDescription = "Profile Logo",
+                                                tint = Color(0xFF3B82F6),
+                                                modifier = Modifier.size(60.dp)
+                                            )
+                                        }
+                                    }
+
+                                    // Camera badge indicating the avatar is tappable/editable.
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .offset(x = 4.dp, y = 4.dp)
+                                            .size(28.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFF3B82F6))
+                                            .clickable(enabled = !isUploadingPhoto) {
+                                                photoPickerLauncher.launch("image/*")
                                             },
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Icon(
-                                            imageVector = Icons.Default.Security,
-                                            contentDescription = "Profile Logo",
-                                            tint = Color(0xFF3B82F6),
-                                            modifier = Modifier.size(60.dp)
+                                            imageVector = Icons.Default.Add,
+                                            contentDescription = "Change profile photo",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(16.dp)
                                         )
                                     }
                                     
@@ -5391,16 +5480,16 @@ fun ProfileTabContent(
                                     val bytes = inputStream?.readBytes()
                                     inputStream?.close()
                                     if (bytes != null) {
-                                        val contentType = "image/jpeg"
-                                        val fileName = "screenshot_${System.currentTimeMillis()}.jpg"
-                                        val url = com.example.data.FirebaseAuthService.uploadFile(contentType, fileName, bytes)
+                                        val url = uploadImageToImgBB(context, bytes) { errorMsg ->
+                                            coroutineScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+                                                Toast.makeText(context, errorMsg, Toast.LENGTH_LONG).show()
+                                            }
+                                        }
                                         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                                             ssUploadingStates[slot] = false
                                             if (url != null) {
                                                 screenshotsList[slot] = url
                                                 Toast.makeText(context, "Screenshot ${slot + 1} uploaded successfully!", Toast.LENGTH_SHORT).show()
-                                            } else {
-                                                Toast.makeText(context, "Upload failed or skipped. Please paste a direct URL.", Toast.LENGTH_SHORT).show()
                                             }
                                         }
                                     } else {
@@ -9862,9 +9951,11 @@ fun ConsoleTabContent(
                             val bytes = inputStream?.readBytes()
                             inputStream?.close()
                             if (bytes != null) {
-                                val contentType = "image/jpeg"
-                                val fileName = "screenshot_${System.currentTimeMillis()}.jpg"
-                                val url = com.example.data.FirebaseAuthService.uploadFile(contentType, fileName, bytes)
+                                val url = uploadImageToImgBB(context, bytes) { errorMsg ->
+                                    coroutineScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+                                        Toast.makeText(context, errorMsg, Toast.LENGTH_LONG).show()
+                                    }
+                                }
                                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                                     ssUploadingStates[slot] = false
                                     if (url != null) {
@@ -9877,8 +9968,6 @@ fun ConsoleTabContent(
                                             5 -> s6 = url
                                         }
                                         Toast.makeText(context, "Screenshot ${slot + 1} uploaded successfully!", Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        Toast.makeText(context, "Cloud upload failed.", Toast.LENGTH_SHORT).show()
                                     }
                                 }
                             } else {
@@ -11728,7 +11817,15 @@ private fun handleAppActionButton(
                 viewModel.downloadAndInstallApp(app)
             }
         } else {
-            ApkInstaller.installApk(context, file)
+            // BUG FIX: same issue as elsewhere — installApk()'s silent-install
+            // attempt blocks on Runtime.exec(...).waitFor() for potentially several
+            // seconds. This function has no coroutine scope available (it's a plain
+            // function called from a click handler on the main thread), so a
+            // lightweight background thread is the simplest way to keep this off
+            // the UI thread without restructuring every caller of this function.
+            Thread {
+                ApkInstaller.installApk(context, file)
+            }.start()
         }
     } else if (hasUpdate) {
         if (!isNetworkAvailable(context)) {
@@ -11791,6 +11888,10 @@ fun AddNewAppForm(
     val context = LocalContext.current
 
     fun uploadFileFromUri(uri: Uri, isLogo: Boolean, onFinished: (String?) -> Unit) {
+        // Simplified per feedback: previously tried Firebase Storage first and only
+        // fell back to ImgBB silently on failure — the Firebase step was failing
+        // unpredictably and just added an extra point of failure with no benefit.
+        // Now uploads directly to ImgBB, with a clear error if ImgBB itself is down.
         coroutineScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 val inputStream = context.contentResolver.openInputStream(uri)
@@ -11803,54 +11904,51 @@ fun AddNewAppForm(
                     }
                     return@launch
                 }
-                
-                val contentType = "image/jpeg"
-                val fileName = if (isLogo) "logo_${System.currentTimeMillis()}.jpg" else "screenshot_${System.currentTimeMillis()}.jpg"
-                
-                val uploadedUrl = com.example.data.FirebaseAuthService.uploadFile(contentType, fileName, bytes)
-                if (uploadedUrl != null) {
-                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                        onFinished(uploadedUrl)
-                    }
-                } else {
-                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                        Toast.makeText(context, "Firebase upload skipped. Trying backup server...", Toast.LENGTH_SHORT).show()
-                    }
-                    try {
-                        val base64String = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
-                        val formBody = okhttp3.FormBody.Builder()
-                            .add("image", base64String)
-                            .build()
 
-                        val request = okhttp3.Request.Builder()
-                            .url("https://api.imgbb.com/1/upload?key=a046c848dfa5230136f107106d4bb187")
-                            .post(formBody)
-                            .build()
+                try {
+                    val base64String = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                    val formBody = okhttp3.FormBody.Builder()
+                        .add("image", base64String)
+                        .build()
 
-                        val client = okhttp3.OkHttpClient.Builder()
-                            .connectTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
-                            .writeTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
-                            .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
-                            .build()
-                        val response = client.newCall(request).execute()
-                        if (response.isSuccessful) {
-                            val bodyString = response.body?.string() ?: ""
-                            val match = Regex("\"url\"\\s*:\\s*\"([^\"]+)\"").find(bodyString)
-                            val fallbackUrl = match?.groupValues?.get(1)?.replace("\\/", "/")
+                    val request = okhttp3.Request.Builder()
+                        .url("https://api.imgbb.com/1/upload?key=a046c848dfa5230136f107106d4bb187")
+                        .post(formBody)
+                        .build()
+
+                    val client = okhttp3.OkHttpClient.Builder()
+                        .connectTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+                        .writeTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+                        .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+                        .build()
+                    val response = client.newCall(request).execute()
+                    if (response.isSuccessful) {
+                        val bodyString = response.body?.string() ?: ""
+                        val match = Regex("\"url\"\\s*:\\s*\"([^\"]+)\"").find(bodyString)
+                        val uploadedUrl = match?.groupValues?.get(1)?.replace("\\/", "/")
+                        if (uploadedUrl != null) {
                             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                onFinished(fallbackUrl)
+                                onFinished(uploadedUrl)
                             }
                         } else {
                             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                Toast.makeText(context, "Backup offline. Upload failed completely.", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Image server returned an unexpected response. Please try again.", Toast.LENGTH_LONG).show()
                                 onFinished(null)
                             }
                         }
-                    } catch (ex: Exception) {
+                    } else {
+                        // Clear, specific "server down" messaging instead of a generic failure.
                         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                            Toast.makeText(context, "Upload failed: ${ex.message}", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Image server is currently down (error ${response.code}). Please try again later.", Toast.LENGTH_LONG).show()
                             onFinished(null)
                         }
+                    }
+                } catch (ex: java.io.IOException) {
+                    // Network-level failure (no connection, timeout, DNS, etc.) — this is
+                    // what "server is down" looks like from the client's perspective.
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        Toast.makeText(context, "Image server is currently down or unreachable. Please try again later.", Toast.LENGTH_LONG).show()
+                        onFinished(null)
                     }
                 }
             } catch (e: Exception) {
@@ -11961,7 +12059,7 @@ fun AddNewAppForm(
                             fontSize = 18.sp
                         )
                         Text(
-                            text = "Google Play Developer Console • Workspace Sync",
+                            text = "DarkStore Developer Console • Workspace Sync",
                             color = Color.White.copy(alpha = 0.75f),
                             fontSize = 11.sp
                         )
@@ -12601,7 +12699,7 @@ fun SimulatedPaymentCheckoutDialog(
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(
-                    text = "Google Play Purchase",
+                    text = "DarkStore Purchase",
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
                     color = MaterialTheme.colorScheme.onSurface
@@ -12935,14 +13033,16 @@ fun SendNoticeFormDialog(
                     }
                     val contentType = "image/jpeg"
                     val fileName = "notice_${System.currentTimeMillis()}.jpg"
-                    val uploadedUrl = com.example.data.FirebaseAuthService.uploadFile(contentType, fileName, bytes)
+                    val uploadedUrl = uploadImageToImgBB(context, bytes) { errorMsg ->
+                        coroutineScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+                            Toast.makeText(context, errorMsg, Toast.LENGTH_LONG).show()
+                        }
+                    }
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                         isUploading = false
                         if (uploadedUrl != null) {
                             imageUrl = uploadedUrl
                             Toast.makeText(context, "Notice photo uploaded successfully!", Toast.LENGTH_SHORT).show()
-                        } else {
-                            Toast.makeText(context, "Upload failed. Please enter URL manually.", Toast.LENGTH_SHORT).show()
                         }
                     }
                 } catch (e: Exception) {
@@ -13987,6 +14087,56 @@ sealed class UpdateState {
     ) : UpdateState()
 }
 
+/**
+ * Uploads image bytes directly to ImgBB and returns the hosted URL, or null on
+ * failure. Centralizes what used to be duplicated (and inconsistent) upload
+ * logic across the app logo, screenshots (in two separate forms), and notice
+ * image pickers — some of which relied solely on an unreliable Firebase
+ * Storage call with no fallback at all. This always goes straight to ImgBB
+ * and reports a clear "server is down" message on failure via [onError],
+ * rather than the vague "upload failed/skipped" messages that existed before.
+ */
+private suspend fun uploadImageToImgBB(
+    context: android.content.Context,
+    bytes: ByteArray,
+    onError: (String) -> Unit
+): String? {
+    return try {
+        val base64String = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+        val formBody = okhttp3.FormBody.Builder()
+            .add("image", base64String)
+            .build()
+        val request = okhttp3.Request.Builder()
+            .url("https://api.imgbb.com/1/upload?key=a046c848dfa5230136f107106d4bb187")
+            .post(formBody)
+            .build()
+        val client = okhttp3.OkHttpClient.Builder()
+            .connectTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+        val response = client.newCall(request).execute()
+        if (response.isSuccessful) {
+            val bodyString = response.body?.string() ?: ""
+            val match = Regex("\"url\"\\s*:\\s*\"([^\"]+)\"").find(bodyString)
+            val uploadedUrl = match?.groupValues?.get(1)?.replace("\\/", "/")
+            if (uploadedUrl == null) {
+                onError("Image server returned an unexpected response. Please try again.")
+            }
+            uploadedUrl
+        } else {
+            onError("Image server is currently down (error ${response.code}). Please try again later.")
+            null
+        }
+    } catch (ex: java.io.IOException) {
+        onError("Image server is currently down or unreachable. Please try again later.")
+        null
+    } catch (ex: Exception) {
+        onError("Upload failed: ${ex.message}")
+        null
+    }
+}
+
 private fun getInstalledVersionCode(context: android.content.Context): Int {
     return try {
         val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
@@ -14118,7 +14268,11 @@ fun OptionalUpdateDialog(
                             }
                             isDownloading = true
                             downloadError = null
-                            coroutineScope.launch {
+                            // PERF/BUG: constructing AppDao does synchronous file I/O in its
+                            // init block (reads 3 cached JSON files from disk) — this ran on
+                            // the Main dispatcher by default here, a real main-thread stall
+                            // every time this button was tapped. Dispatch the whole flow to IO.
+                            coroutineScope.launch(Dispatchers.IO) {
                                 try {
                                     val appDao = com.example.data.AppDao(context.applicationContext)
                                     val repository = com.example.data.AppRepository(appDao)
@@ -14348,7 +14502,10 @@ fun UpdateRequiredScreen(
                     isDownloading = true
                     downloadError = null
                     
-                    coroutineScope.launch {
+                    // PERF/BUG: same main-thread file I/O issue as the optional-update
+                    // dialog above — AppDao's constructor synchronously reads 3 cached
+                    // JSON files from disk. Dispatch to IO instead of the default Main.
+                    coroutineScope.launch(Dispatchers.IO) {
                         try {
                             val appDao = com.example.data.AppDao(context.applicationContext)
                             val repository = com.example.data.AppRepository(appDao)

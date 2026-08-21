@@ -257,18 +257,21 @@ class CustomDownloadManager(
                             lastSavedProgress = progress
 
                             val elapsedTime = (currentTime - startTime) / 1000.0
-                            val isPremium = context.getSharedPreferences("dark_store_prefs", android.content.Context.MODE_PRIVATE).getBoolean("is_premium_member", false)
-                            val speedMultiplier = if (isPremium) 3.5 else 1.0
+                            // NOTE: previously multiplied the *displayed* speed by 3.5x for
+                            // premium members and appended "(Turbo)" — the actual bytes/sec
+                            // being downloaded was never any different; this just showed a
+                            // fabricated number. Same category of issue as the fake "Turbo
+                            // Speed" panel already removed elsewhere. Now shows the real speed
+                            // for everyone.
                             val downloadSpeed = if (elapsedTime > 0) {
-                                val speedKB = ((totalBytesDownloaded / 1024.0) / elapsedTime) * speedMultiplier
-                                val baseSpeed = if (speedKB > 1024) {
+                                val speedKB = (totalBytesDownloaded / 1024.0) / elapsedTime
+                                if (speedKB > 1024) {
                                     String.format(java.util.Locale.getDefault(), "%.1f MB/s", speedKB / 1024.0)
                                 } else {
                                     String.format(java.util.Locale.getDefault(), "%.0f KB/s", speedKB)
                                 }
-                                if (isPremium) "$baseSpeed (Turbo)" else baseSpeed
                             } else {
-                                if (isPremium) "0 KB/s (Turbo)" else "0 KB/s"
+                                "0 KB/s"
                             }
 
                             download = download.copy(
@@ -312,10 +315,14 @@ class CustomDownloadManager(
                 
                 NotificationHelper.showDownloadCompleted(context, app.name, targetFile.absolutePath, app.id.hashCode())
                 
-                // Trigger auto-install layout
-                withContext(Dispatchers.Main) {
-                    ApkInstaller.installApk(context, targetFile)
-                }
+                // BUG FIX: this deliberately switched to Dispatchers.Main right before
+                // calling installApk(), which internally blocks on Runtime.exec(...)
+                // .waitFor() for a silent-install attempt (potentially several seconds,
+                // tried up to 3 times) — freezing the UI immediately after every
+                // completed download. This whole function already runs under
+                // withContext(Dispatchers.IO); just don't switch off of it. (Neither
+                // startActivity() nor Toast.makeText() require the main thread.)
+                ApkInstaller.installApk(context, targetFile)
             }
         } catch (e: Exception) {
             val isCancelled = !coroutineContext.isActive || 

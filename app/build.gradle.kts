@@ -71,6 +71,12 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.activity.compose)
+    // Real "Continue with Google" sign-in — this alias already existed in the
+    // version catalog but was never actually applied here, so the Google
+    // Sign-In classes it provides could never resolve. That's why the feature
+    // didn't work: the UI/backend logic for it existed, but the library that
+    // makes an actual Google account picker possible was never pulled in.
+    implementation(libs.play.services.auth)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)

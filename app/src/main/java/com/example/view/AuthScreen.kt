@@ -1,6 +1,10 @@
 package com.example.view
 
+import android.app.Activity
+import android.content.Intent
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,6 +29,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.viewmodel.StoreViewModel
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
+
+// This is the Web Client ID (client_type: 3) already present in this project's own
+// google-services.json — required by GoogleSignInOptions.requestIdToken() to get a
+// verifiable ID token back, which is what the existing (already-correct)
+// loginWithGoogleIdToken() backend call needs.
+private const val GOOGLE_WEB_CLIENT_ID = "210511589455-90vu807op09vmokh1g9niflgid076dfd.apps.googleusercontent.com"
 
 @Composable
 fun AuthScreen(
@@ -39,12 +52,53 @@ fun AuthScreen(
     var password by remember { mutableStateOf("") }
     var displayName by remember { mutableStateOf("") }
     var isPasswordVisible by remember { mutableStateOf(false) }
-    var rememberMe by remember { mutableStateOf(false) }
     
     var isLoading by remember { mutableStateOf(false) }
 
     var showTermsDialog by remember { mutableStateOf(false) }
     var pendingAuthAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+
+    // FEATURE FIX: "Continue with Google" previously had no working entry point at
+    // all — the backend call (loginWithGoogleIdToken) already existed and was
+    // correct, but the actual Google Sign-In library was never included in the
+    // build (see build.gradle.kts), so there was no way to launch a real account
+    // picker. Wired up here using the standard GoogleSignInClient flow.
+    val googleSignInClient = remember {
+        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestIdToken(GOOGLE_WEB_CLIENT_ID)
+            .requestEmail()
+            .build()
+        GoogleSignIn.getClient(context, gso)
+    }
+
+    val googleSignInLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode != Activity.RESULT_OK) {
+            // User backed out of the account picker — not an error, just do nothing.
+            return@rememberLauncherForActivityResult
+        }
+        try {
+            val account = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+                .getResult(ApiException::class.java)
+            val idToken = account.idToken
+            if (idToken.isNullOrBlank()) {
+                Toast.makeText(context, "Google sign-in failed: no ID token returned.", Toast.LENGTH_SHORT).show()
+                return@rememberLauncherForActivityResult
+            }
+            isLoading = true
+            viewModel.loginWithGoogleIdToken(
+                idToken = idToken,
+                fallbackEmail = account.email ?: "",
+                fallbackName = account.displayName ?: ""
+            ) { success, msg ->
+                isLoading = false
+                Toast.makeText(context, msg ?: if (success) "Signed in with Google!" else "Google sign-in failed.", Toast.LENGTH_SHORT).show()
+            }
+        } catch (e: ApiException) {
+            Toast.makeText(context, "Google sign-in failed (code ${e.statusCode}).", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     LaunchedEffect(Unit) {
         viewModel.refreshTermsAgreements()
@@ -180,22 +234,12 @@ fun AuthScreen(
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.End
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(text = "Remember me nextime", fontSize = 12.sp, color = Color.Gray, modifier = Modifier.padding(end = 8.dp))
-                            Switch(
-                                checked = rememberMe,
-                                onCheckedChange = { rememberMe = it },
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = Color(0xFF1E293B), 
-                                    checkedTrackColor = Color(0xFF1E293B).copy(alpha = 0.5f),
-                                    uncheckedThumbColor = Color.White,
-                                    uncheckedTrackColor = Color(0xFFE2E8F0),
-                                    uncheckedBorderColor = Color(0xFFCBD5E1)
-                                )
-                            )
-                        }
+                        // "Remember me" toggle removed — it was never actually wired to
+                        // anything (the session is already kept signed in by default via
+                        // Firebase Auth's normal persistence), so the switch just sat
+                        // there doing nothing. Session-keeping is simply always on now.
                         Text(
                             text = "Forgot Password?",
                             color = Color(0xFF1E293B),
@@ -297,6 +341,48 @@ fun AuthScreen(
                 }
                 
                 Spacer(modifier = Modifier.height(24.dp))
+
+                if (authMode != "FORGOT") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Divider(modifier = Modifier.weight(1f), color = Color(0xFFE2E8F0))
+                        Text(
+                            text = "  OR  ",
+                            color = Color.Gray,
+                            fontSize = 12.sp
+                        )
+                        Divider(modifier = Modifier.weight(1f), color = Color(0xFFE2E8F0))
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            googleSignInClient.signOut().addOnCompleteListener {
+                                googleSignInLauncher.launch(googleSignInClient.signInIntent)
+                            }
+                        },
+                        enabled = !isLoading,
+                        shape = RoundedCornerShape(24.dp),
+                        border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF1E293B)),
+                        modifier = Modifier.fillMaxWidth().height(52.dp).testTag("auth_google_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AccountCircle,
+                            contentDescription = "Google",
+                            tint = Color(0xFF1E293B),
+                            modifier = Modifier.padding(end = 8.dp)
+                        )
+                        Text(
+                            text = "Continue with Google",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
                 
                 if (authMode == "FORGOT") {
                     Row(

@@ -280,12 +280,15 @@ object FirebaseAuthService {
                 if (response.isSuccessful) {
                     Pair(true, "Password reset instructions dispatched to $email!")
                 } else {
+                    // NOTE: this used to silently claim success ("simulated successfully")
+                    // whenever the request failed while using the app's normal default API
+                    // key — which is the case for virtually every real user. That meant a
+                    // genuinely failed password reset (wrong email, Firebase misconfigured,
+                    // Identity Toolkit API not enabled, etc.) told the user it worked, and
+                    // they'd never receive an email with no way to know why. Always report
+                    // the real outcome now.
                     val errMsg = parseAuthError(bodyStr)
-                    if (targetKey == DEFAULT_API_KEY) {
-                        Pair(true, "Password reset link simulated successfully for $email (Sandbox)!")
-                    } else {
-                        Pair(false, errMsg)
-                    }
+                    Pair(false, errMsg)
                 }
             }
         } catch (e: Exception) {

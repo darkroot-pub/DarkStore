@@ -13,5 +13,6 @@ data class UserEntity(
     val devWebsite: String = "",
     val devGithub: String = "",
     val devName: String = "",
-    val devBio: String = ""
+    val devBio: String = "",
+    val profilePhotoUrl: String = ""
 ) : Serializable

@@ -159,6 +159,11 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     private val _devBio = MutableStateFlow(sharedPrefs.getString("dev_bio", "") ?: "")
     val devBio: StateFlow<String> = _devBio.asStateFlow()
 
+    // Profile photo — visible to other users when they view this developer's
+    // public profile (e.g. from an app's "By <developer>" listing).
+    private val _profilePhotoUrl = MutableStateFlow(sharedPrefs.getString("profile_photo_url", "") ?: "")
+    val profilePhotoUrl: StateFlow<String> = _profilePhotoUrl.asStateFlow()
+
     // Developers List State
     private val _developers = MutableStateFlow<List<UserEntity>>(emptyList())
     val developers: StateFlow<List<UserEntity>> = _developers.asStateFlow()
@@ -546,6 +551,29 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 _devGithub.value = user.devGithub
                 _devName.value = user.devName
                 _devBio.value = user.devBio
+                _profilePhotoUrl.value = user.profilePhotoUrl
+                
+                // BUG FIX: this only updated in-memory state before, never
+                // SharedPreferences — so on the NEXT cold start (app fully closed
+                // and reopened), the profile screen would read stale cached values
+                // (often "not a developer") and briefly show the "become a
+                // developer" gate even for an already-registered developer, until
+                // the async syncUserProfile() network call finished correcting it.
+                // Persisting immediately on login avoids that flash entirely.
+                sharedPrefs.edit().apply {
+                    putBoolean("is_logged_in", true)
+                    putString("user_email", user.email)
+                    putString("user_name", user.displayName)
+                    putString("user_uid", user.uid)
+                    putString("user_role", user.role)
+                    putBoolean("is_developer", user.isDeveloper)
+                    putString("dev_name", user.devName)
+                    putString("dev_website", user.devWebsite)
+                    putString("dev_github", user.devGithub)
+                    putString("dev_bio", user.devBio)
+                    putString("profile_photo_url", user.profilePhotoUrl)
+                    apply()
+                }
                 
                 updateEcosystemPolicyAcceptedForCurrentUser(user.email)
                 updateTermsAcceptedForCurrentUser(user.email)
@@ -592,6 +620,23 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 _devGithub.value = user.devGithub
                 _devName.value = user.devName
                 _devBio.value = user.devBio
+                _profilePhotoUrl.value = user.profilePhotoUrl
+
+                // BUG FIX: same missing-persistence issue as signInWithEmail above.
+                sharedPrefs.edit().apply {
+                    putBoolean("is_logged_in", true)
+                    putString("user_email", user.email)
+                    putString("user_name", user.displayName)
+                    putString("user_uid", user.uid)
+                    putString("user_role", user.role)
+                    putBoolean("is_developer", user.isDeveloper)
+                    putString("dev_name", user.devName)
+                    putString("dev_website", user.devWebsite)
+                    putString("dev_github", user.devGithub)
+                    putString("dev_bio", user.devBio)
+                    putString("profile_photo_url", user.profilePhotoUrl)
+                    apply()
+                }
                 
                 updateEcosystemPolicyAcceptedForCurrentUser(user.email)
                 updateTermsAcceptedForCurrentUser(user.email)
@@ -628,6 +673,23 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 _devGithub.value = user.devGithub
                 _devName.value = user.devName
                 _devBio.value = user.devBio
+                _profilePhotoUrl.value = user.profilePhotoUrl
+
+                // BUG FIX: same missing-persistence issue as signInWithEmail above.
+                sharedPrefs.edit().apply {
+                    putBoolean("is_logged_in", true)
+                    putString("user_email", user.email)
+                    putString("user_name", user.displayName)
+                    putString("user_uid", user.uid)
+                    putString("user_role", user.role)
+                    putBoolean("is_developer", user.isDeveloper)
+                    putString("dev_name", user.devName)
+                    putString("dev_website", user.devWebsite)
+                    putString("dev_github", user.devGithub)
+                    putString("dev_bio", user.devBio)
+                    putString("profile_photo_url", user.profilePhotoUrl)
+                    apply()
+                }
                 
                 updateEcosystemPolicyAcceptedForCurrentUser(user.email)
                 updateTermsAcceptedForCurrentUser(user.email)
@@ -666,7 +728,15 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
             putString("dev_website", "")
             putString("dev_github", "")
             putString("dev_bio", "")
+            putString("profile_photo_url", "")
             putString("auth_id_token", "")
+            // BUG FIX: purchasedAppIds/preRegisteredAppIds were stored under
+            // device-global keys and never cleared here — meaning if a different
+            // person logged into this app on the same phone, they'd see the
+            // PREVIOUS user's purchased/pre-registered apps shown as their own.
+            // Clearing them on logout, same as every other per-user field above.
+            putString("purchased_app_ids", "")
+            putString("preregistered_app_ids", "")
             apply()
         }
         FirebaseAuthService.activeToken = ""
@@ -681,9 +751,12 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         _devWebsite.value = ""
         _devGithub.value = ""
         _devBio.value = ""
+        _profilePhotoUrl.value = ""
         _isTermsAccepted.value = false
         _isEcosystemPolicyAccepted.value = false
         _submissions.value = emptyList()
+        _purchasedAppIds.value = emptySet()
+        _preRegisteredAppIds.value = emptySet()
     }
 
     fun loginAsGuest() {
@@ -698,7 +771,10 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
             putString("dev_website", "")
             putString("dev_github", "")
             putString("dev_bio", "")
+            putString("profile_photo_url", "")
             putString("auth_id_token", "")
+            putString("purchased_app_ids", "")
+            putString("preregistered_app_ids", "")
             putBoolean("terms_accepted_v1", true)
             putBoolean("terms_accepted_guest@darkroot.io", true)
             putBoolean("is_terms_accepted", true)
@@ -714,8 +790,11 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         _devWebsite.value = ""
         _devGithub.value = ""
         _devBio.value = ""
+        _profilePhotoUrl.value = ""
         _isTermsAccepted.value = true
         _isEcosystemPolicyAccepted.value = true
+        _purchasedAppIds.value = emptySet()
+        _preRegisteredAppIds.value = emptySet()
     }
 
     fun registerDeveloper(devName: String, website: String, github: String, bio: String = "", onFinished: (Boolean, String?) -> Unit) {
@@ -779,7 +858,8 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 devWebsite = website,
                 devGithub = github,
                 devName = devName,
-                devBio = bio
+                devBio = bio,
+                profilePhotoUrl = sharedPrefs.getString("profile_photo_url", "") ?: ""
             )
             val firestoreSuccess = FirebaseAuthService.saveUserInFirestore(user)
             val rtdbSuccess = FirebaseAuthService.saveUserInRealtimeDatabase(user)
@@ -806,6 +886,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                     _devName.value = user.devName
                     _devBio.value = user.devBio
                     _userName.value = user.displayName
+                    _profilePhotoUrl.value = user.profilePhotoUrl
                     
                     sharedPrefs.edit().apply {
                         putBoolean("is_developer", user.isDeveloper)
@@ -814,6 +895,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                         putString("dev_github", user.devGithub)
                         putString("dev_bio", user.devBio)
                         putString("user_name", user.displayName)
+                        putString("profile_photo_url", user.profilePhotoUrl)
                         apply()
                     }
                 }
@@ -846,6 +928,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         val website = sharedPrefs.getString("dev_website", "") ?: ""
         val github = sharedPrefs.getString("dev_github", "") ?: ""
         val bio = sharedPrefs.getString("dev_bio", "") ?: ""
+        val photoUrl = sharedPrefs.getString("profile_photo_url", "") ?: ""
         if (uid.isNotBlank() && uid != "guest_uid") {
             viewModelScope.launch {
                 val user = UserEntity(
@@ -856,7 +939,8 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                     devWebsite = website,
                     devGithub = github,
                     devName = newName,
-                    devBio = bio
+                    devBio = bio,
+                    profilePhotoUrl = photoUrl
                 )
                 FirebaseAuthService.saveUserInFirestore(user)
                 FirebaseAuthService.saveUserInRealtimeDatabase(user)
@@ -877,6 +961,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         val website = sharedPrefs.getString("dev_website", "") ?: ""
         val github = sharedPrefs.getString("dev_github", "") ?: ""
         val name = sharedPrefs.getString("dev_name", "") ?: ""
+        val photoUrl = sharedPrefs.getString("profile_photo_url", "") ?: ""
         if (uid.isNotBlank() && uid != "guest_uid") {
             viewModelScope.launch {
                 val user = UserEntity(
@@ -887,10 +972,44 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                     devWebsite = website,
                     devGithub = github,
                     devName = name,
-                    devBio = newBio
+                    devBio = newBio,
+                    profilePhotoUrl = photoUrl
                 )
                 FirebaseAuthService.saveUserInFirestore(user)
                 FirebaseAuthService.saveUserInRealtimeDatabase(user)
+            }
+        }
+    }
+
+    fun updateProfilePhoto(newUrl: String) {
+        sharedPrefs.edit()
+            .putString("profile_photo_url", newUrl)
+            .apply()
+        _profilePhotoUrl.value = newUrl
+        val uid = _userUid.value
+        val email = _userEmail.value
+        val role = _userRole.value
+        val website = sharedPrefs.getString("dev_website", "") ?: ""
+        val github = sharedPrefs.getString("dev_github", "") ?: ""
+        val bio = sharedPrefs.getString("dev_bio", "") ?: ""
+        val name = sharedPrefs.getString("dev_name", "") ?: ""
+        val displayName = _userName.value
+        if (uid.isNotBlank() && uid != "guest_uid") {
+            viewModelScope.launch {
+                val user = UserEntity(
+                    uid = uid,
+                    email = email,
+                    displayName = displayName,
+                    role = role,
+                    devWebsite = website,
+                    devGithub = github,
+                    devName = name,
+                    devBio = bio,
+                    profilePhotoUrl = newUrl
+                )
+                FirebaseAuthService.saveUserInFirestore(user)
+                FirebaseAuthService.saveUserInRealtimeDatabase(user)
+                refreshDevelopers()
             }
         }
     }
@@ -1927,7 +2046,14 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         val app = _realtimeApps.value.find { it.id == appId } ?: return
         val updatedApp = app.copy(rating = formattedRating)
         
-        com.example.data.FirebaseService.saveApp(updatedApp)
+        // BUG FIX: this called the raw FirebaseService.saveApp() directly — a plain
+        // blocking synchronous network call, not a suspend function. Every other
+        // call site in this file correctly goes through repository.saveApp()
+        // (which wraps the same call in withContext(Dispatchers.IO)); this one alone
+        // bypassed that, running a real network request on whatever thread called
+        // updateAppRating() — which, since submitReview()'s outer launch has no
+        // explicit dispatcher, is the main thread.
+        repository.saveApp(updatedApp)
         // Refresh apps list to reflect new rating globally
         // This is a simplistic approach
         refreshMarketplace(true)
