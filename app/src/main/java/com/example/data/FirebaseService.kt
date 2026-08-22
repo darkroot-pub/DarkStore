@@ -215,9 +215,9 @@ object FirebaseService {
                 
                 val rawVersionCode = fields["versionCode"]?.get("integerValue")
                 val versionCode = when (rawVersionCode) {
-                    is String -> rawVersionCode.toIntOrNull() ?: 1
-                    is Number -> rawVersionCode.toInt()
-                    else -> 1
+                    is String -> rawVersionCode.toLongOrNull() ?: 1L
+                    is Number -> rawVersionCode.toLong()
+                    else -> 1L
                 }
                 
                 if (id.isNotBlank() && name.isNotBlank()) {

@@ -13,7 +13,7 @@ data class AppEntity(
     val rating: String,
     val size: String,
     val logo: String,
-    val downloadUrl: String,
+    val apkUrl: String,
     val packageName: String,
     val version: String = "1.0",
     val versionCode: Long = 1L,
@@ -27,5 +27,12 @@ data class AppEntity(
     val whatsNew: String = "",
     val isAdmin: Boolean = false,
     val status: String = "live",
-    val feedback: String = ""
+    val feedback: String = "",
+    val isPopular: Boolean = false,
+    val isRecent: Boolean = false,
+    val isApproved: Boolean = true,
+    val submittedBy: String = "",
+    val isSuspended: Boolean = false,
+    val suspensionReason: String = "",
+    val reportsJson: String = ""
 ) : Serializable

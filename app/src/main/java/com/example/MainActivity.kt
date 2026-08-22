@@ -10074,7 +10074,7 @@ fun ConsoleTabContent(
 
                                 val originalApp = apps.find { it.id == app.id }
                                 if (originalApp != null) {
-                                    val updatedApp = originalApp.copy(screenshots = finalScreenshotsStr)
+                                    val updatedApp = originalApp.copy(screenshots = screenshotUrls)
                                     viewModel.addOrUpdateAppInCatalog(updatedApp) { success ->
                                         if (success) {
                                             Toast.makeText(context, "Screenshots successfully updated!", Toast.LENGTH_SHORT).show()
@@ -10622,7 +10622,7 @@ fun AppDetailsDialog(
     }
 
     val screenshotList = remember(app.screenshots) {
-        app.screenshots.split(",").map { it.trim() }.filter { it.isNotBlank() }
+        app.screenshots.map { it.trim() }.filter { it.isNotBlank() }
     }
 
     Dialog(
@@ -10879,7 +10879,7 @@ fun AppDetailsDialog(
                         // Screenshot galleries
                         if (screenshotList.isNotEmpty()) {
                             LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                itemsIndexed(screenshotList, key = { index, sUrl -> "${index}_$sUrl" }) { index, sUrl ->
+                                itemsIndexed(screenshotList as List<String>, key = { index: Int, sUrl: String -> "${index}_$sUrl" }) { index, sUrl ->
                                     val screenshotRequest = remember(sUrl, context) {
                                         coil.request.ImageRequest.Builder(context)
                                             .data(sUrl)
@@ -11850,7 +11850,7 @@ fun AddNewAppForm(
     var logoUrl by remember { mutableStateOf(existingApp?.logo ?: "") }
     
     val initialScreenshots = remember(existingApp) {
-        val list = existingApp?.screenshots?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList()
+        val list = existingApp?.screenshots?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList()
         List(6) { index -> if (index < list.size) list[index] else "" }
     }
     
@@ -12619,7 +12619,7 @@ fun AddNewAppForm(
                                     rating = if (rating.isBlank()) "4.5" else rating.trim(),
                                     description = if (description.isBlank()) "Standard safe installation package." else description.trim(),
                                     logo = logoUrl.trim(),
-                                    screenshots = finalScreenshotsStr,
+                                    screenshots = screenshotUrls,
                                     apkUrl = apkUrl.trim(),
                                     packageName = packageName.trim(),
                                     isFeatured = isFeatured,
@@ -12628,7 +12628,7 @@ fun AddNewAppForm(
                                     isUpcoming = isUpcoming,
                                     isPopular = true,
                                     isRecent = true,
-                                    versionCode = versionCodeInput.trim().toIntOrNull() ?: 1,
+                                    versionCode = versionCodeInput.trim().toLongOrNull() ?: 1L,
                                     isApproved = if (existingApp != null) existingApp.isApproved else isForAdmin,
                                     submittedBy = if (existingApp != null) existingApp.submittedBy else userEmail,
                                     hasAds = hasAds
@@ -14579,7 +14579,7 @@ fun com.example.data.SubmissionEntity.toAppEntity() = com.example.data.AppEntity
     rating = "0.0",
     description = description,
     logo = logo,
-    screenshots = screenshots,
+    screenshots = screenshots.split(",").map { it.trim() }.filter { it.isNotEmpty() },
     apkUrl = apkUrl,
     packageName = packageName,
     isFeatured = false,
@@ -14597,7 +14597,7 @@ fun com.example.data.AppEntity.toSubmissionEntity() = com.example.data.Submissio
     packageName = packageName,
     description = description,
     apkUrl = apkUrl,
-    screenshots = screenshots,
+    screenshots = screenshots.joinToString(","),
     category = category,
     version = version,
     logo = logo,
