@@ -25,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
@@ -57,6 +58,8 @@ fun AuthScreen(
 
     var showTermsDialog by remember { mutableStateOf(false) }
     var pendingAuthAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var showResetEmailSentDialog by remember { mutableStateOf(false) }
+    var resetEmailSentTo by remember { mutableStateOf("") }
 
     // FEATURE FIX: "Continue with Google" previously had no working entry point at
     // all — the backend call (loginWithGoogleIdToken) already existed and was
@@ -303,8 +306,17 @@ fun AuthScreen(
                             isLoading = true
                             viewModel.resetUserPassword(email) { success, msg ->
                                 isLoading = false
-                                Toast.makeText(context, msg ?: "Completed reset dispatch.", Toast.LENGTH_LONG).show()
-                                if (success) authMode = "LOGIN"
+                                if (success) {
+                                    // Popup with clear next steps instead of a Toast that
+                                    // vanishes in a couple seconds — the user needs to
+                                    // actually go check their email and act on a link, not
+                                    // just see a brief confirmation.
+                                    resetEmailSentTo = email
+                                    showResetEmailSentDialog = true
+                                    authMode = "LOGIN"
+                                } else {
+                                    Toast.makeText(context, msg ?: "Failed to send reset email.", Toast.LENGTH_LONG).show()
+                                }
                             }
                         } else if (authMode == "LOGIN") {
                             performAuth()
@@ -438,6 +450,81 @@ fun AuthScreen(
                         pendingAuthAction?.invoke()
                     }
                 )
+            }
+        }
+
+        if (showResetEmailSentDialog) {
+            androidx.compose.ui.window.Dialog(onDismissRequest = { showResetEmailSentDialog = false }) {
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = Color.White
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(64.dp)
+                                .clip(androidx.compose.foundation.shape.CircleShape)
+                                .background(Color(0xFFE0F2FE)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Email,
+                                contentDescription = "Email sent",
+                                tint = Color(0xFF0284C7),
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "Check Your Email",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = Color(0xFF1E293B)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "We've sent a password reset link to $resetEmailSentTo. Open the email and tap the link to set a new password.",
+                            fontSize = 13.sp,
+                            color = Color(0xFF475569),
+                            textAlign = TextAlign.Center,
+                            lineHeight = 18.sp
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFFFEF3C7), RoundedCornerShape(12.dp))
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = null,
+                                tint = Color(0xFFB45309),
+                                modifier = Modifier.size(18.dp).padding(top = 1.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Don't see it? Check your Spam or Junk folder — reset emails sometimes land there.",
+                                fontSize = 12.sp,
+                                color = Color(0xFF92400E),
+                                lineHeight = 16.sp
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Button(
+                            onClick = { showResetEmailSentDialog = false },
+                            shape = RoundedCornerShape(24.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                            modifier = Modifier.fillMaxWidth().height(48.dp)
+                        ) {
+                            Text("Got It", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
             }
         }
     }
