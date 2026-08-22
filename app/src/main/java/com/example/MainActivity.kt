@@ -14855,8 +14855,9 @@ fun DeveloperAppGroupCard(
     onEditOptions: (com.example.data.SubmissionEntity) -> Unit,
     onClick: () -> Unit
 ) {
+    var expanded by remember { mutableStateOf(false) }
     val mainAppSub = group.liveSub ?: group.latestSub
-    
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -14890,12 +14891,38 @@ fun DeveloperAppGroupCard(
                         fontSize = 18.sp
                     )
                 }
-                Icon(
-                    imageVector = Icons.Default.MoreVert,
-                    contentDescription = "Options",
-                    tint = textSecondaryCol,
-                    modifier = Modifier.size(20.dp)
-                )
+                Box {
+                    IconButton(
+                        onClick = { expanded = true },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "Options",
+                            tint = textSecondaryCol,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Update App Form", fontSize = 12.sp) },
+                            onClick = {
+                                expanded = false
+                                onRequestUpdate(mainAppSub)
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Submit", fontSize = 12.sp) },
+                            onClick = {
+                                expanded = false
+                                onEditOptions(mainAppSub)
+                            }
+                        )
+                    }
+                }
             }
             
             Spacer(modifier = Modifier.height(12.dp))
