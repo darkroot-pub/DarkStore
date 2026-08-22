@@ -40,7 +40,7 @@ import com.google.android.gms.common.api.ApiException
 // google-services.json — required by GoogleSignInOptions.requestIdToken() to get a
 // verifiable ID token back, which is what the existing (already-correct)
 // loginWithGoogleIdToken() backend call needs.
-private const val GOOGLE_WEB_CLIENT_ID = "210511589455-90vu807op09vmokh1g9niflgid076dfd.apps.googleusercontent.com"
+private const val DEFAULT_GOOGLE_WEB_CLIENT_ID = "210511589455-90vu807op09vmokh1g9niflgid076dfd.apps.googleusercontent.com"
 
 @Composable
 fun AuthScreen(
@@ -68,9 +68,11 @@ fun AuthScreen(
     // correct, but the actual Google Sign-In library was never included in the
     // build (see build.gradle.kts), so there was no way to launch a real account
     // picker. Wired up here using the standard GoogleSignInClient flow.
-    val googleSignInClient = remember {
+    val webClientId by viewModel.customGoogleWebClientId.collectAsState()
+
+    val googleSignInClient = remember(webClientId) {
         val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-            .requestIdToken(GOOGLE_WEB_CLIENT_ID)
+            .requestIdToken(webClientId)
             .requestEmail()
             .build()
         GoogleSignIn.getClient(context, gso)
@@ -372,9 +374,7 @@ fun AuthScreen(
 
                     OutlinedButton(
                         onClick = {
-                            googleSignInClient.signOut().addOnCompleteListener {
-                                googleSignInLauncher.launch(googleSignInClient.signInIntent)
-                            }
+                            googleSignInLauncher.launch(googleSignInClient.signInIntent)
                         },
                         enabled = !isLoading,
                         shape = RoundedCornerShape(24.dp),
