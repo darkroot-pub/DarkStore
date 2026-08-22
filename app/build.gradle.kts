@@ -22,14 +22,29 @@ android {
         }
     }
 
+    signingConfigs {
+        // A committed, permanent keystore for the release build — deliberately NOT
+        // the machine-default debug keystore. That one is auto-generated fresh by
+        // AGP on whatever machine builds it, which meant every GitHub Actions run
+        // could sign with a DIFFERENT, ephemeral certificate — silently breaking
+        // Google Sign-In (which is locked to a specific SHA-1 fingerprint
+        // registered in Firebase) any time CI happened to generate a new one.
+        // Committing this keystore makes every build (CI or local) produce the
+        // exact same, stable SHA-1 fingerprint every time.
+        // This is a sideload/testing keystore, not a production Play Store key —
+        // replace it with a real one before any real distribution.
+        create("darkstoreRelease") {
+            storeFile = file("darkstore-release.keystore")
+            storePassword = "darkstore123"
+            keyAlias = "darkstore"
+            keyPassword = "darkstore123"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
-            // Signed with the debug keystore so this build is actually installable
-            // for sideloading/testing (an unsigned release APK can't be installed
-            // at all). This is NOT a substitute for a real release signing key —
-            // before any real distribution, replace this with a proper keystore.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("darkstoreRelease")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

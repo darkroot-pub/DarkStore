@@ -15,6 +15,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "210511589455-l6h4h0ls8o7cchn23asisv3m18ro0mdi.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.darkstore.darkroot",
+            "certificate_hash": "44cb635a67e4534ce9d298f8499972cd35ef1ed1"
+          }
+        },
+        {
           "client_id": "210511589455-90vu807op09vmokh1g9niflgid076dfd.apps.googleusercontent.com",
           "client_type": 3
         }

@@ -502,7 +502,13 @@ object FirebaseAuthService {
             "devWebsite" to mapOf("stringValue" to user.devWebsite),
             "devGithub" to mapOf("stringValue" to user.devGithub),
             "devName" to mapOf("stringValue" to user.devName),
-            "devBio" to mapOf("stringValue" to user.devBio)
+            "devBio" to mapOf("stringValue" to user.devBio),
+            // BUG FIX: this manual field map didn't include profilePhotoUrl at all
+            // when the field was added to UserEntity — this function whitelists
+            // fields by hand rather than serializing the object automatically, so
+            // adding a field to the data class alone was never enough. This is why
+            // the uploaded photo never actually reached Firebase.
+            "profilePhotoUrl" to mapOf("stringValue" to user.profilePhotoUrl)
         )
         val payload = mapOf("fields" to fields)
         val jsonStr = moshi.adapter(Map::class.java).toJson(payload)
@@ -541,6 +547,12 @@ object FirebaseAuthService {
             put("devGithub", user.devGithub)
             put("devName", user.devName)
             put("devBio", user.devBio)
+            // BUG FIX: same missing-field issue as saveUserInFirestore above — this
+            // is why an uploaded profile photo appeared to work in the app but was
+            // never actually in Firebase (RTDB or Firestore), so it vanished after
+            // logout (the local SharedPreferences cache was cleared, and there was
+            // nothing in Firebase to re-sync it from on the next login).
+            put("profilePhotoUrl", user.profilePhotoUrl)
         }
         val body = payload.toString().toRequestBody(mediaTypeJson)
         val tokenParam = getTokenParam()
@@ -652,6 +664,7 @@ object FirebaseAuthService {
                     val devGithub = (fields?.get("devGithub") as? Map<*, *>)?.get("stringValue") as? String ?: ""
                     val devName = (fields?.get("devName") as? Map<*, *>)?.get("stringValue") as? String ?: ""
                     val devBio = (fields?.get("devBio") as? Map<*, *>)?.get("stringValue") as? String ?: ""
+                    val profilePhotoUrl = (fields?.get("profilePhotoUrl") as? Map<*, *>)?.get("stringValue") as? String ?: ""
                     
                     UserEntity(
                         uid, email, disp, role, createdStr.toLongOrNull() ?: 0L, fcmToken,
@@ -659,7 +672,8 @@ object FirebaseAuthService {
                         devWebsite = devWebsite,
                         devGithub = devGithub,
                         devName = devName,
-                        devBio = devBio
+                        devBio = devBio,
+                        profilePhotoUrl = profilePhotoUrl
                     )
                 } else {
                     null
