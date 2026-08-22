@@ -3012,13 +3012,11 @@ fun AppItemCardView(
     cardBorderColor: Color,
     purchased: Boolean = false,
     registered: Boolean = false,
-    isPremiumMember: Boolean = false,
     onBuyClick: () -> Unit = {},
     onRegisterClick: () -> Unit = {},
     onClick: () -> Unit,
     onActionClick: () -> Unit
 ) {
-
     Card(
         modifier = Modifier
             .fillMaxWidth()
