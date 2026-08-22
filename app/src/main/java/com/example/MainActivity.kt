@@ -1634,7 +1634,7 @@ fun PlayStoreMainDashboard(
             rating = "0.0",
             description = originalSub.description,
             logo = originalSub.logo,
-            screenshots = originalSub.screenshots,
+            screenshots = originalSub.screenshots.split(",").map { it.trim() }.filter { it.isNotEmpty() },
             apkUrl = originalSub.apkUrl,
             packageName = originalSub.packageName,
             isFeatured = false,
@@ -5668,7 +5668,7 @@ fun ProfileTabContent(
                                             packageName = app.packageName,
                                             description = app.description,
                                             apkUrl = app.apkUrl,
-                                            screenshots = combined,
+                                            screenshots = screenshotsList.map { it.trim() }.filter { it.isNotBlank() },
                                             logo = app.logo,
                                             category = app.category,
                                             version = app.version,
@@ -5841,7 +5841,7 @@ fun ProfileTabContent(
                                                 packageName = app.packageName,
                                                 description = descInput,
                                                 apkUrl = apkInput,
-                                                screenshots = app.screenshots,
+                                                screenshots = app.screenshots.split(",").map { it.trim() }.filter { it.isNotEmpty() },
                                                 logo = app.logo,
                                                 category = catInput,
                                                 version = verInput,
@@ -9488,7 +9488,7 @@ fun ConsoleTabContent(
                 existingApp = AppEntity(
                     id = sub.id, name = sub.name, developer = sub.developer, version = sub.version,
                     size = "18 MB", category = sub.category, rating = "0.0", description = sub.description,
-                    logo = sub.logo, screenshots = sub.screenshots, apkUrl = sub.apkUrl,
+                    logo = sub.logo, screenshots = sub.screenshots.split(",").map { it.trim() }.filter { it.isNotEmpty() }, apkUrl = sub.apkUrl,
                     packageName = sub.packageName, isFeatured = false, isPopular = true,
                     isRecent = true, versionCode = 1, isApproved = true, submittedBy = sub.submittedBy, hasAds = sub.hasAds
                 ),
@@ -9499,7 +9499,7 @@ fun ConsoleTabContent(
                 onSubmit = { appData ->
                     val updatedSub = sub.copy(
                         name = appData.name, packageName = appData.packageName, version = appData.version,
-                        description = appData.description, apkUrl = appData.apkUrl, screenshots = appData.screenshots,
+                        description = appData.description, apkUrl = appData.apkUrl, screenshots = appData.screenshots.joinToString(","),
                         logo = appData.logo, category = appData.category, developer = appData.developer, hasAds = appData.hasAds
                     )
                     viewModel.editSubmissionDetails(updatedSub) { success ->
@@ -9522,7 +9522,7 @@ fun ConsoleTabContent(
                 rating = "0.0",
                 description = originalSub.description,
                 logo = originalSub.logo,
-                screenshots = originalSub.screenshots,
+                screenshots = originalSub.screenshots.split(",").map { it.trim() }.filter { it.isNotEmpty() },
                 apkUrl = originalSub.apkUrl,
                 packageName = originalSub.packageName,
                 isFeatured = false,

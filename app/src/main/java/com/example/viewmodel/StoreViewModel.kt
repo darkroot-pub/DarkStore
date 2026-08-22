@@ -1745,7 +1745,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                         category = submission.category,
                         description = submission.description,
                         logo = submission.logo.ifBlank { if (submission.screenshots.contains(",")) submission.screenshots.substringBefore(",") else submission.screenshots },
-                        screenshots = submission.screenshots,
+                        screenshots = submission.screenshots.split(",").map { it.trim() }.filter { it.isNotEmpty() },
                         apkUrl = submission.apkUrl,
                         submittedBy = submission.submittedBy,
                         hasAds = submission.hasAds
@@ -1761,7 +1761,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                         rating = "0.0",
                         description = submission.description,
                         logo = submission.logo.ifBlank { if (submission.screenshots.contains(",")) submission.screenshots.substringBefore(",") else submission.screenshots },
-                        screenshots = submission.screenshots,
+                        screenshots = submission.screenshots.split(",").map { it.trim() }.filter { it.isNotEmpty() },
                         apkUrl = submission.apkUrl,
                         packageName = submission.packageName,
                         isFeatured = false,
