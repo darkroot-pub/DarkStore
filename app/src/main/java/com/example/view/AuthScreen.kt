@@ -82,7 +82,9 @@ fun AuthScreen(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode != Activity.RESULT_OK) {
-            // User backed out of the account picker — not an error, just do nothing.
+            if (result.resultCode != Activity.RESULT_CANCELED) {
+                Toast.makeText(context, "Google sign-in failed with result code: ${result.resultCode}", Toast.LENGTH_SHORT).show()
+            }
             return@rememberLauncherForActivityResult
         }
         try {
@@ -103,7 +105,16 @@ fun AuthScreen(
                 Toast.makeText(context, msg ?: if (success) "Signed in with Google!" else "Google sign-in failed.", Toast.LENGTH_SHORT).show()
             }
         } catch (e: ApiException) {
-            Toast.makeText(context, "Google sign-in failed (code ${e.statusCode}).", Toast.LENGTH_SHORT).show()
+            Log.e("AuthScreen", "Google Sign-In ApiException: ${e.statusCode}")
+            val errorMsg = when (e.statusCode) {
+                10 -> "Developer Error: SHA-1 fingerprint mismatch or wrong Client ID."
+                12500 -> "Sign-in failed. Please try again."
+                else -> "Google sign-in failed (code ${e.statusCode})."
+            }
+            Toast.makeText(context, errorMsg, Toast.LENGTH_LONG).show()
+        } catch (e: Exception) {
+            Log.e("AuthScreen", "Google Sign-In unexpected exception: ${e.message}")
+            Toast.makeText(context, "An unexpected error occurred during Google sign-in.", Toast.LENGTH_SHORT).show()
         }
     }
 
