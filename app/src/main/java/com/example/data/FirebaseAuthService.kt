@@ -860,125 +860,18 @@ object FirebaseAuthService {
     }
 
     suspend fun submitApp(submission: SubmissionEntity): Boolean = withContext(Dispatchers.IO) {
-        val rtdbSuccess = saveSubmissionToRTDB(submission)
-        
-        val fields = mapOf(
-            "id" to mapOf("stringValue" to submission.id),
-            "name" to mapOf("stringValue" to submission.name),
-            "packageName" to mapOf("stringValue" to submission.packageName),
-            "description" to mapOf("stringValue" to submission.description),
-            "apkUrl" to mapOf("stringValue" to submission.apkUrl),
-            "screenshots" to mapOf("stringValue" to submission.screenshots),
-            "category" to mapOf("stringValue" to submission.category),
-            "version" to mapOf("stringValue" to submission.version),
-            "logo" to mapOf("stringValue" to submission.logo),
-            "developer" to mapOf("stringValue" to submission.developer),
-            "status" to mapOf("stringValue" to submission.status),
-            "submittedBy" to mapOf("stringValue" to submission.submittedBy),
-            "feedback" to mapOf("stringValue" to submission.feedback),
-            "createdAt" to mapOf("integerValue" to submission.createdAt.toString()),
-            "hasAds" to mapOf("booleanValue" to submission.hasAds)
-        )
-        val payload = mapOf("fields" to fields)
-        val jsonStr = moshi.adapter(Map::class.java).toJson(payload)
-        
-        val requestBuilder = Request.Builder()
-            .url("$FIRESTORE_BASE/submissions/${submission.id}")
-            .patch(jsonStr.toRequestBody(mediaTypeJson))
-        if (activeToken.isNotBlank()) {
-            requestBuilder.addHeader("Authorization", "Bearer $activeToken")
-        }
-        val request = requestBuilder.build()
-            
-        val firestoreSuccess = try {
-            client.newCall(request).execute().use { response ->
-                response.isSuccessful
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "submitApp firestore exception: ${e.message}")
-            false
-        }
-        
-        rtdbSuccess || firestoreSuccess
+        // Per explicit instruction: use Realtime Database only, not Firestore. RTDB
+        // serialization here uses Moshi (automatic, reflection-based) rather than
+        // the hand-written field-by-field maps Firestore required elsewhere in this
+        // file — which is exactly what caused new fields to silently go missing
+        // every time the data model grew. Dropping the redundant Firestore write
+        // also removes a real bug: fetchSubmissions() merged RTDB and Firestore
+        // results with Firestore's (often stale/incomplete) copy overwriting RTDB's.
+        saveSubmissionToRTDB(submission)
     }
 
     suspend fun fetchSubmissions(): List<SubmissionEntity> = withContext(Dispatchers.IO) {
-        val rtdbList = fetchSubmissionsFromRTDB()
-        
-        val firestoreList = try {
-            val requestBuilder = Request.Builder()
-                .url("$FIRESTORE_BASE/submissions")
-                .get()
-            if (activeToken.isNotBlank()) {
-                requestBuilder.addHeader("Authorization", "Bearer $activeToken")
-            }
-            val request = requestBuilder.build()
-                
-            client.newCall(request).execute().use { response ->
-                val bodyStr = response.body?.string()
-                if (response.isSuccessful && bodyStr != null) {
-                    val map = moshi.adapter(Map::class.java).fromJson(bodyStr)
-                    val docs = map?.get("documents") as? List<Map<*, *>> ?: emptyList()
-                    
-                    val list = mutableListOf<SubmissionEntity>()
-                    for (doc in docs) {
-                        val fields = doc["fields"] as? Map<*, *> ?: continue
-                        val id = (fields["id"] as? Map<*, *>)?.get("stringValue") as? String ?: ""
-                        val name = (fields["name"] as? Map<*, *>)?.get("stringValue") as? String ?: ""
-                        val pkg = (fields["packageName"] as? Map<*, *>)?.get("stringValue") as? String ?: ""
-                        val desc = (fields["description"] as? Map<*, *>)?.get("stringValue") as? String ?: ""
-                        val apk = (fields["apkUrl"] as? Map<*, *>)?.get("stringValue") as? String ?: ""
-                        val sc = (fields["screenshots"] as? Map<*, *>)?.get("stringValue") as? String ?: ""
-                        val cat = (fields["category"] as? Map<*, *>)?.get("stringValue") as? String ?: ""
-                        val ver = (fields["version"] as? Map<*, *>)?.get("stringValue") as? String ?: ""
-                        val logo = (fields["logo"] as? Map<*, *>)?.get("stringValue") as? String ?: ""
-                        val dev = (fields["developer"] as? Map<*, *>)?.get("stringValue") as? String ?: "Developer"
-                        val status = (fields["status"] as? Map<*, *>)?.get("stringValue") as? String ?: "Pending"
-                        val subBy = (fields["submittedBy"] as? Map<*, *>)?.get("stringValue") as? String ?: ""
-                        val fdb = (fields["feedback"] as? Map<*, *>)?.get("stringValue") as? String ?: ""
-                        val crStr = (fields["createdAt"] as? Map<*, *>)?.get("integerValue") as? String ?: "0"
-                         val hasAds = (fields["hasAds"] as? Map<*, *>)?.get("booleanValue") as? Boolean ?: false
-                        
-                        if (id.isNotEmpty()) {
-                            list.add(
-                                SubmissionEntity(
-                                    id = id,
-                                    name = name,
-                                    packageName = pkg,
-                                    description = desc,
-                                    apkUrl = apk,
-                                    screenshots = sc,
-                                    category = cat,
-                                    version = ver,
-                                    logo = logo,
-                                    developer = dev,
-                                    status = status,
-                                    submittedBy = subBy,
-                                    feedback = fdb,
-                                    createdAt = crStr.toLongOrNull() ?: 0L,
-                                    hasAds = hasAds
-                                )
-                            )
-                        }
-                    }
-                    list
-                } else {
-                    emptyList()
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "fetchSubmissions firestore exception: ${e.message}")
-            emptyList()
-        }
-        
-        val merged = mutableMapOf<String, SubmissionEntity>()
-        for (sub in rtdbList) {
-            merged[sub.id] = sub
-        }
-        for (sub in firestoreList) {
-            merged[sub.id] = sub
-        }
-        merged.values.toList()
+        fetchSubmissionsFromRTDB()
     }
 
     private fun fetchDevelopersFromRTDB(): List<UserEntity> {
@@ -1111,46 +1004,8 @@ object FirebaseAuthService {
     }
 
     suspend fun updateSubmissionStatus(id: String, entity: SubmissionEntity): Boolean = withContext(Dispatchers.IO) {
-        val rtdbSuccess = saveSubmissionToRTDB(entity)
-        
-        val fields = mapOf(
-            "id" to mapOf("stringValue" to entity.id),
-            "name" to mapOf("stringValue" to entity.name),
-            "packageName" to mapOf("stringValue" to entity.packageName),
-            "description" to mapOf("stringValue" to entity.description),
-            "apkUrl" to mapOf("stringValue" to entity.apkUrl),
-            "screenshots" to mapOf("stringValue" to entity.screenshots),
-            "category" to mapOf("stringValue" to entity.category),
-            "version" to mapOf("stringValue" to entity.version),
-            "logo" to mapOf("stringValue" to entity.logo),
-            "developer" to mapOf("stringValue" to entity.developer),
-            "status" to mapOf("stringValue" to entity.status),
-            "submittedBy" to mapOf("stringValue" to entity.submittedBy),
-            "feedback" to mapOf("stringValue" to entity.feedback),
-            "createdAt" to mapOf("integerValue" to entity.createdAt.toString()),
-            "hasAds" to mapOf("booleanValue" to entity.hasAds)
-        )
-        val payload = mapOf("fields" to fields)
-        val jsonStr = moshi.adapter(Map::class.java).toJson(payload)
-        
-        val requestBuilder = Request.Builder()
-            .url("$FIRESTORE_BASE/submissions/${entity.id}")
-            .patch(jsonStr.toRequestBody(mediaTypeJson))
-        if (activeToken.isNotBlank()) {
-            requestBuilder.addHeader("Authorization", "Bearer $activeToken")
-        }
-        val request = requestBuilder.build()
-            
-        val firestoreSuccess = try {
-            client.newCall(request).execute().use { response ->
-                response.isSuccessful
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "updateSubmissionStatus firestore exception: ${e.message}")
-            false
-        }
-        
-        rtdbSuccess || firestoreSuccess
+        // Realtime Database only — see submitApp() above for why.
+        saveSubmissionToRTDB(entity)
     }
 
     // ----------------------------------------------------

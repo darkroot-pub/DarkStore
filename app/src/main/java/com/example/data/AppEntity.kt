@@ -1,38 +1,51 @@
 package com.example.data
 
-import androidx.compose.runtime.Immutable
 import java.io.Serializable
 
-@Immutable
 data class AppEntity(
     val id: String,
     val name: String,
     val developer: String,
-    val description: String,
+    val version: String,
+    val size: String,
     val category: String,
     val rating: String,
-    val size: String,
+    val description: String,
     val logo: String,
+    val screenshots: String, // Comma separated URLs
     val apkUrl: String,
     val packageName: String,
-    val version: String = "1.0",
-    val versionCode: Long = 1L,
-    val screenshots: List<String> = emptyList(),
     val isFeatured: Boolean = false,
     val isPremium: Boolean = false,
     val price: String = "",
-    val hasAds: Boolean = false,
     val isUpcoming: Boolean = false,
-    val releaseDate: String = "",
-    val whatsNew: String = "",
-    val isAdmin: Boolean = false,
-    val status: String = "live",
-    val feedback: String = "",
     val isPopular: Boolean = false,
     val isRecent: Boolean = false,
+    val versionCode: Int = 1,
     val isApproved: Boolean = true,
     val submittedBy: String = "",
+    val hasAds: Boolean = false,
     val isSuspended: Boolean = false,
     val suspensionReason: String = "",
-    val reportsJson: String = ""
+    val reportsJson: String = "", // Semicolon or comma-separated user reports
+    // Version history: a JSON-encoded array of every previously-published version
+    // of this app, appended to (never overwritten) each time an update is
+    // approved — so no published version is ever lost, per the version-history
+    // requirement. Each entry: {versionName, versionCode, apkUrl, changelog,
+    // publishedAt}.
+    val versionHistoryJson: String = "",
+    val changelog: String = ""
+) : Serializable
+
+/**
+ * One entry in an app's version history — appended to (never overwritten)
+ * every time an update is approved, so no previously-published version is
+ * ever lost. Encoded as JSON into AppEntity.versionHistoryJson.
+ */
+data class AppVersionHistoryEntry(
+    val versionName: String,
+    val versionCode: Int,
+    val apkUrl: String,
+    val changelog: String,
+    val publishedAt: Long
 ) : Serializable

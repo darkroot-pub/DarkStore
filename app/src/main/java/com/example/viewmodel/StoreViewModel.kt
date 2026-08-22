@@ -1661,16 +1661,33 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         packageName: String,
         description: String,
         apkUrl: String,
-        screenshots: List<String>,
+        screenshots: String,
         logo: String = "",
         category: String,
         version: String,
         hasAds: Boolean = false,
+        versionCode: Int = 1,
+        changelog: String = "",
+        isUpdateSubmission: Boolean = false,
         onFinished: (Boolean, String?) -> Unit
     ) {
         viewModelScope.launch(Dispatchers.IO) {
             _isRefreshing.value = true
             try {
+                // VALIDATION: an update must actually be newer than what's currently
+                // published — otherwise a developer could accidentally (or
+                // deliberately) "update" an app backwards to an older build.
+                if (isUpdateSubmission) {
+                    val currentApp = unfilteredApps.value.find { it.packageName.equals(packageName, ignoreCase = true) }
+                    if (currentApp != null && versionCode <= currentApp.versionCode) {
+                        kotlinx.coroutines.withContext(Dispatchers.Main) {
+                            onFinished(false, "New version code ($versionCode) must be greater than the currently published version code (${currentApp.versionCode}).")
+                        }
+                        _isRefreshing.value = false
+                        return@launch
+                    }
+                }
+
                 FirebaseAuthService.refreshIdTokenIfNeeded(getApplication())
                 val subId = "sub_" + System.currentTimeMillis() + "_" + (1000..9999).random()
                 val sub = SubmissionEntity(
@@ -1679,14 +1696,17 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                     packageName = packageName,
                     description = description,
                     apkUrl = apkUrl,
-                    screenshots = screenshots.joinToString(","),
+                    screenshots = screenshots,
                     category = category,
                     version = version,
                     logo = logo,
                     developer = devName.value.ifBlank { userName.value.ifBlank { "Developer" } },
                     status = "Pending",
                     submittedBy = userEmail.value,
-                    hasAds = hasAds
+                    hasAds = hasAds,
+                    versionCode = versionCode,
+                    changelog = changelog,
+                    isUpdateSubmission = isUpdateSubmission
                 )
                 val success = FirebaseAuthService.submitApp(sub)
                 if (success) {
@@ -1695,8 +1715,11 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                     val noticeId = "notice_" + System.currentTimeMillis() + "_" + (1000..9999).random()
                     val notice = NoticeEntity(
                         id = noticeId,
-                        title = "New App Submission",
-                        message = "A new app '$name' has been submitted for review by ${userName.value}.",
+                        title = if (isUpdateSubmission) "App Update Submitted" else "New App Submission",
+                        message = if (isUpdateSubmission)
+                            "An update for '$name' (v$version) has been submitted for review by ${userName.value}."
+                        else
+                            "A new app '$name' has been submitted for review by ${userName.value}.",
                         timestamp = System.currentTimeMillis(),
                         targetAppId = "all"
                     )
@@ -1706,7 +1729,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     refreshSubmissions()
                     kotlinx.coroutines.withContext(Dispatchers.Main) {
-                        onFinished(true, "App submitted successfully under Pending status.")
+                        onFinished(true, if (isUpdateSubmission) "Update submitted successfully and is now pending admin review." else "App submitted successfully under Pending status.")
                     }
                 } else {
                     kotlinx.coroutines.withContext(Dispatchers.Main) {
@@ -1738,6 +1761,28 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 // Populate marketplace app: update existing app if packageName already exists, or create a new one
                 val existingApp = unfilteredApps.value.find { it.packageName.equals(submission.packageName, ignoreCase = true) }
                 val app = if (existingApp != null) {
+                    // VERSION HISTORY: preserve the version being replaced instead of
+                    // discarding it — append it to the history list rather than
+                    // overwriting in place, so every previously-published version
+                    // stays retrievable.
+                    val historyMoshi = com.squareup.moshi.Moshi.Builder().build()
+                    val historyListType = com.squareup.moshi.Types.newParameterizedType(List::class.java, com.example.data.AppVersionHistoryEntry::class.java)
+                    val historyAdapter = historyMoshi.adapter<List<com.example.data.AppVersionHistoryEntry>>(historyListType)
+                    val existingHistory = try {
+                        historyAdapter.fromJson(existingApp.versionHistoryJson) ?: emptyList()
+                    } catch (e: Exception) {
+                        emptyList()
+                    }
+                    val previousVersionEntry = com.example.data.AppVersionHistoryEntry(
+                        versionName = existingApp.version,
+                        versionCode = existingApp.versionCode,
+                        apkUrl = existingApp.apkUrl,
+                        changelog = existingApp.changelog,
+                        publishedAt = System.currentTimeMillis()
+                    )
+                    val updatedHistory = existingHistory + previousVersionEntry
+                    val updatedHistoryJson = historyAdapter.toJson(updatedHistory)
+
                     existingApp.copy(
                         name = submission.name,
                         developer = submission.developer,
@@ -1745,10 +1790,13 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                         category = submission.category,
                         description = submission.description,
                         logo = submission.logo.ifBlank { if (submission.screenshots.contains(",")) submission.screenshots.substringBefore(",") else submission.screenshots },
-                        screenshots = submission.screenshots.split(",").map { it.trim() }.filter { it.isNotEmpty() },
+                        screenshots = submission.screenshots,
                         apkUrl = submission.apkUrl,
                         submittedBy = submission.submittedBy,
-                        hasAds = submission.hasAds
+                        hasAds = submission.hasAds,
+                        versionCode = if (submission.isUpdateSubmission) submission.versionCode else existingApp.versionCode,
+                        changelog = submission.changelog,
+                        versionHistoryJson = updatedHistoryJson
                     )
                 } else {
                     AppEntity(
@@ -1761,13 +1809,14 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                         rating = "0.0",
                         description = submission.description,
                         logo = submission.logo.ifBlank { if (submission.screenshots.contains(",")) submission.screenshots.substringBefore(",") else submission.screenshots },
-                        screenshots = submission.screenshots.split(",").map { it.trim() }.filter { it.isNotEmpty() },
+                        screenshots = submission.screenshots,
                         apkUrl = submission.apkUrl,
                         packageName = submission.packageName,
                         isFeatured = false,
                         isPopular = true,
                         isRecent = true,
-                        versionCode = 1,
+                        versionCode = submission.versionCode,
+                        changelog = submission.changelog,
                         isApproved = true,
                         submittedBy = submission.submittedBy,
                         hasAds = submission.hasAds

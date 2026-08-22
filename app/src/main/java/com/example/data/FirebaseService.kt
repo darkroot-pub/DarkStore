@@ -215,9 +215,9 @@ object FirebaseService {
                 
                 val rawVersionCode = fields["versionCode"]?.get("integerValue")
                 val versionCode = when (rawVersionCode) {
-                    is String -> rawVersionCode.toLongOrNull() ?: 1L
-                    is Number -> rawVersionCode.toLong()
-                    else -> 1L
+                    is String -> rawVersionCode.toIntOrNull() ?: 1
+                    is Number -> rawVersionCode.toInt()
+                    else -> 1
                 }
                 
                 if (id.isNotBlank() && name.isNotBlank()) {
@@ -232,7 +232,7 @@ object FirebaseService {
                             rating = rating,
                             description = description,
                             logo = logo,
-                            screenshots = screenshots.split(",").map { it.trim() }.filter { it.isNotEmpty() },
+                            screenshots = screenshots,
                             apkUrl = apkUrl,
                             packageName = packageName,
                             isFeatured = isFeatured,
@@ -295,7 +295,7 @@ object FirebaseService {
             "rating" to mapOf("stringValue" to app.rating),
             "description" to mapOf("stringValue" to app.description),
             "logo" to mapOf("stringValue" to app.logo),
-            "screenshots" to mapOf("stringValue" to app.screenshots.joinToString(",")),
+            "screenshots" to mapOf("stringValue" to app.screenshots),
             "apkUrl" to mapOf("stringValue" to app.apkUrl),
             "packageName" to mapOf("stringValue" to app.packageName),
             "isFeatured" to mapOf("booleanValue" to app.isFeatured),
@@ -374,35 +374,20 @@ object FirebaseService {
     // ----------------------------------------------------
 
     suspend fun fetchApps(): List<AppEntity> = coroutineScope {
-        val rtdbDeferred = async(Dispatchers.IO) { fetchAppsFromRTDB() }
-        val firestoreDeferred = async(Dispatchers.IO) { fetchAppsFromFirestore() }
-        
-        val rtdbApps = rtdbDeferred.await()
-        val firestoreApps = firestoreDeferred.await()
-        
-        val mergedList = mutableMapOf<String, AppEntity>()
-        
-        for (app in rtdbApps) {
-            mergedList[app.id] = app
-        }
-        for (app in firestoreApps) {
-            mergedList[app.id] = app
-        }
-        
-        Log.d(TAG, "Fetched ${rtdbApps.size} apps from RTDB and ${firestoreApps.size} apps from Firestore. Merged: ${mergedList.size}")
-        mergedList.values.toList()
+        // Realtime Database only, per explicit instruction — RTDB uses Moshi
+        // (automatic serialization) while the Firestore path required hand-written
+        // field maps that silently dropped new fields (versionHistoryJson,
+        // changelog) every time the data model grew, and the merge afterwards let
+        // Firestore's stale copy overwrite RTDB's more complete one.
+        async(Dispatchers.IO) { fetchAppsFromRTDB() }.await()
     }
 
     fun saveApp(app: AppEntity): Boolean {
-        val rtdbSuccess = saveAppToRTDB(app)
-        val firestoreSuccess = saveAppToFirestore(app)
-        return rtdbSuccess || firestoreSuccess
+        return saveAppToRTDB(app)
     }
 
     fun deleteApp(id: String): Boolean {
-        val rtdbSuccess = deleteAppFromRTDB(id)
-        val firestoreSuccess = deleteAppFromFirestore(id)
-        return rtdbSuccess || firestoreSuccess
+        return deleteAppFromRTDB(id)
     }
 
     // ----------------------------------------------------

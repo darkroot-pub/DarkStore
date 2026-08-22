@@ -815,9 +815,12 @@ fun PlayStoreMainDashboard(
     val rawUnfilteredApps by viewModel.unfilteredApps.collectAsStateWithLifecycle()
     val isPremiumMember by viewModel.isPremiumMember.collectAsStateWithLifecycle()
     
-    val apps = rawApps
-    val unfilteredApps = rawUnfilteredApps
-
+    val apps = remember(rawApps, isPremiumMember) {
+        if (isPremiumMember) rawApps.map { it.copy(hasAds = false) } else rawApps
+    }
+    val unfilteredApps = remember(rawUnfilteredApps, isPremiumMember) {
+        if (isPremiumMember) rawUnfilteredApps.map { it.copy(hasAds = false) } else rawUnfilteredApps
+    }
     
     val downloads by viewModel.downloads.collectAsStateWithLifecycle()
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
@@ -1448,19 +1451,17 @@ fun PlayStoreMainDashboard(
             ) { targetTab ->
                 // PERF: build once per actual data change (see DiscoveryFeedState doc),
                 // reused by both tabs below so DiscoveryTabContent stays skippable.
-                val discoveryFeedState = remember(apps, downloads, installedAppsInfo, installedPackages, localAppRatings, purchasedAppIds, preRegisteredAppIds, isPremiumMember) {
-    DiscoveryFeedState(
-        apps = apps,
-        downloads = downloads,
-        installedAppsInfo = installedAppsInfo,
-        installedPackages = installedPackages,
-        localAppRatings = localAppRatings,
-        purchasedAppIds = purchasedAppIds,
-        preRegisteredAppIds = preRegisteredAppIds,
-        isPremiumMember = isPremiumMember
-    )
-}
-
+                val discoveryFeedState = remember(apps, downloads, installedAppsInfo, installedPackages, localAppRatings, purchasedAppIds, preRegisteredAppIds) {
+                    DiscoveryFeedState(
+                        apps = apps,
+                        downloads = downloads,
+                        installedAppsInfo = installedAppsInfo,
+                        installedPackages = installedPackages,
+                        localAppRatings = localAppRatings,
+                        purchasedAppIds = purchasedAppIds,
+                        preRegisteredAppIds = preRegisteredAppIds
+                    )
+                }
                 when (targetTab) {
                     "Games" -> {
                         DiscoveryTabContent(
@@ -1612,7 +1613,9 @@ fun PlayStoreMainDashboard(
                         logo = appData.logo,
                         category = appData.category,
                         version = appData.version,
-                        hasAds = appData.hasAds
+                        hasAds = appData.hasAds,
+                        versionCode = appData.versionCode,
+                        changelog = appData.changelog
                     ) { success, msg ->
                         Toast.makeText(context, msg ?: "Submission dispatched", Toast.LENGTH_SHORT).show()
                         if (success) showUserAppSubmissionForm = false
@@ -1634,13 +1637,14 @@ fun PlayStoreMainDashboard(
             rating = "0.0",
             description = originalSub.description,
             logo = originalSub.logo,
-            screenshots = originalSub.screenshots.split(",").map { it.trim() }.filter { it.isNotEmpty() },
+            screenshots = originalSub.screenshots,
             apkUrl = originalSub.apkUrl,
             packageName = originalSub.packageName,
             isFeatured = false,
             isPopular = true,
             isRecent = true,
-            versionCode = 1,
+            versionCode = originalSub.versionCode,
+            changelog = originalSub.changelog,
             isApproved = true,
             submittedBy = originalSub.submittedBy,
             hasAds = originalSub.hasAds
@@ -1661,7 +1665,10 @@ fun PlayStoreMainDashboard(
                     logo = appData.logo,
                     category = appData.category,
                     version = appData.version,
-                    hasAds = appData.hasAds
+                    hasAds = appData.hasAds,
+                    versionCode = appData.versionCode,
+                    changelog = appData.changelog,
+                    isUpdateSubmission = true
                 ) { success, msg ->
                     Toast.makeText(context, msg ?: "Update request dispatched", Toast.LENGTH_SHORT).show()
                     if (success) appSubmittingUpdateFor = null
@@ -1821,8 +1828,7 @@ data class DiscoveryFeedState(
     val installedPackages: Set<String>,
     val localAppRatings: Map<String, Pair<String, Int>>,
     val purchasedAppIds: Set<String>,
-    val preRegisteredAppIds: Set<String>,
-    val isPremiumMember: Boolean = false
+    val preRegisteredAppIds: Set<String>
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1848,7 +1854,7 @@ fun DiscoveryTabContent(
     onActionClick: (AppEntity) -> Unit
 ) {
     // Unpack into the original local names — zero changes needed below this line.
-   val (apps, downloads, installedAppsInfo, installedPackages, localAppRatings, purchasedAppIds, preRegisteredAppIds, isPremiumMember) = feedState
+    val (apps, downloads, installedAppsInfo, installedPackages, localAppRatings, purchasedAppIds, preRegisteredAppIds) = feedState
 
     val categories = remember { listOf("All", "Utilities", "Games", "Tools", "Entertainment") }
 
@@ -1880,8 +1886,8 @@ fun DiscoveryTabContent(
     val context = LocalContext.current
     val cacheKey = remember(category, selectedPill, searchQuery) { "${category}_${selectedPill}_${searchQuery}" }
     
-   val loadedApps = remember { mutableStateListOf<AppEntity>() }
-   var isPageLoading by remember { mutableStateOf(false) }
+    val loadedApps = remember { mutableStateListOf<AppEntity?>() }
+    var isPageLoading by remember { mutableStateOf(false) }
 
     var isLoadingDiscovery by remember { mutableStateOf(true) }
     
@@ -1915,15 +1921,16 @@ fun DiscoveryTabContent(
 
     // Sync non-null loadedApps with standardApps when background updates occur (e.g., status/ratings changes)
     LaunchedEffect(standardApps) {
-    if (loadedApps.isEmpty()) return@LaunchedEffect
-    val appMap = standardApps.associateBy { it.id }
-    val updated = loadedApps.map { appMap[it.id] ?: it }
-    if (updated != loadedApps) {
-        loadedApps.clear()
-        loadedApps.addAll(updated)
+        for (i in 0 until loadedApps.size) {
+            val loadedItem = loadedApps[i]
+            if (loadedItem != null) {
+                val updatedItem = standardApps.firstOrNull { it.id == loadedItem.id }
+                if (updatedItem != null && updatedItem != loadedItem) {
+                    loadedApps[i] = updatedItem
+                }
+            }
+        }
     }
-}
-
 
     // Load initial page or restore from cache
     LaunchedEffect(cacheKey, standardApps) {
@@ -1952,10 +1959,13 @@ fun DiscoveryTabContent(
                 }
             }
         } else {
-    isLoadingDiscovery = true
-    loadedApps.clear()
-    
-    val initialSize = minOf(20, standardApps.size)
+            isLoadingDiscovery = true
+            loadedApps.clear()
+            
+            // Minimal layout stabilizer delay
+            kotlinx.coroutines.delay(120)
+            
+            val initialSize = minOf(20, standardApps.size)
             if (initialSize > 0) {
                 val initialChunk = standardApps.take(initialSize)
                 loadedApps.addAll(initialChunk)
@@ -1988,21 +1998,32 @@ fun DiscoveryTabContent(
                 
                 val totalLoaded = loadedApps.size
                 if (hasMore && !isPageLoading && totalLoaded > 0 && lastVisibleIndex >= (totalLoaded * 0.85).toInt()) {
-    isPageLoading = true
-    val nextPageSize = minOf(20, standardApps.size - totalLoaded)
-    if (nextPageSize > 0) {
-        val nextChunk = standardApps.subList(totalLoaded, totalLoaded + nextPageSize)
-        loadedApps.addAll(nextChunk)
-    }
-    isPageLoading = false
-    if (searchQuery.isEmpty()) {
-        val snapshot = loadedApps.toList()
-        withContext(Dispatchers.IO) {
-            com.example.data.PaginationCache.saveApps(context, cacheKey, snapshot)
-        }
-    }
-}
-
+                    isPageLoading = true
+                    val nextPageSize = minOf(20, standardApps.size - totalLoaded)
+                    if (nextPageSize > 0) {
+                        // High-performance strategy: Load the entire next chunk in a single frame,
+                        // avoiding index-by-index recomposition lag!
+                        kotlinx.coroutines.delay(80)
+                        val nextChunk = standardApps.subList(totalLoaded, totalLoaded + nextPageSize)
+                        loadedApps.addAll(nextChunk)
+                    }
+                    isPageLoading = false
+                    if (searchQuery.isEmpty()) {
+                        // PERF/BUG: this was the big one — this fires roughly every ~17
+                        // rows scrolled (each time pagination triggers) for as long as
+                        // the user keeps scrolling down, re-serializing the ENTIRE
+                        // (ever-growing) loaded list to JSON and writing it to disk,
+                        // synchronously, directly on the main thread — a real freeze
+                        // landing exactly mid-scroll, repeatedly, for long scroll
+                        // sessions. Snapshot the list before hopping off the main
+                        // thread (SnapshotStateList isn't safe to read from a
+                        // background thread while still attached to composition).
+                        val snapshot = loadedApps.filterNotNull()
+                        withContext(Dispatchers.IO) {
+                            com.example.data.PaginationCache.saveApps(context, cacheKey, snapshot)
+                        }
+                    }
+                }
             }
     }
 
@@ -2245,17 +2266,15 @@ fun DiscoveryTabContent(
                             val onClick = remember(app.id) { { latestOnAppClick.value(app) } }
 
                             FeaturedAppCardView(
-    app = app,
-    activeRating = overriddenRating,
-    cardBgColor = cardBgColor,
-    cardBorderColor = cardBorderColor,
-    textPrimary = textPrimary,
-    textSecondary = textSecondary,
-    accentGreen = accentGreen,
-    isPremiumMember = isPremiumMember,
-    onClick = onClick
-)
-
+                                app = app,
+                                activeRating = overriddenRating,
+                                cardBgColor = cardBgColor,
+                                cardBorderColor = cardBorderColor,
+                                textPrimary = textPrimary,
+                                textSecondary = textSecondary,
+                                accentGreen = accentGreen,
+                                onClick = onClick
+                            )
                         }
                     }
                 }
@@ -2343,42 +2362,53 @@ fun DiscoveryTabContent(
 
             // Packages list
             itemsIndexed(
-    loadedApps,
-    key = { _, app -> app.id },
-    contentType = { _, _ -> "app_row" }
-) { _, app ->
-    val dlState = downloadsMap[app.id]
-    val installedInfo = installedAppsInfo[app.packageName]
-    val overriddenRating = localAppRatings[app.id]?.first ?: app.rating
+                loadedApps,
+                key = { index, app -> app?.id ?: "shimmer_$index" },
+                contentType = { _, app -> if (app == null) "skeleton" else "app_row" }
+            ) { index, app ->
+                if (app == null) {
+                    AppItemCardSkeleton(
+                        isDarkMode = isDarkMode,
+                        cardBgColor = cardBgColor,
+                        cardBorderColor = cardBorderColor,
+                        shimmerTranslate = shimmerTranslate
+                    )
+                } else {
+                    val dlState = downloadsMap[app.id]
+                    val installedInfo = installedAppsInfo[app.packageName]
+                    val overriddenRating = localAppRatings[app.id]?.first ?: app.rating
 
-    val isPurchased = purchasedAppIds.contains(app.id)
-    val isRegistered = preRegisteredAppIds.contains(app.id)
+                    val isPurchased = purchasedAppIds.contains(app.id)
+                    val isRegistered = preRegisteredAppIds.contains(app.id)
 
-    val onBuyClick = remember(app.id) { { latestOnBuyPremiumClick.value(app) } }
-    val onRegisterClick = remember(app.id) { { latestOnPreRegisterClick.value(app) } }
-    val onClick = remember(app.id) { { latestOnAppClick.value(app) } }
-    val onActionClick = remember(app.id) { { latestOnActionClick.value(app) } }
+                    // PERF: stable per-row lambda identity (keyed only on app.id) so
+                    // AppItemCardView can be skipped by Compose when nothing about
+                    // this specific row changed, instead of recreating a new lambda
+                    // (and forcing a recompose) on every parent recomposition.
+                    val onBuyClick = remember(app.id) { { latestOnBuyPremiumClick.value(app) } }
+                    val onRegisterClick = remember(app.id) { { latestOnPreRegisterClick.value(app) } }
+                    val onClick = remember(app.id) { { latestOnAppClick.value(app) } }
+                    val onActionClick = remember(app.id) { { latestOnActionClick.value(app) } }
 
-    AppItemCardView(
-        app = app,
-        downloadState = dlState,
-        installedInfo = installedInfo,
-        overriddenRating = overriddenRating,
-        accentGreen = accentGreen,
-        textPrimary = textPrimary,
-        textSecondary = textSecondary,
-        cardBgColor = cardBgColor,
-        cardBorderColor = cardBorderColor,
-        purchased = isPurchased,
-        registered = isRegistered,
-        isPremiumMember = isPremiumMember,
-        onBuyClick = onBuyClick,
-        onRegisterClick = onRegisterClick,
-        onClick = onClick,
-        onActionClick = onActionClick
-    )
-}
-
+                    AppItemCardView(
+                        app = app,
+                        downloadState = dlState,
+                        installedInfo = installedInfo,
+                        overriddenRating = overriddenRating,
+                        accentGreen = accentGreen,
+                        textPrimary = textPrimary,
+                        textSecondary = textSecondary,
+                        cardBgColor = cardBgColor,
+                        cardBorderColor = cardBorderColor,
+                        purchased = isPurchased,
+                        registered = isRegistered,
+                        onBuyClick = onBuyClick,
+                        onRegisterClick = onRegisterClick,
+                        onClick = onClick,
+                        onActionClick = onActionClick
+                    )
+                }
+            }
 
             if (isPageLoading && hasMore) {
                 item {
@@ -2895,10 +2925,8 @@ fun FeaturedAppCardView(
     textPrimary: Color,
     textSecondary: Color,
     accentGreen: Color,
-    isPremiumMember: Boolean = false,
     onClick: () -> Unit
 ) {
-
     // NOTE: previously this showed a skeleton for 180ms via remember(app.id) every
     // time the card entered composition. Since LazyRow/LazyColumn dispose items
     // that scroll out of view and recompose them fresh when they scroll back in,
@@ -3012,13 +3040,11 @@ fun AppItemCardView(
     cardBorderColor: Color,
     purchased: Boolean = false,
     registered: Boolean = false,
-    isPremiumMember: Boolean = false,
     onBuyClick: () -> Unit = {},
     onRegisterClick: () -> Unit = {},
     onClick: () -> Unit,
     onActionClick: () -> Unit
 ) {
-
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -5668,11 +5694,13 @@ fun ProfileTabContent(
                                             packageName = app.packageName,
                                             description = app.description,
                                             apkUrl = app.apkUrl,
-                                            screenshots = screenshotsList.map { it.trim() }.filter { it.isNotBlank() },
+                                            screenshots = combined,
                                             logo = app.logo,
                                             category = app.category,
                                             version = app.version,
-                                            hasAds = app.hasAds
+                                            hasAds = app.hasAds,
+                                            versionCode = app.versionCode,
+                                            changelog = app.changelog
                                         ) { success, msg ->
                                             Toast.makeText(context, msg ?: "Screenshots update submitted for review", Toast.LENGTH_SHORT).show()
                                             if (success) {
@@ -5841,11 +5869,13 @@ fun ProfileTabContent(
                                                 packageName = app.packageName,
                                                 description = descInput,
                                                 apkUrl = apkInput,
-                                                screenshots = app.screenshots.split(",").map { it.trim() }.filter { it.isNotEmpty() },
+                                                screenshots = app.screenshots,
                                                 logo = app.logo,
                                                 category = catInput,
                                                 version = verInput,
-                                                hasAds = adsInput
+                                                hasAds = adsInput,
+                                                versionCode = app.versionCode,
+                                                changelog = app.changelog
                                             ) { success, msg ->
                                                 Toast.makeText(context, msg ?: "Version update queued for Admin audit", Toast.LENGTH_SHORT).show()
                                                 if (success) {
@@ -8419,7 +8449,7 @@ fun ConsoleTabContent(
             )
             Spacer(modifier = Modifier.height(6.dp))
             Text(
-                "The Developer Portal is restricted to Administrators only. Regular users cannot submit applications.",
+                "The Admin Review Console is restricted to Administrators only. To register as a developer and submit your own apps, go to Profile — every user can submit apps for review there.",
                 color = textSecondary,
                 fontSize = 12.sp,
                 textAlign = TextAlign.Center,
@@ -9472,7 +9502,8 @@ fun ConsoleTabContent(
                         viewModel.submitAppForReview(
                             name = appData.name, packageName = appData.packageName, description = appData.description,
                             apkUrl = appData.apkUrl, screenshots = appData.screenshots, logo = appData.logo,
-                            category = appData.category, version = appData.version, hasAds = appData.hasAds
+                            category = appData.category, version = appData.version, hasAds = appData.hasAds,
+                            versionCode = appData.versionCode, changelog = appData.changelog
                         ) { success, msg ->
                             Toast.makeText(context, msg ?: if (success) "Submitted!" else "Failed", Toast.LENGTH_SHORT).show()
                             if (success) { showAddForm = false; editingApp = null }
@@ -9488,7 +9519,7 @@ fun ConsoleTabContent(
                 existingApp = AppEntity(
                     id = sub.id, name = sub.name, developer = sub.developer, version = sub.version,
                     size = "18 MB", category = sub.category, rating = "0.0", description = sub.description,
-                    logo = sub.logo, screenshots = sub.screenshots.split(",").map { it.trim() }.filter { it.isNotEmpty() }, apkUrl = sub.apkUrl,
+                    logo = sub.logo, screenshots = sub.screenshots, apkUrl = sub.apkUrl,
                     packageName = sub.packageName, isFeatured = false, isPopular = true,
                     isRecent = true, versionCode = 1, isApproved = true, submittedBy = sub.submittedBy, hasAds = sub.hasAds
                 ),
@@ -9499,7 +9530,7 @@ fun ConsoleTabContent(
                 onSubmit = { appData ->
                     val updatedSub = sub.copy(
                         name = appData.name, packageName = appData.packageName, version = appData.version,
-                        description = appData.description, apkUrl = appData.apkUrl, screenshots = appData.screenshots.joinToString(","),
+                        description = appData.description, apkUrl = appData.apkUrl, screenshots = appData.screenshots,
                         logo = appData.logo, category = appData.category, developer = appData.developer, hasAds = appData.hasAds
                     )
                     viewModel.editSubmissionDetails(updatedSub) { success ->
@@ -9522,13 +9553,14 @@ fun ConsoleTabContent(
                 rating = "0.0",
                 description = originalSub.description,
                 logo = originalSub.logo,
-                screenshots = originalSub.screenshots.split(",").map { it.trim() }.filter { it.isNotEmpty() },
+                screenshots = originalSub.screenshots,
                 apkUrl = originalSub.apkUrl,
                 packageName = originalSub.packageName,
                 isFeatured = false,
                 isPopular = true,
                 isRecent = true,
-                versionCode = 1,
+                versionCode = originalSub.versionCode,
+                changelog = originalSub.changelog,
                 isApproved = true,
                 submittedBy = originalSub.submittedBy,
                 hasAds = originalSub.hasAds
@@ -9549,7 +9581,10 @@ fun ConsoleTabContent(
                         logo = appData.logo,
                         category = appData.category,
                         version = appData.version,
-                        hasAds = appData.hasAds
+                        hasAds = appData.hasAds,
+                        versionCode = appData.versionCode,
+                        changelog = appData.changelog,
+                        isUpdateSubmission = true
                     ) { success, msg ->
                         Toast.makeText(context, msg ?: "Update request dispatched", Toast.LENGTH_SHORT).show()
                         if (success) appSubmittingUpdateFor = null
@@ -10074,7 +10109,7 @@ fun ConsoleTabContent(
 
                                 val originalApp = apps.find { it.id == app.id }
                                 if (originalApp != null) {
-                                    val updatedApp = originalApp.copy(screenshots = screenshotUrls)
+                                    val updatedApp = originalApp.copy(screenshots = finalScreenshotsStr)
                                     viewModel.addOrUpdateAppInCatalog(updatedApp) { success ->
                                         if (success) {
                                             Toast.makeText(context, "Screenshots successfully updated!", Toast.LENGTH_SHORT).show()
@@ -10622,7 +10657,7 @@ fun AppDetailsDialog(
     }
 
     val screenshotList = remember(app.screenshots) {
-        app.screenshots.map { it.trim() }.filter { it.isNotBlank() }
+        app.screenshots.split(",").map { it.trim() }.filter { it.isNotBlank() }
     }
 
     Dialog(
@@ -10879,7 +10914,7 @@ fun AppDetailsDialog(
                         // Screenshot galleries
                         if (screenshotList.isNotEmpty()) {
                             LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                itemsIndexed(screenshotList as List<String>, key = { index: Int, sUrl: String -> "${index}_$sUrl" }) { index, sUrl ->
+                                itemsIndexed(screenshotList, key = { index, sUrl -> "${index}_$sUrl" }) { index, sUrl ->
                                     val screenshotRequest = remember(sUrl, context) {
                                         coil.request.ImageRequest.Builder(context)
                                             .data(sUrl)
@@ -11843,6 +11878,7 @@ fun AddNewAppForm(
     var name by remember { mutableStateOf(existingApp?.name ?: "") }
     var developer by remember { mutableStateOf(existingApp?.developer ?: defaultDeveloperName.ifBlank { "Developer" }) }
     var version by remember { mutableStateOf(existingApp?.version ?: "") }
+    var changelog by remember { mutableStateOf(existingApp?.changelog ?: "") }
     var size by remember { mutableStateOf(existingApp?.size ?: "") }
     var category by remember { mutableStateOf(existingApp?.category ?: "Utilities") }
     var rating by remember { mutableStateOf(existingApp?.rating ?: "") }
@@ -11850,7 +11886,7 @@ fun AddNewAppForm(
     var logoUrl by remember { mutableStateOf(existingApp?.logo ?: "") }
     
     val initialScreenshots = remember(existingApp) {
-        val list = existingApp?.screenshots?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList()
+        val list = existingApp?.screenshots?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList()
         List(6) { index -> if (index < list.size) list[index] else "" }
     }
     
@@ -12163,6 +12199,21 @@ fun AddNewAppForm(
                                 keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
                                     keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
                                 )
+                            )
+
+                            // Changelog: what's new in this version. Most useful when this
+                            // form is used to submit an update to an already-published app,
+                            // but left available for a first submission too (a launch note).
+                            OutlinedTextField(
+                                value = changelog,
+                                onValueChange = { changelog = it },
+                                label = { Text("Changelog / What's New (Optional)") },
+                                placeholder = { Text("e.g. Fixed login crash, improved scroll performance") },
+                                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, tint = Color(0xFF01875F)) },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp),
+                                minLines = 2,
+                                maxLines = 4
                             )
                             
                             OutlinedTextField(
@@ -12616,10 +12667,10 @@ fun AddNewAppForm(
                                     version = if (version.isBlank()) "1.0.0" else version.trim(),
                                     size = if (size.isBlank()) "18 MB" else size.trim(),
                                     category = category,
-                                    rating = if (rating.isBlank()) "4.5" else rating.trim(),
+                                    rating = if (rating.isBlank()) "0.0" else rating.trim(),
                                     description = if (description.isBlank()) "Standard safe installation package." else description.trim(),
                                     logo = logoUrl.trim(),
-                                    screenshots = screenshotUrls,
+                                    screenshots = finalScreenshotsStr,
                                     apkUrl = apkUrl.trim(),
                                     packageName = packageName.trim(),
                                     isFeatured = isFeatured,
@@ -12628,7 +12679,8 @@ fun AddNewAppForm(
                                     isUpcoming = isUpcoming,
                                     isPopular = true,
                                     isRecent = true,
-                                    versionCode = versionCodeInput.trim().toLongOrNull() ?: 1L,
+                                    versionCode = versionCodeInput.trim().toIntOrNull() ?: 1,
+                                    changelog = changelog.trim(),
                                     isApproved = if (existingApp != null) existingApp.isApproved else isForAdmin,
                                     submittedBy = if (existingApp != null) existingApp.submittedBy else userEmail,
                                     hasAds = hasAds
@@ -14579,7 +14631,7 @@ fun com.example.data.SubmissionEntity.toAppEntity() = com.example.data.AppEntity
     rating = "0.0",
     description = description,
     logo = logo,
-    screenshots = screenshots.split(",").map { it.trim() }.filter { it.isNotEmpty() },
+    screenshots = screenshots,
     apkUrl = apkUrl,
     packageName = packageName,
     isFeatured = false,
@@ -14597,7 +14649,7 @@ fun com.example.data.AppEntity.toSubmissionEntity() = com.example.data.Submissio
     packageName = packageName,
     description = description,
     apkUrl = apkUrl,
-    screenshots = screenshots.joinToString(","),
+    screenshots = screenshots,
     category = category,
     version = version,
     logo = logo,
