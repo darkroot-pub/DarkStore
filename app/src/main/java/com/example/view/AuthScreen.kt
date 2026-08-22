@@ -1,5 +1,6 @@
 package com.example.view
 
+import android.util.Log
 import android.app.Activity
 import android.content.Intent
 import android.widget.Toast
