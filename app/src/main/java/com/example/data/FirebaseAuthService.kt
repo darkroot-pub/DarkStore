@@ -597,6 +597,11 @@ object FirebaseAuthService {
         null
     }
 
+    suspend fun getFcmTokenByEmail(email: String): String? = withContext(Dispatchers.IO) {
+        val uid = "google_" + Math.abs(email.hashCode()).toString()
+        return@withContext getUserProfile(uid)?.fcmToken
+    }
+
     // ----------------------------------------------------
     // FIREBASE STORAGE OPERATIONS
     // ----------------------------------------------------
@@ -650,7 +655,7 @@ object FirebaseAuthService {
         val adapter = moshi.adapter(SubmissionEntity::class.java)
         val jsonStr = adapter.toJson(submission)
 
-        val body = jsonStr.toRequestBody(jsonMediaType)
+        val body = jsonStr.toRequestBody(mediaTypeJson)
         val tokenParam = getTokenParam()
         val request = Request.Builder()
             .url("${RTDB_URL}submissions/${submission.id}.json$tokenParam")
