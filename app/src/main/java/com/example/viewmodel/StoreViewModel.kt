@@ -138,7 +138,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     private val _userEmail = MutableStateFlow(sharedPrefs.getString("user_email", "guest@darkroot.io") ?: "guest@darkroot.io")
     val userEmail: StateFlow<String> = _userEmail.asStateFlow()
 
-    private val _userName = MutableStateFlow(sharedPrefs.getString("user_name", "Anonymous Guest") ?: "Anonymous Guest")
+    private val _userName = MutableStateFlow(sharedPrefs.getString("user_name", "") ?: "")
     val userName: StateFlow<String> = _userName.asStateFlow()
 
     private val _userUid = MutableStateFlow(sharedPrefs.getString("user_uid", "guest_uid") ?: "guest_uid")
@@ -731,7 +731,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         sharedPrefs.edit().apply {
             putBoolean("is_logged_in", false)
             putString("user_email", "guest@darkroot.io")
-            putString("user_name", "Anonymous Guest")
+            putString("user_name", "")
             putString("user_uid", "guest_uid")
             putString("user_role", "user")
             putBoolean("is_developer", false)
@@ -754,7 +754,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         FirebaseService.activeToken = ""
         _isLoggedIn.value = false
         _userEmail.value = "guest@darkroot.io"
-        _userName.value = "Anonymous Guest"
+        _userName.value = ""
         _userUid.value = "guest_uid"
         _userRole.value = "user"
         _isDeveloper.value = false
@@ -774,7 +774,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         sharedPrefs.edit().apply {
             putBoolean("is_logged_in", true)
             putString("user_email", "guest@darkroot.io")
-            putString("user_name", "Anonymous Guest")
+            putString("user_name", "")
             putString("user_uid", "guest_uid")
             putString("user_role", "user")
             putBoolean("is_developer", false)
@@ -793,7 +793,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         }
         _isLoggedIn.value = true
         _userEmail.value = "guest@darkroot.io"
-        _userName.value = "Anonymous Guest"
+        _userName.value = ""
         _userUid.value = "guest_uid"
         _userRole.value = "user"
         _isDeveloper.value = false
@@ -889,7 +889,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         val uid = _userUid.value
         if (uid.isNotBlank() && uid != "guest_uid") {
             viewModelScope.launch {
-                val user = FirebaseAuthService.getUserFromFirestore(uid)
+                val user = FirebaseAuthService.getUserProfile(uid)
                 if (user != null) {
                     _isDeveloper.value = user.isDeveloper
                     _devWebsite.value = user.devWebsite
@@ -898,7 +898,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                     _devBio.value = user.devBio
                     _userName.value = user.displayName
                     _profilePhotoUrl.value = user.profilePhotoUrl
-                    
+
                     sharedPrefs.edit().apply {
                         putBoolean("is_developer", user.isDeveloper)
                         putString("dev_name", user.devName)

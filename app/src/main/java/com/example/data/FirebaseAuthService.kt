@@ -184,7 +184,7 @@ object FirebaseAuthService {
                     val refreshToken = resJson.optString("refreshToken") ?: ""
                     
                     // Fetch role from Firestore
-                    var user = getUserFromFirestore(uid, idToken)
+                    var user = getUserProfile(uid, idToken)
                     val tokenPrefs = context.getSharedPreferences("dark_store_fcm_prefs", Context.MODE_PRIVATE)
                     val freshFcmToken = tokenPrefs.getString("fcm_token", "") ?: ""
                     
@@ -306,7 +306,7 @@ object FirebaseAuthService {
         val uid = "google_" + Math.abs(email.hashCode()).toString()
         val role = if (email.equals("davidstha900@gmail.com", ignoreCase = true)) "admin" else "user"
         
-        var user: UserEntity? = getUserFromFirestore(uid)
+        var user: UserEntity? = getUserProfile(uid)
         if (user == null) {
             val prefs = context.getSharedPreferences("dark_store_pref", Context.MODE_PRIVATE)
             val cachedUid = prefs.getString("user_uid", "") ?: ""
@@ -376,7 +376,7 @@ object FirebaseAuthService {
                     val refreshToken = jsonObj.optString("refreshToken") ?: ""
 
                     val role = if (email.equals("davidstha900@gmail.com", ignoreCase = true)) "admin" else "user"
-                    var user = getUserFromFirestore(uid, token)
+                    var user = getUserProfile(uid, token)
                     if (user == null) {
                         val prefs = context.getSharedPreferences("dark_store_pref", Context.MODE_PRIVATE)
                         val cachedUid = prefs.getString("user_uid", "") ?: ""
@@ -411,7 +411,7 @@ object FirebaseAuthService {
                 } else {
                     val uid = "google_" + Math.abs(fallbackEmail.hashCode()).toString()
                     val role = if (fallbackEmail.equals("davidstha900@gmail.com", ignoreCase = true)) "admin" else "user"
-                    var user = getUserFromFirestore(uid)
+                    var user = getUserProfile(uid)
                     if (user == null) {
                         val prefs = context.getSharedPreferences("dark_store_pref", Context.MODE_PRIVATE)
                         val cachedUid = prefs.getString("user_uid", "") ?: ""
@@ -680,6 +680,37 @@ object FirebaseAuthService {
             Log.e(TAG, "Get Firestore User exception: ${e.message}")
             null
         }
+    }
+
+    suspend fun getUserProfile(uid: String, token: String? = null): UserEntity? = withContext(Dispatchers.IO) {
+        val firestoreUser = getUserFromFirestore(uid, token)
+
+        val tokenParam = getTokenParam()
+        val rtdbUrl = "${RTDB_URL}developers/${uid}.json$tokenParam"
+        val request = Request.Builder().url(rtdbUrl).get().build()
+
+        var rtdbIsDev = false
+        try {
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string()
+                    if (!body.isNullOrBlank() && body != "null") {
+                        val json = JSONObject(body)
+                        rtdbIsDev = json.optBoolean("isDeveloper", false)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking RTDB dev status: ${e.message}")
+        }
+
+        if (firestoreUser != null) {
+            if (rtdbIsDev && !firestoreUser.isDeveloper) {
+                return@withContext firestoreUser.copy(isDeveloper = true)
+            }
+            return@withContext firestoreUser
+        }
+        null
     }
 
     suspend fun getFcmTokenByEmail(email: String): String? = withContext(Dispatchers.IO) {

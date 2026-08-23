@@ -4109,8 +4109,12 @@ fun ProfileTabContent(
                         var githubInput by remember { mutableStateOf("") }
                         var bioInput by remember { mutableStateOf("") }
                         var registering by remember { mutableStateOf(false) }
-                        val resolvedDevName = remember(userName, userEmail) {
-                            userName.ifBlank { userEmail.substringBefore("@").replaceFirstChar { it.uppercase() } }
+                        val resolvedDevName = remember(userName, devName, userEmail) {
+                            devName.ifBlank {
+                                userName.ifBlank {
+                                    userEmail.substringBefore("@").replaceFirstChar { it.uppercase() }
+                                }
+                            }
                         }
                         var devNameInput by remember(resolvedDevName) { mutableStateOf(resolvedDevName) }
 
