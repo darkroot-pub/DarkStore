@@ -193,14 +193,13 @@ object FirebaseAuthService {
                         val prefs = context.getSharedPreferences("dark_store_pref", Context.MODE_PRIVATE)
                         val cachedUid = prefs.getString("user_uid", "") ?: ""
                         val cachedEmail = prefs.getString("user_email", "") ?: ""
-                        val cachedIsDev = prefs.getBoolean("is_developer", false)
-                        if ((cachedUid == uid || cachedEmail.equals(email, ignoreCase = true)) && cachedIsDev) {
+                        if ((cachedUid == uid || cachedEmail.equals(email, ignoreCase = true))) {
                             user = UserEntity(
                                 uid = uid,
                                 email = email,
                                 displayName = prefs.getString("user_name", email.substringBefore("@").replaceFirstChar { it.uppercase() }) ?: "",
                                 role = prefs.getString("user_role", "user") ?: "user",
-                                isDeveloper = true,
+                                isDeveloper = prefs.getBoolean("is_developer", false),
                                 devWebsite = prefs.getString("dev_website", "") ?: "",
                                 devGithub = prefs.getString("dev_github", "") ?: "",
                                 devName = prefs.getString("dev_name", "") ?: "",
@@ -312,14 +311,13 @@ object FirebaseAuthService {
             val prefs = context.getSharedPreferences("dark_store_pref", Context.MODE_PRIVATE)
             val cachedUid = prefs.getString("user_uid", "") ?: ""
             val cachedEmail = prefs.getString("user_email", "") ?: ""
-            val cachedIsDev = prefs.getBoolean("is_developer", false)
-            if ((cachedUid == uid || cachedEmail.equals(email, ignoreCase = true)) && cachedIsDev) {
+            if ((cachedUid == uid || cachedEmail.equals(email, ignoreCase = true))) {
                 user = UserEntity(
                     uid = uid,
                     email = email,
                     displayName = displayName.ifBlank { prefs.getString("user_name", "") ?: "" },
                     role = prefs.getString("user_role", role) ?: role,
-                    isDeveloper = true,
+                    isDeveloper = prefs.getBoolean("is_developer", false),
                     devWebsite = prefs.getString("dev_website", "") ?: "",
                     devGithub = prefs.getString("dev_github", "") ?: "",
                     devName = prefs.getString("dev_name", "") ?: ""
@@ -383,14 +381,13 @@ object FirebaseAuthService {
                         val prefs = context.getSharedPreferences("dark_store_pref", Context.MODE_PRIVATE)
                         val cachedUid = prefs.getString("user_uid", "") ?: ""
                         val cachedEmail = prefs.getString("user_email", "") ?: ""
-                        val cachedIsDev = prefs.getBoolean("is_developer", false)
-                        if ((cachedUid == uid || cachedEmail.equals(email, ignoreCase = true)) && cachedIsDev) {
+                        if ((cachedUid == uid || cachedEmail.equals(email, ignoreCase = true))) {
                             user = UserEntity(
                                 uid = uid,
                                 email = email,
                                 displayName = displayName.ifBlank { prefs.getString("user_name", "") ?: "" },
                                 role = prefs.getString("user_role", role) ?: role,
-                                isDeveloper = true,
+                                isDeveloper = prefs.getBoolean("is_developer", false),
                                 devWebsite = prefs.getString("dev_website", "") ?: "",
                                 devGithub = prefs.getString("dev_github", "") ?: "",
                                 devName = prefs.getString("dev_name", "") ?: ""
@@ -419,14 +416,13 @@ object FirebaseAuthService {
                         val prefs = context.getSharedPreferences("dark_store_pref", Context.MODE_PRIVATE)
                         val cachedUid = prefs.getString("user_uid", "") ?: ""
                         val cachedEmail = prefs.getString("user_email", "") ?: ""
-                        val cachedIsDev = prefs.getBoolean("is_developer", false)
-                        if ((cachedUid == uid || cachedEmail.equals(fallbackEmail, ignoreCase = true)) && cachedIsDev) {
+                        if ((cachedUid == uid || cachedEmail.equals(fallbackEmail, ignoreCase = true))) {
                             user = UserEntity(
                                 uid = uid,
                                 email = fallbackEmail,
                                 displayName = fallbackName.ifBlank { prefs.getString("user_name", "") ?: "" },
                                 role = prefs.getString("user_role", role) ?: role,
-                                isDeveloper = true,
+                                isDeveloper = prefs.getBoolean("is_developer", false),
                                 devWebsite = prefs.getString("dev_website", "") ?: "",
                                 devGithub = prefs.getString("dev_github", "") ?: "",
                                 devName = prefs.getString("dev_name", "") ?: ""
@@ -1130,7 +1126,7 @@ object FirebaseAuthService {
         val prefs = context.getSharedPreferences("dark_store_sandbox", Context.MODE_PRIVATE)
         val savedPass = prefs.getString("pass_$email", null)
         if (savedPass == pass) {
-            val name = prefs.getString("name_$email", "Developer") ?: "Developer"
+            val name = prefs.getString("name_$email", email.substringBefore("@").replaceFirstChar { it.uppercase() }) ?: ""
             val role = prefs.getString("role_$email", "user") ?: "user"
             val uid = prefs.getString("uid_$email", "sim_uid") ?: "sim_uid"
             return UserEntity(uid, email, name, role)

@@ -12,7 +12,7 @@ data class SubmissionEntity(
     val category: String,
     val version: String,
     val logo: String = "",
-    val developer: String = "Developer",
+    val developer: String = "",
     val status: String = "Pending", // "Pending", "Approved", "Rejected"
     val submittedBy: String, // User Email
     val feedback: String = "", // Optional admin feedback for rejection/approval

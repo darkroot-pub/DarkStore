@@ -147,7 +147,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     private val _userRole = MutableStateFlow(sharedPrefs.getString("user_role", "user") ?: "user")
     val userRole: StateFlow<String> = _userRole.asStateFlow()
 
-    private val _isDeveloper = MutableStateFlow(sharedPrefs.getBoolean("is_developer", false) || (sharedPrefs.getString("user_role", "user") ?: "user") == "admin")
+    private val _isDeveloper = MutableStateFlow(false)
     val isDeveloper: StateFlow<Boolean> = _isDeveloper.asStateFlow()
 
     private val _devWebsite = MutableStateFlow(sharedPrefs.getString("dev_website", "") ?: "")
