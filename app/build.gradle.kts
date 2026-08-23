@@ -42,6 +42,9 @@ android {
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("darkstoreRelease")
+        }
         release {
             isMinifyEnabled = false
             signingConfig = signingConfigs.getByName("darkstoreRelease")
