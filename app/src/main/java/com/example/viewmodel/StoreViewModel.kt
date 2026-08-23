@@ -24,6 +24,8 @@ import kotlinx.coroutines.flow.*
 
 
 import kotlinx.coroutines.launch
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+
 
 class StoreViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -717,6 +719,10 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
 
     fun logout() {
         val context = getApplication<Application>()
+
+        // Force Google Sign-In to forget the last account to ensure the account picker appears on next login
+        GoogleSignIn.signOut()
+
         sharedPrefs.edit().apply {
             putBoolean("is_logged_in", false)
             putString("user_email", "guest@darkroot.io")
