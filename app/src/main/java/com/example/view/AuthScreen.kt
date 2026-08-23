@@ -82,6 +82,7 @@ fun AuthScreen(
     val googleSignInLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
+        Toast.makeText(context, "Step 1: Callback triggered. Code: ${result.resultCode}", Toast.LENGTH_SHORT).show()
         if (result.resultCode != Activity.RESULT_OK) {
             if (result.resultCode != Activity.RESULT_CANCELED) {
                 Toast.makeText(context, "Google sign-in failed with result code: ${result.resultCode}", Toast.LENGTH_SHORT).show()
@@ -89,20 +90,24 @@ fun AuthScreen(
             return@rememberLauncherForActivityResult
         }
         try {
+            Toast.makeText(context, "Step 2: Result OK. Getting account...", Toast.LENGTH_SHORT).show()
             val account = GoogleSignIn.getSignedInAccountFromIntent(result.data)
                 .getResult(ApiException::class.java)
+            Toast.makeText(context, "Step 3: Account retrieved: ${account.email}", Toast.LENGTH_SHORT).show()
             val idToken = account.idToken
             if (idToken.isNullOrBlank()) {
                 Toast.makeText(context, "Google sign-in failed: no ID token returned.", Toast.LENGTH_SHORT).show()
                 return@rememberLauncherForActivityResult
             }
             isLoading = true
+            Toast.makeText(context, "Step 4: Calling ViewModel...", Toast.LENGTH_SHORT).show()
             viewModel.loginWithGoogleIdToken(
                 idToken = idToken,
                 fallbackEmail = account.email ?: "",
                 fallbackName = account.displayName ?: ""
             ) { success, msg ->
                 isLoading = false
+                Toast.makeText(context, "Step 5: ViewModel responded. Success: $success, Msg: $msg", Toast.LENGTH_SHORT).show()
                 Toast.makeText(context, msg ?: if (success) "Signed in with Google!" else "Google sign-in failed.", Toast.LENGTH_SHORT).show()
             }
         } catch (e: ApiException) {
