@@ -23,6 +23,22 @@
           }
         },
         {
+          "client_id": "210511589455-r2qfuff0q842grb3lcmfdoa7c57stsg5.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.darkstore.darkroot",
+            "certificate_hash": "bf712636a59bd5a021b44de34cf7497898460e2f"
+          }
+        },
+        {
+          "client_id": "210511589455-riupejjfuu0kpf4hq8j60l4ij0kc8ovd.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.darkstore.darkroot",
+            "certificate_hash": "f78dc3ccefa37f9f5737ddfc08308e1280a0092b"
+          }
+        },
+        {
           "client_id": "210511589455-90vu807op09vmokh1g9niflgid076dfd.apps.googleusercontent.com",
           "client_type": 3
         }
