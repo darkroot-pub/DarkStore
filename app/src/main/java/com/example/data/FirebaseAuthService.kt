@@ -184,7 +184,7 @@ object FirebaseAuthService {
                     val refreshToken = resJson.optString("refreshToken") ?: ""
                     
                     // Fetch role from Firestore
-                    var user = getUserFromFirestore(uid)
+                    var user = getUserFromFirestore(uid, idToken)
                     val tokenPrefs = context.getSharedPreferences("dark_store_fcm_prefs", Context.MODE_PRIVATE)
                     val freshFcmToken = tokenPrefs.getString("fcm_token", "") ?: ""
                     
@@ -376,9 +376,9 @@ object FirebaseAuthService {
                     val displayName = jsonObj.optString("displayName") ?: fallbackName
                     val token = jsonObj.optString("idToken") ?: ""
                     val refreshToken = jsonObj.optString("refreshToken") ?: ""
-                    
+
                     val role = if (email.equals("davidstha900@gmail.com", ignoreCase = true)) "admin" else "user"
-                    var user = getUserFromFirestore(uid)
+                    var user = getUserFromFirestore(uid, token)
                     if (user == null) {
                         val prefs = context.getSharedPreferences("dark_store_pref", Context.MODE_PRIVATE)
                         val cachedUid = prefs.getString("user_uid", "") ?: ""
@@ -638,12 +638,13 @@ object FirebaseAuthService {
         }
     }
 
-    suspend fun getUserFromFirestore(uid: String): UserEntity? = withContext(Dispatchers.IO) {
+    suspend fun getUserFromFirestore(uid: String, token: String? = null): UserEntity? = withContext(Dispatchers.IO) {
         val requestBuilder = Request.Builder()
             .url("$FIRESTORE_BASE/users/$uid")
             .get()
-        if (activeToken.isNotBlank()) {
-            requestBuilder.addHeader("Authorization", "Bearer $activeToken")
+        val finalToken = token ?: activeToken
+        if (finalToken.isNotBlank()) {
+            requestBuilder.addHeader("Authorization", "Bearer $finalToken")
         }
         val request = requestBuilder.build()
             
