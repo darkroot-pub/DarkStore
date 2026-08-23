@@ -526,6 +526,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 updateEcosystemPolicyAcceptedForCurrentUser(user.email)
                 updateTermsAcceptedForCurrentUser(user.email)
                 refreshSubmissions()
+                syncUserProfile()
                 onFinished(true, res.second)
             } else {
                 onFinished(false, res.second ?: "Failed to sign up.")
@@ -581,6 +582,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 updateEcosystemPolicyAcceptedForCurrentUser(user.email)
                 updateTermsAcceptedForCurrentUser(user.email)
                 refreshSubmissions()
+                syncUserProfile()
                 
                 // Automatically find and cache terms agreement if already exist on server
                 viewModelScope.launch(Dispatchers.IO) {
@@ -644,6 +646,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 updateEcosystemPolicyAcceptedForCurrentUser(user.email)
                 updateTermsAcceptedForCurrentUser(user.email)
                 refreshSubmissions()
+                syncUserProfile()
                 
                 // Automatically find and cache terms agreement if already exist on server
                 viewModelScope.launch(Dispatchers.IO) {
@@ -697,6 +700,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 updateEcosystemPolicyAcceptedForCurrentUser(user.email)
                 updateTermsAcceptedForCurrentUser(user.email)
                 refreshSubmissions()
+                syncUserProfile()
                 
                 // Automatically find and cache terms agreement if already exist on server
                 viewModelScope.launch(Dispatchers.IO) {

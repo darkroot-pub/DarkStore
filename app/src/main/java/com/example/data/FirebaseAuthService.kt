@@ -686,17 +686,49 @@ object FirebaseAuthService {
         val firestoreUser = getUserFromFirestore(uid, token)
 
         val tokenParam = getTokenParam()
-        val rtdbUrl = "${RTDB_URL}developers/${uid}.json$tokenParam"
-        val request = Request.Builder().url(rtdbUrl).get().build()
+
+        var rtdbUser: UserEntity? = null
+        try {
+            val userUrl = "${RTDB_URL}users/${uid}.json$tokenParam"
+            val userRequest = Request.Builder().url(userUrl).get().build()
+            client.newCall(userRequest).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string()
+                    if (!body.isNullOrBlank() && body != "null") {
+                        val json = JSONObject(body)
+                        rtdbUser = UserEntity(
+                            uid = uid,
+                            email = json.optString("email", ""),
+                            displayName = json.optString("displayName", ""),
+                            role = json.optString("role", "user"),
+                            createdAt = json.optLong("createdAt", 0L),
+                            fcmToken = json.optString("fcmToken", ""),
+                            isDeveloper = json.optBoolean("isDeveloper", false),
+                            devWebsite = json.optString("devWebsite", ""),
+                            devGithub = json.optString("devGithub", ""),
+                            devName = json.optString("devName", ""),
+                            devBio = json.optString("devBio", ""),
+                            profilePhotoUrl = json.optString("profilePhotoUrl", "")
+                        )
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching user from RTDB: ${e.message}")
+        }
 
         var rtdbIsDev = false
+        var rtdbDevName = ""
         try {
-            client.newCall(request).execute().use { response ->
+            val devUrl = "${RTDB_URL}developers/${uid}.json$tokenParam"
+            val devRequest = Request.Builder().url(devUrl).get().build()
+            client.newCall(devRequest).execute().use { response ->
                 if (response.isSuccessful) {
                     val body = response.body?.string()
                     if (!body.isNullOrBlank() && body != "null") {
                         val json = JSONObject(body)
                         rtdbIsDev = json.optBoolean("isDeveloper", false)
+                        rtdbDevName = json.optString("displayName", json.optString("name", ""))
                     }
                 }
             }
@@ -704,11 +736,17 @@ object FirebaseAuthService {
             Log.e(TAG, "Error checking RTDB dev status: ${e.message}")
         }
 
-        if (firestoreUser != null) {
-            if (rtdbIsDev && !firestoreUser.isDeveloper) {
-                return@withContext firestoreUser.copy(isDeveloper = true)
+        val finalUser = firestoreUser ?: rtdbUser
+
+        if (finalUser != null) {
+            var updatedUser = finalUser
+            if (rtdbIsDev && !updatedUser.isDeveloper) {
+                updatedUser = updatedUser.copy(isDeveloper = true)
             }
-            return@withContext firestoreUser
+            if (rtdbDevName.isNotBlank() && updatedUser.devName.isBlank()) {
+                updatedUser = updatedUser.copy(devName = rtdbDevName)
+            }
+            return@withContext updatedUser
         }
         null
     }
