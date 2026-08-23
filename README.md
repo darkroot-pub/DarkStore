@@ -116,7 +116,7 @@ Dark Store is built around six core pillars:
 | **Language** | Kotlin |
 | **UI Toolkit** | Jetpack Compose |
 | **Design System** | Material Design 3 |
-| **Backend** | Firebase (Firestore, Auth, FCM, Storage) |
+| **Backend** | Firebase (RTDB, Auth, FCM, Storage) |
 | **Concurrency** | Kotlin Coroutines & Flow |
 | **Architecture** | MVVM |
 | **Image Loading** | Coil |
@@ -149,8 +149,8 @@ Dark Store follows a clean **MVVM** architecture layered on top of Firebase serv
                           │
                           ▼
                  ┌─────────────────┐
-                 │    Firestore     │
-                 │  (App Metadata)  │
+                 │ Realtime Database   │
+                 │   (App Metadata)   │
                  └────────┬─────────┘
                           │
                           ▼
@@ -214,7 +214,7 @@ app/
 │   └── theme/            # Material 3 theming, typography, color schemes
 ├── viewmodels/           # ViewModels driving each screen's state
 ├── repository/           # Data repositories abstracting Firebase access
-├── firebase/             # Firebase service wrappers (Auth, Firestore, FCM, Storage)
+├── firebase/             # Firebase service wrappers (Auth, RTDB, FCM, Storage)
 ├── models/               # Data classes / DTOs
 └── utils/                # Extensions, helpers, and shared utilities
 ```

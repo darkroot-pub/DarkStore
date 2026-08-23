@@ -15,19 +15,18 @@ import java.io.IOException
 
 object FirebaseAuthService {
     private const val TAG = "FirebaseAuthService"
-    
+
     @Volatile
     var activeToken: String = ""
-    
+
     @Volatile
     var activeRefreshToken: String = ""
-    
+
     // Configurable API Details
     var PROJECT_ID = "dark-store-6836d"
-    // Clean, central fallback key so the system compiles and executes perfectly
     var DEFAULT_API_KEY = "AIzaSyDWAQ3MmbZwzIQ9zNZvN9lep-_W6dIbv9o"
     var RTDB_URL = "https://dark-store-6836d-default-rtdb.asia-southeast1.firebasedatabase.app/"
-    
+
     fun updateConfig(apiKey: String, projId: String, rtdb: String) {
         if (apiKey.isNotBlank()) DEFAULT_API_KEY = apiKey.trim()
         if (projId.isNotBlank()) PROJECT_ID = projId.trim()
@@ -46,16 +45,12 @@ object FirebaseAuthService {
             ""
         }
     }
-    
+
     // Firebase Auth REST URLs
     private const val SIGN_UP_URL = "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key="
     private const val SIGN_IN_URL = "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key="
     private const val RESET_PWD_URL = "https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key="
-    
-    // Firestore REST base
-    val FIRESTORE_BASE: String
-        get() = "https://firestore.googleapis.com/v1/projects/$PROJECT_ID/databases/(default)/documents"
-    
+
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
         .writeTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
@@ -78,18 +73,18 @@ object FirebaseAuthService {
         apiKey: String
     ): Triple<Boolean, String?, UserEntity?> = withContext(Dispatchers.IO) {
         val targetKey = if (apiKey.isBlank() || apiKey.startsWith("AIzaSy_placeholder")) DEFAULT_API_KEY else apiKey
-        
+
         val payload = JSONObject().apply {
             put("email", email)
             put("password", password)
             put("returnSecureToken", true)
         }
-        
+
         val request = Request.Builder()
             .url("$SIGN_UP_URL$targetKey")
             .post(payload.toString().toRequestBody(mediaTypeJson))
             .build()
-            
+
         try {
             client.newCall(request).execute().use { response ->
                 val bodyStr = response.body?.string()
@@ -98,26 +93,23 @@ object FirebaseAuthService {
                     val uid = resJson.getString("localId")
                     val idToken = resJson.getString("idToken")
                     val refreshToken = resJson.optString("refreshToken") ?: ""
-                    
+
                     val fcmPrefs = context.getSharedPreferences("dark_store_fcm_prefs", Context.MODE_PRIVATE)
                     val fcmToken = fcmPrefs.getString("fcm_token", "") ?: ""
-                    
+
                     // Determine Role
                     val role = if (email.equals("davidstha900@gmail.com", ignoreCase = true)) "admin" else "user"
                     val user = UserEntity(uid, email, displayName, role, fcmToken = fcmToken)
-                    
-                    // Try to push to Firestore
-                    saveUserInFirestore(user)
+
                     // Push to Realtime Database
                     saveUserInRealtimeDatabase(user)
-                    
+
                     // Offline backup cache
                     saveLocalUser(context, user, idToken, refreshToken)
-                    
+
                     Triple(true, "Successfully registered!", user)
                 } else {
                     val errMsg = parseAuthError(bodyStr)
-                    // Local backup simulation if online is failed or unconfigured
                     if (targetKey == DEFAULT_API_KEY) {
                         Log.w(TAG, "Auth server failure. Falling back to secure simulated local sandbox account creation.")
                         val uid = "sim_" + email.hashCode()
@@ -162,18 +154,18 @@ object FirebaseAuthService {
         apiKey: String
     ): Triple<Boolean, String?, UserEntity?> = withContext(Dispatchers.IO) {
         val targetKey = if (apiKey.isBlank() || apiKey.startsWith("AIzaSy_placeholder")) DEFAULT_API_KEY else apiKey
-        
+
         val payload = JSONObject().apply {
             put("email", email)
             put("password", password)
             put("returnSecureToken", true)
         }
-        
+
         val request = Request.Builder()
             .url("$SIGN_IN_URL$targetKey")
             .post(payload.toString().toRequestBody(mediaTypeJson))
             .build()
-            
+
         try {
             client.newCall(request).execute().use { response ->
                 val bodyStr = response.body?.string()
@@ -182,14 +174,12 @@ object FirebaseAuthService {
                     val uid = resJson.getString("localId")
                     val idToken = resJson.getString("idToken")
                     val refreshToken = resJson.optString("refreshToken") ?: ""
-                    
-                    // Fetch role from Firestore
+
                     var user = getUserProfile(uid, idToken)
                     val tokenPrefs = context.getSharedPreferences("dark_store_fcm_prefs", Context.MODE_PRIVATE)
                     val freshFcmToken = tokenPrefs.getString("fcm_token", "") ?: ""
-                    
+
                     if (user == null) {
-                        // Check local backup cache
                         val prefs = context.getSharedPreferences("dark_store_pref", Context.MODE_PRIVATE)
                         val cachedUid = prefs.getString("user_uid", "") ?: ""
                         val cachedEmail = prefs.getString("user_email", "") ?: ""
@@ -209,28 +199,23 @@ object FirebaseAuthService {
                             val role = if (email.equals("davidstha900@gmail.com", ignoreCase = true)) "admin" else "user"
                             val name = email.substringBefore("@").replaceFirstChar { it.uppercase() }
                             user = UserEntity(uid, email, name, role, fcmToken = freshFcmToken)
-                            saveUserInFirestore(user)
                             saveUserInRealtimeDatabase(user)
                         }
                     } else if (freshFcmToken.isNotBlank() && user.fcmToken != freshFcmToken) {
                         user = user.copy(fcmToken = freshFcmToken)
-                        updateFcmTokenInFirestore(uid, freshFcmToken, idToken)
                         saveUserInRealtimeDatabase(user)
                     }
-                    
-                    // Local backup cache
+
                     saveLocalUser(context, user, idToken, refreshToken)
-                    
+
                     Triple(true, "Welcome back!", user)
                 } else {
                     val errMsg = parseAuthError(bodyStr)
-                    // Check local sandbox accounts
                     val localSimUser = loadLocalSimulationUser(context, email, password)
                     if (localSimUser != null) {
                         saveLocalUser(context, localSimUser, "sim_token_${localSimUser.uid}")
                         Triple(true, "Simulated login successful!", localSimUser)
                     } else if (email.equals("davidstha900@gmail.com", ignoreCase = true) && password == "4321") {
-                        // Admin default credentials fallback
                         val user = UserEntity("admin_uid_david", "davidstha900@gmail.com", "Admin David", "admin")
                         saveLocalUser(context, user, "sim_token_admin")
                         Triple(true, "Admin session loaded!", user)
@@ -262,30 +247,23 @@ object FirebaseAuthService {
     // ----------------------------------------------------
     suspend fun resetPassword(email: String, apiKey: String): Pair<Boolean, String> = withContext(Dispatchers.IO) {
         val targetKey = if (apiKey.isBlank() || apiKey.startsWith("AIzaSy_placeholder")) DEFAULT_API_KEY else apiKey
-        
+
         val payload = JSONObject().apply {
             put("requestType", "PASSWORD_RESET")
             put("email", email)
         }
-        
+
         val request = Request.Builder()
             .url("$RESET_PWD_URL$targetKey")
             .post(payload.toString().toRequestBody(mediaTypeJson))
             .build()
-            
+
         try {
             client.newCall(request).execute().use { response ->
                 val bodyStr = response.body?.string()
                 if (response.isSuccessful) {
                     Pair(true, "Password reset instructions dispatched to $email!")
                 } else {
-                    // NOTE: this used to silently claim success ("simulated successfully")
-                    // whenever the request failed while using the app's normal default API
-                    // key — which is the case for virtually every real user. That meant a
-                    // genuinely failed password reset (wrong email, Firebase misconfigured,
-                    // Identity Toolkit API not enabled, etc.) told the user it worked, and
-                    // they'd never receive an email with no way to know why. Always report
-                    // the real outcome now.
                     val errMsg = parseAuthError(bodyStr)
                     Pair(false, errMsg)
                 }
@@ -305,7 +283,7 @@ object FirebaseAuthService {
     ): Triple<Boolean, String?, UserEntity?> = withContext(Dispatchers.IO) {
         val uid = "google_" + Math.abs(email.hashCode()).toString()
         val role = if (email.equals("davidstha900@gmail.com", ignoreCase = true)) "admin" else "user"
-        
+
         var user: UserEntity? = getUserProfile(uid)
         if (user == null) {
             val prefs = context.getSharedPreferences("dark_store_pref", Context.MODE_PRIVATE)
@@ -332,13 +310,11 @@ object FirebaseAuthService {
                 displayName = displayName.ifBlank { existingUser.displayName }
             )
         }
-        
+
         val finalUser = user!!
-        // Push user to Firestore directly
-        saveUserInFirestore(finalUser)
         saveUserInRealtimeDatabase(finalUser)
         saveLocalUser(context, finalUser, "google_oauth_token_$uid")
-        
+
         Triple(true, "Authorized via Google Account", finalUser)
     }
 
@@ -350,19 +326,19 @@ object FirebaseAuthService {
         apiKey: String
     ): Triple<Boolean, String?, UserEntity?> = withContext(Dispatchers.IO) {
         val targetKey = if (apiKey.isBlank() || apiKey.startsWith("AIzaSy_placeholder")) DEFAULT_API_KEY else apiKey
-        
+
         val payload = JSONObject().apply {
             put("postBody", "id_token=$idToken&providerId=google.com")
             put("requestUri", "http://localhost")
             put("returnIdpCredential", true)
             put("returnSecureToken", true)
         }
-        
+
         val request = Request.Builder()
             .url("https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=$targetKey")
             .post(payload.toString().toRequestBody(mediaTypeJson))
             .build()
-            
+
         try {
             client.newCall(request).execute().use { response ->
                 val bodyStr = response.body?.string()
@@ -381,7 +357,7 @@ object FirebaseAuthService {
                         val prefs = context.getSharedPreferences("dark_store_pref", Context.MODE_PRIVATE)
                         val cachedUid = prefs.getString("user_uid", "") ?: ""
                         val cachedEmail = prefs.getString("user_email", "") ?: ""
-                        if ((cachedUid == uid || cachedEmail.equals(email, ignoreCase = true))) {
+                        if ((cachedUid == uid || cachedEmail.equals(fallbackEmail, ignoreCase = true))) {
                             user = UserEntity(
                                 uid = uid,
                                 email = email,
@@ -402,9 +378,8 @@ object FirebaseAuthService {
                             displayName = displayName.ifBlank { existingUser.displayName }
                         )
                     }
-                    
+
                     val finalUser = user!!
-                    saveUserInFirestore(finalUser)
                     saveUserInRealtimeDatabase(finalUser)
                     saveLocalUser(context, finalUser, token, refreshToken)
                     Triple(true, "Successfully authenticated with Google through Firebase IDP!", finalUser)
@@ -438,7 +413,6 @@ object FirebaseAuthService {
                         )
                     }
                     val finalUser = user!!
-                    saveUserInFirestore(finalUser)
                     saveUserInRealtimeDatabase(finalUser)
                     saveLocalUser(context, finalUser, "fake_token_$uid")
                     Triple(true, "Authenticated via Google Account (offline compatibility).", finalUser)
@@ -448,7 +422,7 @@ object FirebaseAuthService {
             Log.e(TAG, "googleSignInWithIdToken exception: ${e.message}")
             val uid = "google_" + Math.abs(fallbackEmail.hashCode()).toString()
             val role = if (fallbackEmail.equals("davidstha900@gmail.com", ignoreCase = true)) "admin" else "user"
-            var user = getUserFromFirestore(uid)
+            var user = getUserProfile(uid)
             if (user == null) {
                 val prefs = context.getSharedPreferences("dark_store_pref", Context.MODE_PRIVATE)
                 val cachedUid = prefs.getString("user_uid", "") ?: ""
@@ -476,54 +450,9 @@ object FirebaseAuthService {
                 )
             }
             val finalUser = user!!
-            saveUserInFirestore(finalUser)
             saveUserInRealtimeDatabase(finalUser)
             saveLocalUser(context, finalUser, "fake_token_$uid")
             Triple(true, "Google Sign-In offline fallback successful.", finalUser)
-        }
-    }
-
-    // ----------------------------------------------------
-    // FIRESTORE USERS /{uid} READ & WRITE
-    // ----------------------------------------------------
-    suspend fun saveUserInFirestore(user: UserEntity): Boolean = withContext(Dispatchers.IO) {
-        val fields = mapOf(
-            "uid" to mapOf("stringValue" to user.uid),
-            "email" to mapOf("stringValue" to user.email),
-            "displayName" to mapOf("stringValue" to user.displayName),
-            "role" to mapOf("stringValue" to user.role),
-            "createdAt" to mapOf("integerValue" to user.createdAt.toString()),
-            "fcmToken" to mapOf("stringValue" to user.fcmToken),
-            "isDeveloper" to mapOf("booleanValue" to user.isDeveloper),
-            "devWebsite" to mapOf("stringValue" to user.devWebsite),
-            "devGithub" to mapOf("stringValue" to user.devGithub),
-            "devName" to mapOf("stringValue" to user.devName),
-            "devBio" to mapOf("stringValue" to user.devBio),
-            // BUG FIX: this manual field map didn't include profilePhotoUrl at all
-            // when the field was added to UserEntity — this function whitelists
-            // fields by hand rather than serializing the object automatically, so
-            // adding a field to the data class alone was never enough. This is why
-            // the uploaded photo never actually reached Firebase.
-            "profilePhotoUrl" to mapOf("stringValue" to user.profilePhotoUrl)
-        )
-        val payload = mapOf("fields" to fields)
-        val jsonStr = moshi.adapter(Map::class.java).toJson(payload)
-        
-        val requestBuilder = Request.Builder()
-            .url("$FIRESTORE_BASE/users/${user.uid}")
-            .patch(jsonStr.toRequestBody(mediaTypeJson))
-        if (activeToken.isNotBlank()) {
-            requestBuilder.addHeader("Authorization", "Bearer $activeToken")
-        }
-        val request = requestBuilder.build()
-            
-        try {
-            client.newCall(request).execute().use { response ->
-                response.isSuccessful
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Save Firestore User exception: ${e.message}")
-            false
         }
     }
 
@@ -543,17 +472,11 @@ object FirebaseAuthService {
             put("devGithub", user.devGithub)
             put("devName", user.devName)
             put("devBio", user.devBio)
-            // BUG FIX: same missing-field issue as saveUserInFirestore above — this
-            // is why an uploaded profile photo appeared to work in the app but was
-            // never actually in Firebase (RTDB or Firestore), so it vanished after
-            // logout (the local SharedPreferences cache was cleared, and there was
-            // nothing in Firebase to re-sync it from on the next login).
             put("profilePhotoUrl", user.profilePhotoUrl)
         }
         val body = payload.toString().toRequestBody(mediaTypeJson)
         val tokenParam = getTokenParam()
-        
-        // Save to users/$uid.json
+
         val userUrl = "${RTDB_URL}users/${user.uid}.json$tokenParam"
         val userRequest = Request.Builder()
             .url(userUrl)
@@ -571,7 +494,6 @@ object FirebaseAuthService {
             Log.e(TAG, "Exception saving user in Realtime Database: ${e.message}", e)
         }
 
-        // Save to developers/$uid.json
         val devPayload = JSONObject().apply {
             put("uid", user.uid)
             put("email", user.email)
@@ -608,83 +530,7 @@ object FirebaseAuthService {
         }
     }
 
-    suspend fun updateFcmTokenInFirestore(uid: String, fcmToken: String, userActiveToken: String): Boolean = withContext(Dispatchers.IO) {
-        val fields = mapOf(
-            "fcmToken" to mapOf("stringValue" to fcmToken)
-        )
-        val payload = mapOf("fields" to fields)
-        val jsonStr = moshi.adapter(Map::class.java).toJson(payload)
-        
-        val requestBuilder = Request.Builder()
-            .url("$FIRESTORE_BASE/users/$uid?updateMask.fieldPaths=fcmToken")
-            .patch(jsonStr.toRequestBody(mediaTypeJson))
-        val finalToken = if (userActiveToken.isNotBlank()) userActiveToken else activeToken
-        if (finalToken.isNotBlank()) {
-            requestBuilder.addHeader("Authorization", "Bearer $finalToken")
-        }
-        val request = requestBuilder.build()
-            
-        try {
-            client.newCall(request).execute().use { response ->
-                response.isSuccessful
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Update FCM Token Firestore exception: ${e.message}")
-            false
-        }
-    }
-
-    suspend fun getUserFromFirestore(uid: String, token: String? = null): UserEntity? = withContext(Dispatchers.IO) {
-        val requestBuilder = Request.Builder()
-            .url("$FIRESTORE_BASE/users/$uid")
-            .get()
-        val finalToken = token ?: activeToken
-        if (finalToken.isNotBlank()) {
-            requestBuilder.addHeader("Authorization", "Bearer $finalToken")
-        }
-        val request = requestBuilder.build()
-            
-        try {
-            client.newCall(request).execute().use { response ->
-                val bodyStr = response.body?.string()
-                if (response.isSuccessful && bodyStr != null) {
-                    val map = moshi.adapter(Map::class.java).fromJson(bodyStr)
-                    val fields = map?.get("fields") as? Map<*, *>
-                    
-                    val email = (fields?.get("email") as? Map<*, *>)?.get("stringValue") as? String ?: ""
-                    val disp = (fields?.get("displayName") as? Map<*, *>)?.get("stringValue") as? String ?: ""
-                    val role = (fields?.get("role") as? Map<*, *>)?.get("stringValue") as? String ?: "user"
-                    val createdStr = (fields?.get("createdAt") as? Map<*, *>)?.get("integerValue") as? String ?: "0"
-                    val fcmToken = (fields?.get("fcmToken") as? Map<*, *>)?.get("stringValue") as? String ?: ""
-                    val isDeveloper = (fields?.get("isDeveloper") as? Map<*, *>)?.get("booleanValue") as? Boolean ?: false
-                    val devWebsite = (fields?.get("devWebsite") as? Map<*, *>)?.get("stringValue") as? String ?: ""
-                    val devGithub = (fields?.get("devGithub") as? Map<*, *>)?.get("stringValue") as? String ?: ""
-                    val devName = (fields?.get("devName") as? Map<*, *>)?.get("stringValue") as? String ?: ""
-                    val devBio = (fields?.get("devBio") as? Map<*, *>)?.get("stringValue") as? String ?: ""
-                    val profilePhotoUrl = (fields?.get("profilePhotoUrl") as? Map<*, *>)?.get("stringValue") as? String ?: ""
-                    
-                    UserEntity(
-                        uid, email, disp, role, createdStr.toLongOrNull() ?: 0L, fcmToken,
-                        isDeveloper = isDeveloper,
-                        devWebsite = devWebsite,
-                        devGithub = devGithub,
-                        devName = devName,
-                        devBio = devBio,
-                        profilePhotoUrl = profilePhotoUrl
-                    )
-                } else {
-                    null
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Get Firestore User exception: ${e.message}")
-            null
-        }
-    }
-
     suspend fun getUserProfile(uid: String, token: String? = null): UserEntity? = withContext(Dispatchers.IO) {
-        val firestoreUser = getUserFromFirestore(uid, token)
-
         val tokenParam = getTokenParam()
 
         var rtdbUser: UserEntity? = null
@@ -736,7 +582,7 @@ object FirebaseAuthService {
             Log.e(TAG, "Error checking RTDB dev status: ${e.message}")
         }
 
-        val finalUser = firestoreUser ?: rtdbUser
+        val finalUser = rtdbUser
 
         if (finalUser != null) {
             var updatedUser = finalUser
@@ -751,49 +597,6 @@ object FirebaseAuthService {
         null
     }
 
-    suspend fun getFcmTokenByEmail(email: String): String? = withContext(Dispatchers.IO) {
-        if (email.isBlank()) return@withContext null
-        val payload = mapOf(
-            "structuredQuery" to mapOf(
-                "from" to listOf(mapOf("collectionId" to "users")),
-                "where" to mapOf(
-                    "fieldFilter" to mapOf(
-                        "field" to mapOf("fieldPath" to "email"),
-                        "op" to "EQUAL",
-                        "value" to mapOf("stringValue" to email)
-                    )
-                ),
-                "limit" to 1
-            )
-        )
-        val jsonStr = moshi.adapter(Map::class.java).toJson(payload)
-        val requestBuilder = Request.Builder()
-            .url("$FIRESTORE_BASE:runQuery")
-            .post(jsonStr.toRequestBody(mediaTypeJson))
-        if (activeToken.isNotBlank()) {
-            requestBuilder.addHeader("Authorization", "Bearer $activeToken")
-        }
-        val request = requestBuilder.build()
-        try {
-            client.newCall(request).execute().use { response ->
-                val bodyStr = response.body?.string()
-                if (response.isSuccessful && bodyStr != null) {
-                    val list = moshi.adapter(List::class.java).fromJson(bodyStr)
-                    if (list != null && list.isNotEmpty()) {
-                        val firstObj = list[0] as? Map<*, *>
-                        val document = firstObj?.get("document") as? Map<*, *>
-                        val fields = document?.get("fields") as? Map<*, *>
-                        val fcmTokenMap = fields?.get("fcmToken") as? Map<*, *>
-                        return@withContext fcmTokenMap?.get("stringValue") as? String
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "getFcmTokenByEmail exception: ${e.message}")
-        }
-        null
-    }
-
     // ----------------------------------------------------
     // FIREBASE STORAGE OPERATIONS
     // ----------------------------------------------------
@@ -804,17 +607,17 @@ object FirebaseAuthService {
     ): String? = withContext(Dispatchers.IO) {
         val buckets = listOf("dark-store-6836d.appspot.com", "dark-store-6836d.firebasestorage.app")
         var lastException: Exception? = null
-        
+
         for (bucket in buckets) {
             val encodedPath = java.net.URLEncoder.encode("submissions/$fileName", "UTF-8")
             val uploadUrl = "https://firebasestorage.googleapis.com/v0/b/$bucket/o?uploadType=media&name=$encodedPath"
-            
+
             val mediaType = contentType.toMediaType()
             val request = Request.Builder()
                 .url(uploadUrl)
                 .post(fileBytes.toRequestBody(mediaType))
                 .build()
-                
+
             try {
                 client.newCall(request).execute().use { response ->
                     val bodyStr = response.body?.string() ?: ""
@@ -834,7 +637,7 @@ object FirebaseAuthService {
                 lastException = e
             }
         }
-        
+
         Log.e(TAG, "All upload attempts failed. Last exception: ${lastException?.message}")
         null
     }
@@ -846,8 +649,8 @@ object FirebaseAuthService {
     private fun saveSubmissionToRTDB(submission: SubmissionEntity): Boolean {
         val adapter = moshi.adapter(SubmissionEntity::class.java)
         val jsonStr = adapter.toJson(submission)
-        
-        val body = jsonStr.toRequestBody(mediaTypeJson)
+
+        val body = jsonStr.toRequestBody(jsonMediaType)
         val tokenParam = getTokenParam()
         val request = Request.Builder()
             .url("${RTDB_URL}submissions/${submission.id}.json$tokenParam")
@@ -898,7 +701,6 @@ object FirebaseAuthService {
             return emptyList()
         }
 
-        // Try Pattern 1: Map<String, SubmissionEntity>
         try {
             val mapType = com.squareup.moshi.Types.newParameterizedType(Map::class.java, String::class.java, SubmissionEntity::class.java)
             val adapter = moshi.adapter<Map<String, SubmissionEntity>>(mapType)
@@ -910,7 +712,6 @@ object FirebaseAuthService {
             Log.d(TAG, "Parsing RTDB response as Map failed, trying as List...")
         }
 
-        // Try Pattern 2: List<SubmissionEntity?>
         try {
             val listType = com.squareup.moshi.Types.newParameterizedType(List::class.java, SubmissionEntity::class.java)
             val adapter = moshi.adapter<List<SubmissionEntity?>>(listType)
@@ -926,13 +727,6 @@ object FirebaseAuthService {
     }
 
     suspend fun submitApp(submission: SubmissionEntity): Boolean = withContext(Dispatchers.IO) {
-        // Per explicit instruction: use Realtime Database only, not Firestore. RTDB
-        // serialization here uses Moshi (automatic, reflection-based) rather than
-        // the hand-written field-by-field maps Firestore required elsewhere in this
-        // file — which is exactly what caused new fields to silently go missing
-        // every time the data model grew. Dropping the redundant Firestore write
-        // also removes a real bug: fetchSubmissions() merged RTDB and Firestore
-        // results with Firestore's (often stale/incomplete) copy overwriting RTDB's.
         saveSubmissionToRTDB(submission)
     }
 
@@ -981,7 +775,7 @@ object FirebaseAuthService {
                     val devGithub = devData["devGithub"] as? String ?: ""
                     val devName = devData["devName"] as? String ?: displayName
                     val devBio = devData["devBio"] as? String ?: ""
-                    
+
                     list.add(
                         UserEntity(
                             uid = uid,
@@ -1006,71 +800,10 @@ object FirebaseAuthService {
     }
 
     suspend fun fetchDevelopers(): List<UserEntity> = withContext(Dispatchers.IO) {
-        val rtdbList = fetchDevelopersFromRTDB()
-        if (rtdbList.isNotEmpty()) {
-            return@withContext rtdbList
-        }
-        
-        val firestoreList = try {
-            val requestBuilder = Request.Builder()
-                .url("$FIRESTORE_BASE/users")
-                .get()
-            if (activeToken.isNotBlank()) {
-                requestBuilder.addHeader("Authorization", "Bearer $activeToken")
-            }
-            val request = requestBuilder.build()
-                
-            client.newCall(request).execute().use { response ->
-                val bodyStr = response.body?.string()
-                if (response.isSuccessful && bodyStr != null) {
-                    val map = moshi.adapter(Map::class.java).fromJson(bodyStr)
-                    val docs = map?.get("documents") as? List<Map<*, *>> ?: emptyList()
-                    
-                    val list = mutableListOf<UserEntity>()
-                    for (doc in docs) {
-                        val fields = doc["fields"] as? Map<*, *> ?: continue
-                        val isDeveloper = (fields["isDeveloper"] as? Map<*, *>)?.get("booleanValue") as? Boolean ?: false
-                        if (!isDeveloper) continue
-                        
-                        val uidStr = doc["name"] as? String ?: ""
-                        val uid = uidStr.substringAfterLast("/")
-                        val email = (fields["email"] as? Map<*, *>)?.get("stringValue") as? String ?: ""
-                        val disp = (fields["displayName"] as? Map<*, *>)?.get("stringValue") as? String ?: ""
-                        val role = (fields["role"] as? Map<*, *>)?.get("stringValue") as? String ?: "user"
-                        val devWebsite = (fields["devWebsite"] as? Map<*, *>)?.get("stringValue") as? String ?: ""
-                        val devGithub = (fields["devGithub"] as? Map<*, *>)?.get("stringValue") as? String ?: ""
-                        val devName = (fields["devName"] as? Map<*, *>)?.get("stringValue") as? String ?: ""
-                        val devBio = (fields["devBio"] as? Map<*, *>)?.get("stringValue") as? String ?: ""
-                        
-                        list.add(
-                            UserEntity(
-                                uid = uid,
-                                email = email,
-                                displayName = disp,
-                                role = role,
-                                isDeveloper = isDeveloper,
-                                devWebsite = devWebsite,
-                                devGithub = devGithub,
-                                devName = devName,
-                                devBio = devBio
-                            )
-                        )
-                    }
-                    list
-                } else {
-                    emptyList()
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "fetchDevelopers firestore exception: ${e.message}")
-            emptyList()
-        }
-        
-        firestoreList
+        fetchDevelopersFromRTDB()
     }
 
     suspend fun updateSubmissionStatus(id: String, entity: SubmissionEntity): Boolean = withContext(Dispatchers.IO) {
-        // Realtime Database only — see submitApp() above for why.
         saveSubmissionToRTDB(entity)
     }
 
@@ -1128,27 +861,27 @@ object FirebaseAuthService {
         val refreshToken = prefs.getString("auth_refresh_token", "") ?: activeRefreshToken
         val fetchTime = prefs.getLong("token_fetched_at", 0L)
         val isExpired = force || (System.currentTimeMillis() - fetchTime > 50 * 60 * 1000) // 50 minutes threshold
-        
+
         if (refreshToken.isBlank() || !isExpired || refreshToken.startsWith("sim_token") || refreshToken.startsWith("fake_token")) {
             return@withContext false
         }
-        
+
         Log.d(TAG, "Dynamic developer session expired or forced. Restoring credentials.")
         val targetKey = if (DEFAULT_API_KEY.isBlank() || DEFAULT_API_KEY.startsWith("AIzaSy_placeholder")) {
             "AIzaSyDWAQ3MmbZwzIQ9zNZvN9lep-_W6dIbv9o"
         } else {
             DEFAULT_API_KEY
         }
-        
+
         val url = "https://securetoken.googleapis.com/v1/token?key=$targetKey"
         val payload = "grant_type=refresh_token&refresh_token=$refreshToken"
         val body = payload.toRequestBody("application/x-www-form-urlencoded".toMediaType())
-        
+
         val request = Request.Builder()
             .url(url)
             .post(body)
             .build()
-            
+
         try {
             client.newCall(request).execute().use { response ->
                 val bodyStr = response.body?.string()
@@ -1156,7 +889,7 @@ object FirebaseAuthService {
                     val resJson = JSONObject(bodyStr)
                     val newIdToken = resJson.getString("id_token")
                     val newRefreshToken = resJson.optString("refresh_token") ?: refreshToken
-                    
+
                     prefs.edit().apply {
                         putString("auth_id_token", newIdToken)
                         putString("auth_refresh_token", newRefreshToken)
@@ -1179,7 +912,6 @@ object FirebaseAuthService {
         }
     }
 
-    // Local simulated database sandbox for offline validation
     private fun saveLocalSimulationUser(context: Context, email: String, pass: String, name: String, role: String, uid: String) {
         val prefs = context.getSharedPreferences("dark_store_sandbox", Context.MODE_PRIVATE)
         prefs.edit().apply {

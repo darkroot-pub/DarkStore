@@ -346,11 +346,11 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
 
     fun saveUpdateConfig(config: com.example.data.UpdateConfigEntity, onResult: (Boolean, String?) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
-            // Try to update Firebase databases (both RTDB and Firestore)
+            // Try to update Firebase database (RTDB)
             val (success, errorMsg) = FirebaseService.saveUpdateConfig(config)
             
             if (success) {
-                // Only cache and update state upon true success to Firebase RTDB/Firestore
+                // Only cache and update state upon true success to Firebase RTDB
                 sharedPrefs.edit().apply {
                     putInt("cached_latest_version_code", config.latestVersionCode)
                     putString("cached_latest_version_name", config.latestVersionName)
@@ -492,7 +492,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _isRefreshing.value = true
 
-            // Fetch latest users/developers list from Firestore & Realtime Database for accurate checking
+            // Fetch latest users/developers list from Realtime Database for accurate checking
             val latestDevs = try {
                 FirebaseAuthService.fetchDevelopers()
             } catch (e: Exception) {
@@ -876,11 +876,10 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 devBio = bio,
                 profilePhotoUrl = sharedPrefs.getString("profile_photo_url", "") ?: ""
             )
-            val firestoreSuccess = FirebaseAuthService.saveUserInFirestore(user)
             val rtdbSuccess = FirebaseAuthService.saveUserInRealtimeDatabase(user)
             refreshDevelopers()
             kotlinx.coroutines.withContext(Dispatchers.Main) {
-                if (firestoreSuccess || rtdbSuccess) {
+                if (rtdbSuccess) {
                     onFinished(true, "Successfully registered as a Developer! Welcome to Dark Store.")
                 } else {
                     onFinished(true, "Registered locally. Server sync failed but session is active.")
@@ -957,7 +956,6 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                     devBio = bio,
                     profilePhotoUrl = photoUrl
                 )
-                FirebaseAuthService.saveUserInFirestore(user)
                 FirebaseAuthService.saveUserInRealtimeDatabase(user)
                 refreshDevelopers()
             }
@@ -990,7 +988,6 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                     devBio = newBio,
                     profilePhotoUrl = photoUrl
                 )
-                FirebaseAuthService.saveUserInFirestore(user)
                 FirebaseAuthService.saveUserInRealtimeDatabase(user)
             }
         }
@@ -1022,7 +1019,6 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                     devBio = bio,
                     profilePhotoUrl = newUrl
                 )
-                FirebaseAuthService.saveUserInFirestore(user)
                 FirebaseAuthService.saveUserInRealtimeDatabase(user)
                 refreshDevelopers()
             }
@@ -1603,7 +1599,6 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateUserAdmin(user: com.example.data.UserEntity, onResult: (Boolean) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
-            val fSuccess = FirebaseAuthService.saveUserInFirestore(user)
             val rSuccess = FirebaseAuthService.saveUserInRealtimeDatabase(user)
             try {
                 val list = FirebaseAuthService.fetchDevelopers()
@@ -1612,7 +1607,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 Log.e("StoreViewModel", "Failed to refresh developers list after update: ${e.message}", e)
             }
             kotlinx.coroutines.withContext(Dispatchers.Main) {
-                onResult(fSuccess || rSuccess)
+                onResult(rSuccess)
             }
         }
     }
