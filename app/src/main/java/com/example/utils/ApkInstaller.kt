@@ -13,9 +13,30 @@ import java.io.File
 object ApkInstaller {
     private const val TAG = "ApkInstaller"
 
+    /**
+     * BUG FIX: Toast.makeText(...).show() requires a thread with a prepared
+     * Looper — the main thread always has one, but a background thread (IO
+     * dispatcher, a plain Thread, etc.) does not, and calling Toast directly
+     * from one throws "Can't toast on a thread that has not called
+     * Looper.prepare()". Earlier fixes this session deliberately moved every
+     * caller of installApk() onto a background thread to fix a real ANR risk
+     * (trySilentInstall blocks on Runtime.exec().waitFor() for potentially
+     * several seconds) — but installApk() itself is full of direct Toast
+     * calls that assumed they'd always run on the main thread. Routing every
+     * Toast in this file through this helper (which posts to the main
+     * Looper regardless of the calling thread) fixes it at the source,
+     * without having to revisit every call site that was fixed for the ANR
+     * issue.
+     */
+    private fun showToast(context: Context, message: String, duration: Int = Toast.LENGTH_SHORT) {
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            Toast.makeText(context, message, duration).show()
+        }
+    }
+
     fun installApk(context: Context, apkFile: File) {
         if (!apkFile.exists()) {
-            Toast.makeText(context, "Error: APK file not found", Toast.LENGTH_SHORT).show()
+            showToast(context, "Error: APK file not found")
             return
         }
 
@@ -27,7 +48,7 @@ object ApkInstaller {
         }
         if (packageInfo == null) {
             Log.e(TAG, "Cannot install. APK archive is corrupt: ${apkFile.absolutePath}")
-            Toast.makeText(context, "Error: Corrupted APK file detected. Deleting...", Toast.LENGTH_LONG).show()
+            showToast(context, "Error: Corrupted APK file detected. Deleting...", Toast.LENGTH_LONG)
             try {
                 if (apkFile.exists()) {
                     apkFile.delete()
@@ -38,13 +59,13 @@ object ApkInstaller {
             return
         }
 
-        Toast.makeText(context, "Starting installation...", Toast.LENGTH_SHORT).show()
+        showToast(context, "Starting installation...")
 
         // 1. Try silent background installation first
         val silentSucceeded = trySilentInstall(apkFile)
         if (silentSucceeded) {
             Log.i(TAG, "Silent installation via pm install succeeded.")
-            Toast.makeText(context, "Installation completed successfully!", Toast.LENGTH_LONG).show()
+            showToast(context, "Installation completed successfully!", Toast.LENGTH_LONG)
             return
         }
 
@@ -54,7 +75,7 @@ object ApkInstaller {
             // Check Oreo+ unknown sources permission
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 if (!context.packageManager.canRequestPackageInstalls()) {
-                    Toast.makeText(context, "Please allow APK installation from settings", Toast.LENGTH_LONG).show()
+                    showToast(context, "Please allow APK installation from settings", Toast.LENGTH_LONG)
                     val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
                         data = Uri.parse("package:${context.packageName}")
                         flags = Intent.FLAG_ACTIVITY_NEW_TASK
@@ -96,7 +117,7 @@ object ApkInstaller {
             context.startActivity(intent)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to launch intent to install APK", e)
-            Toast.makeText(context, "Installation failed: ${e.message}", Toast.LENGTH_SHORT).show()
+            showToast(context, "Installation failed: ${e.message}")
         }
     }
 
@@ -193,11 +214,11 @@ object ApkInstaller {
                 intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 context.startActivity(intent)
             } else {
-                Toast.makeText(context, "App cannot be launched", Toast.LENGTH_SHORT).show()
+                showToast(context, "App cannot be launched")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed launch app $packageName: ${e.message}", e)
-            Toast.makeText(context, "Cannot launch: ${e.message}", Toast.LENGTH_SHORT).show()
+            showToast(context, "Cannot launch: ${e.message}")
         }
     }
 
@@ -210,7 +231,7 @@ object ApkInstaller {
             context.startActivity(intent)
         } catch (e: Exception) {
             Log.e(TAG, "Failed launch uninstall intent for $packageName: ${e.message}", e)
-            Toast.makeText(context, "Uninstall failed: ${e.message}", Toast.LENGTH_SHORT).show()
+            showToast(context, "Uninstall failed: ${e.message}")
         }
     }
 
