@@ -21,8 +21,18 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      # NOTE: android-actions/setup-android@v3 used to run here. It's been
+      # removed — as of mid-September 2026 Google fully removed the legacy
+      # "tools" SDK package from its repository, and that action's default
+      # `packages` input still asks for it, so `sdkmanager` hard-fails with
+      # "Failed to find package 'tools'" and the job dies in ~15s before any
+      # of the actual project builds. This is an upstream breakage affecting
+      # every project still using that action's defaults, not anything in
+      # this repo. GitHub's ubuntu-latest runners already ship a preinstalled
+      # Android SDK with ANDROID_HOME set, and the Android Gradle Plugin
+      # downloads whatever platform/build-tools versions this project needs
+      # on its own during the Gradle steps below, so the step was both
+      # broken and redundant.
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
