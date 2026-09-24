@@ -61,6 +61,8 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 refreshAppPolicy()
                 refreshDevelopers()
+                loadFollowingIds()
+                loadFollowerIds()
                 val savedEmail = sharedPrefs.getString("user_email", "") ?: ""
                 if (savedEmail.isNotBlank() && savedEmail != "guest@darkroot.io") {
                     updateEcosystemPolicyAcceptedForCurrentUser(savedEmail)
@@ -179,6 +181,79 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     // email as verified, so the small banner in Profile still reminds them later.
     private val _showEmailVerificationPrompt = MutableStateFlow(false)
     val showEmailVerificationPrompt: StateFlow<Boolean> = _showEmailVerificationPrompt.asStateFlow()
+
+    // ----------------------------------------------------
+    // FOLLOW / FOLLOWERS
+    // ----------------------------------------------------
+    private val _followingIds = MutableStateFlow<Set<String>>(emptySet())
+    val followingIds: StateFlow<Set<String>> = _followingIds.asStateFlow()
+
+    // Who follows ME — only meaningful if the current account is itself a
+    // developer with published apps, but harmless (just empty) otherwise.
+    private val _followerIds = MutableStateFlow<Set<String>>(emptySet())
+    val followerIds: StateFlow<Set<String>> = _followerIds.asStateFlow()
+
+    fun isFollowingDeveloper(developerUid: String): Boolean = _followingIds.value.contains(developerUid)
+
+    fun loadFollowingIds() {
+        val uid = _userUid.value
+        if (uid.isBlank() || uid == "guest_uid") {
+            _followingIds.value = emptySet()
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            val ids = FirebaseService.fetchFollowingIds(uid)
+            _followingIds.value = ids
+        }
+    }
+
+    fun loadFollowerIds() {
+        val uid = _userUid.value
+        if (uid.isBlank() || uid == "guest_uid") {
+            _followerIds.value = emptySet()
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            val ids = FirebaseService.fetchFollowerIds(uid)
+            _followerIds.value = ids
+        }
+    }
+
+    fun toggleFollowDeveloper(developerUid: String, onResult: ((Boolean) -> Unit)? = null) {
+        val myUid = _userUid.value
+        if (myUid.isBlank() || myUid == "guest_uid" || developerUid.isBlank() || developerUid == myUid) {
+            onResult?.invoke(false)
+            return
+        }
+        val currentlyFollowing = isFollowingDeveloper(developerUid)
+        val wantFollow = !currentlyFollowing
+
+        // Optimistic UI update — reverted below if the write actually fails,
+        // so the button responds instantly instead of waiting on a round trip.
+        _followingIds.value = if (wantFollow) {
+            _followingIds.value + developerUid
+        } else {
+            _followingIds.value - developerUid
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val success = FirebaseService.setFollowing(myUid, developerUid, wantFollow)
+            if (!success) {
+                _followingIds.value = if (wantFollow) {
+                    _followingIds.value - developerUid
+                } else {
+                    _followingIds.value + developerUid
+                }
+            }
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                onResult?.invoke(success)
+            }
+        }
+    }
+
+    suspend fun fetchFollowerCount(developerUid: String): Int = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        FirebaseService.fetchFollowerCount(developerUid)
+    }
 
     fun dismissEmailVerificationPrompt() {
         _showEmailVerificationPrompt.value = false
@@ -311,12 +386,11 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     )
     val preRegisteredAppIds: StateFlow<Set<String>> = _preRegisteredAppIds.asStateFlow()
 
-    fun purchaseApp(appId: String) {
-        val current = _purchasedAppIds.value.toMutableSet()
-        current.add(appId)
-        _purchasedAppIds.value = current
-        sharedPrefs.edit().putString("purchased_app_ids", current.joinToString(",")).apply()
-    }
+    // purchaseApp() was removed along with the fake payment checkout dialog —
+    // it only ever got called from that dialog's "purchase confirmed"
+    // callback, which faked a successful payment with no real processor
+    // behind it. _purchasedAppIds itself is kept so anyone who already has
+    // locally-recorded purchases from before this change keeps their access.
 
     fun preRegisterApp(appId: String) {
         val current = _preRegisteredAppIds.value.toMutableSet()
@@ -582,6 +656,8 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 updateTermsAcceptedForCurrentUser(user.email)
                 refreshSubmissions()
                 syncUserProfile()
+                loadFollowingIds()
+                loadFollowerIds()
                 onFinished(true, res.second)
             } else {
                 onFinished(false, res.second ?: "Failed to sign up.")
@@ -644,6 +720,8 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 refreshSubmissions()
                 syncUserProfile()
                 
+                loadFollowingIds()
+                loadFollowerIds()
                 // Automatically find and cache terms agreement if already exist on server
                 viewModelScope.launch(Dispatchers.IO) {
                     val list = FirebaseService.fetchTermsAgreements()
@@ -708,6 +786,8 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 refreshSubmissions()
                 syncUserProfile()
                 
+                loadFollowingIds()
+                loadFollowerIds()
                 // Automatically find and cache terms agreement if already exist on server
                 viewModelScope.launch(Dispatchers.IO) {
                     val list = FirebaseService.fetchTermsAgreements()
@@ -762,6 +842,8 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 refreshSubmissions()
                 syncUserProfile()
                 
+                loadFollowingIds()
+                loadFollowerIds()
                 // Automatically find and cache terms agreement if already exist on server
                 viewModelScope.launch(Dispatchers.IO) {
                     val list = FirebaseService.fetchTermsAgreements()
@@ -832,6 +914,8 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         _submissions.value = emptyList()
         _purchasedAppIds.value = emptySet()
         _preRegisteredAppIds.value = emptySet()
+        _followingIds.value = emptySet()
+        _followerIds.value = emptySet()
     }
 
     fun loginAsGuest() {
@@ -870,6 +954,8 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         _isEcosystemPolicyAccepted.value = true
         _purchasedAppIds.value = emptySet()
         _preRegisteredAppIds.value = emptySet()
+        _followingIds.value = emptySet()
+        _followerIds.value = emptySet()
     }
 
     fun registerDeveloper(devName: String, website: String, github: String, bio: String = "", onFinished: (Boolean, String?) -> Unit) {
@@ -1592,7 +1678,20 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
             val isNew = existingApp == null
             val isUpdate = existingApp != null && existingApp.version != app.version
 
-            val result = repository.saveApp(app)
+            // This is the admin's direct "edit app" / "push update" path —
+            // separate from the submission-review flow above. It used to save
+            // straight over the existing app with no version-history capture
+            // at all, so an app updated this way silently lost its outgoing
+            // version with zero record of it ever having existed. Every path
+            // that can change a published app's version now records history
+            // the same way.
+            val appToSave = if (isUpdate && existingApp != null) {
+                app.copy(versionHistoryJson = buildUpdatedVersionHistoryJson(existingApp))
+            } else {
+                app
+            }
+
+            val result = repository.saveApp(appToSave)
             _isRefreshing.value = false
             if (result) {
                 val fcmServerKey = sharedPrefs.getString("fcm_server_key", "") ?: ""
@@ -1841,6 +1940,34 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // Shared by every path that can change a PUBLISHED app's version
+    // (submission approval AND the admin's direct "push update"/edit forms —
+    // previously only approveSubmission() recorded history, so an app
+    // updated through the direct edit path silently lost its outgoing
+    // version with no trace). Appends (never overwrites) the app's
+    // CURRENT version/apkUrl/changelog into its history list before that
+    // version gets replaced, so no published version is ever lost no matter
+    // which path performed the update.
+    private fun buildUpdatedVersionHistoryJson(existingApp: com.example.data.AppEntity): String {
+        val historyMoshi = com.squareup.moshi.Moshi.Builder().build()
+        val historyListType = com.squareup.moshi.Types.newParameterizedType(List::class.java, com.example.data.AppVersionHistoryEntry::class.java)
+        val historyAdapter = historyMoshi.adapter<List<com.example.data.AppVersionHistoryEntry>>(historyListType)
+        val existingHistory = try {
+            historyAdapter.fromJson(existingApp.versionHistoryJson) ?: emptyList()
+        } catch (e: Exception) {
+            emptyList()
+        }
+        val previousVersionEntry = com.example.data.AppVersionHistoryEntry(
+            versionName = existingApp.version,
+            versionCode = existingApp.versionCode,
+            apkUrl = existingApp.apkUrl,
+            changelog = existingApp.changelog,
+            publishedAt = System.currentTimeMillis()
+        )
+        val updatedHistory = existingHistory + previousVersionEntry
+        return historyAdapter.toJson(updatedHistory)
+    }
+
     fun approveSubmission(
         submission: SubmissionEntity,
         feedback: String = "Approved and published inside Dark Store catalog.",
@@ -1859,23 +1986,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                     // discarding it — append it to the history list rather than
                     // overwriting in place, so every previously-published version
                     // stays retrievable.
-                    val historyMoshi = com.squareup.moshi.Moshi.Builder().build()
-                    val historyListType = com.squareup.moshi.Types.newParameterizedType(List::class.java, com.example.data.AppVersionHistoryEntry::class.java)
-                    val historyAdapter = historyMoshi.adapter<List<com.example.data.AppVersionHistoryEntry>>(historyListType)
-                    val existingHistory = try {
-                        historyAdapter.fromJson(existingApp.versionHistoryJson) ?: emptyList()
-                    } catch (e: Exception) {
-                        emptyList()
-                    }
-                    val previousVersionEntry = com.example.data.AppVersionHistoryEntry(
-                        versionName = existingApp.version,
-                        versionCode = existingApp.versionCode,
-                        apkUrl = existingApp.apkUrl,
-                        changelog = existingApp.changelog,
-                        publishedAt = System.currentTimeMillis()
-                    )
-                    val updatedHistory = existingHistory + previousVersionEntry
-                    val updatedHistoryJson = historyAdapter.toJson(updatedHistory)
+                    val updatedHistoryJson = buildUpdatedVersionHistoryJson(existingApp)
 
                     existingApp.copy(
                         name = submission.name,
@@ -2185,18 +2296,17 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         val avg = allReviews.map { it.stars }.average()
         val formattedRating = String.format(java.util.Locale.US, "%.1f", avg)
         
-        // Find app and update
-        val app = _realtimeApps.value.find { it.id == appId } ?: return
-        val updatedApp = app.copy(rating = formattedRating)
-        
-        // BUG FIX: this called the raw FirebaseService.saveApp() directly — a plain
-        // blocking synchronous network call, not a suspend function. Every other
-        // call site in this file correctly goes through repository.saveApp()
-        // (which wraps the same call in withContext(Dispatchers.IO)); this one alone
-        // bypassed that, running a real network request on whatever thread called
-        // updateAppRating() — which, since submitReview()'s outer launch has no
-        // explicit dispatcher, is the main thread.
-        repository.saveApp(updatedApp)
+        // Any logged-in user can review ANY app, not just their own — so this
+        // can never go through the normal saveApp() full-object PUT, which
+        // database.rules.json restricts to the app's own developer (or
+        // admin), exactly to stop a random user from tampering with apkUrl,
+        // isSuspended, or anything else on someone else's app. Using a scoped
+        // PATCH of only the "rating" field instead means a reviewer only
+        // ever has permission to touch that one field — nothing else on the
+        // app is reachable through this path.
+        kotlinx.coroutines.withContext(Dispatchers.IO) {
+            FirebaseService.updateAppRatingField(appId, formattedRating)
+        }
         // Refresh apps list to reflect new rating globally
         // This is a simplistic approach
         refreshMarketplace(true)

@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package com.example
 
 import android.app.Application
@@ -862,6 +864,20 @@ fun PlayStoreMainDashboard(
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
                 isUninstallEnabled = com.example.utils.ApkInstaller.isDeviceAdminActive(context)
+
+                // Nothing in the app previously refreshed data the moment it
+                // came back to the foreground — the only thing keeping data
+                // "live" was a 12-second background loop tied to the
+                // ViewModel's own coroutine scope. That loop can stall or get
+                // frozen by the OS while the app is backgrounded (common on
+                // battery-aggressive OEM skins), so reopening the app could
+                // show stale data for however long is left of whatever cycle
+                // it was mid-way through — sometimes close to the full
+                // interval. force=true bypasses the normal 5-minute
+                // foreground-refresh throttle, so every time the app is
+                // brought back to the front, it's guaranteed a fresh fetch
+                // right away instead of waiting on the background loop.
+                viewModel.refreshMarketplace(force = true)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -1692,6 +1708,7 @@ fun PlayStoreMainDashboard(
 
         AppDetailsDialog(
             app = app,
+            viewModel = viewModel,
             downloadState = activeDl,
             installedInfo = installedInfo,
             currentRating = dynamicRatingInfo.first,
@@ -1748,17 +1765,18 @@ fun PlayStoreMainDashboard(
         )
     }
 
+    // The old fake payment checkout (hardcoded "Play Balance $25.00", a made-up
+    // Visa card, a delay() pretending to authorize a real payment) has been
+    // removed entirely — DarkStore has no real payment processor behind it,
+    // so pretending a purchase succeeded was actively dishonest. Any app
+    // still flagged premium (from before this change) now honestly says
+    // "Coming Soon" instead of faking a checkout.
     purchaseAppTarget?.let { app ->
-        SimulatedPaymentCheckoutDialog(
-            app = app,
-            accentGreen = accentGreen,
-            onDismiss = { purchaseAppTarget = null },
-            onPurchaseConfirmed = {
-                viewModel.purchaseApp(app.id)
-                purchaseAppTarget = null
-                Toast.makeText(context, "${app.name} purchased successfully in checkout simulation! Ready to download.", Toast.LENGTH_LONG).show()
-                showDetailsApp = app
-            }
+        ComingSoonDialog(
+            title = "Paid Apps — Coming Soon",
+            message = "Purchasing premium apps isn't available yet. We're building real payment support and will let you know the moment it's ready.",
+            accentColor = Color(0xFFFF9800),
+            onDismiss = { purchaseAppTarget = null }
         )
     }
 
@@ -2306,17 +2324,19 @@ fun DiscoveryTabContent(
                             val isPurchased = purchasedAppIds.contains(app.id)
                             val onClick = remember(app.id) { { latestOnAppClick.value(app) } }
                             val onBuyClick = remember(app.id) { { latestOnBuyPremiumClick.value(app) } }
-                            PremiumAppCardView(
-                                app = app,
-                                purchased = isPurchased,
-                                cardBgColor = cardBgColor,
-                                cardBorderColor = cardBorderColor,
-                                textPrimary = textPrimary,
-                                textSecondary = textSecondary,
-                                accentGreen = accentGreen,
-                                onClick = onClick,
-                                onBuyClick = onBuyClick
-                            )
+                            Box(modifier = Modifier.animateItemPlacement(tween(280, easing = FastOutSlowInEasing))) {
+                                PremiumAppCardView(
+                                    app = app,
+                                    purchased = isPurchased,
+                                    cardBgColor = cardBgColor,
+                                    cardBorderColor = cardBorderColor,
+                                    textPrimary = textPrimary,
+                                    textSecondary = textSecondary,
+                                    accentGreen = accentGreen,
+                                    onClick = onClick,
+                                    onBuyClick = onBuyClick
+                                )
+                            }
                         }
                     }
                 }
@@ -2341,17 +2361,19 @@ fun DiscoveryTabContent(
                             val isRegistered = preRegisteredAppIds.contains(app.id)
                             val onClick = remember(app.id) { { latestOnAppClick.value(app) } }
                             val onRegisterClick = remember(app.id) { { latestOnPreRegisterClick.value(app) } }
-                            UpcomingAppCardView(
-                                app = app,
-                                registered = isRegistered,
-                                cardBgColor = cardBgColor,
-                                cardBorderColor = cardBorderColor,
-                                textPrimary = textPrimary,
-                                textSecondary = textSecondary,
-                                accentGreen = accentGreen,
-                                onClick = onClick,
-                                onRegisterClick = onRegisterClick
-                            )
+                            Box(modifier = Modifier.animateItemPlacement(tween(280, easing = FastOutSlowInEasing))) {
+                                UpcomingAppCardView(
+                                    app = app,
+                                    registered = isRegistered,
+                                    cardBgColor = cardBgColor,
+                                    cardBorderColor = cardBorderColor,
+                                    textPrimary = textPrimary,
+                                    textSecondary = textSecondary,
+                                    accentGreen = accentGreen,
+                                    onClick = onClick,
+                                    onRegisterClick = onRegisterClick
+                                )
+                            }
                         }
                     }
                 }
@@ -2397,23 +2419,32 @@ fun DiscoveryTabContent(
                     val onClick = remember(app.id) { { latestOnAppClick.value(app) } }
                     val onActionClick = remember(app.id) { { latestOnActionClick.value(app) } }
 
-                    AppItemCardView(
-                        app = app,
-                        downloadState = dlState,
-                        installedInfo = installedInfo,
-                        overriddenRating = overriddenRating,
-                        accentGreen = accentGreen,
-                        textPrimary = textPrimary,
-                        textSecondary = textSecondary,
-                        cardBgColor = cardBgColor,
-                        cardBorderColor = cardBorderColor,
-                        purchased = isPurchased,
-                        registered = isRegistered,
-                        onBuyClick = onBuyClick,
-                        onRegisterClick = onRegisterClick,
-                        onClick = onClick,
-                        onActionClick = onActionClick
-                    )
+                    // Smooth cross-fade + slide whenever a row's position shifts
+                    // (new items inserted above it, a filtered item removed,
+                    // etc.) instead of it just snapping to its new spot.
+                    // animateItemPlacement() is Compose Foundation's own
+                    // built-in, low-cost placement-animation primitive — safe
+                    // to add without reopening any of the earlier scroll-perf
+                    // fixes to this same row.
+                    Box(modifier = Modifier.animateItemPlacement(tween(280, easing = FastOutSlowInEasing))) {
+                        AppItemCardView(
+                            app = app,
+                            downloadState = dlState,
+                            installedInfo = installedInfo,
+                            overriddenRating = overriddenRating,
+                            accentGreen = accentGreen,
+                            textPrimary = textPrimary,
+                            textSecondary = textSecondary,
+                            cardBgColor = cardBgColor,
+                            cardBorderColor = cardBorderColor,
+                            purchased = isPurchased,
+                            registered = isRegistered,
+                            onBuyClick = onBuyClick,
+                            onRegisterClick = onRegisterClick,
+                            onClick = onClick,
+                            onActionClick = onActionClick
+                        )
+                    }
                 }
             }
 
@@ -4093,6 +4124,51 @@ fun ProfileTabContent(
                                 )
                             }
                         }
+                    }
+                }
+
+                // Following/Followers is available to every logged-in account,
+                // not just developers — any user can follow a developer, and
+                // any developer can see who follows them (and follow back).
+                run {
+                    val followingIds by viewModel.followingIds.collectAsStateWithLifecycle()
+                    val followerIds by viewModel.followerIds.collectAsStateWithLifecycle()
+                    val allKnownUsers by viewModel.developers.collectAsStateWithLifecycle()
+                    var showFollowersFollowingDialog by remember { mutableStateOf(false) }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 16.dp)
+                            .background(surfaceCol, RoundedCornerShape(14.dp))
+                            .border(1.dp, borderCol, RoundedCornerShape(14.dp))
+                            .clickable { showFollowersFollowingDialog = true }
+                            .padding(vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(text = "${followingIds.size}", color = textPrimaryCol, fontSize = 16.sp, fontWeight = FontWeight.Black)
+                            Text(text = "Following", color = textSecondaryCol, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                        }
+                        Box(
+                            modifier = Modifier
+                                .width(1.dp)
+                                .height(28.dp)
+                                .background(borderCol)
+                        )
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(text = "${followerIds.size}", color = textPrimaryCol, fontSize = 16.sp, fontWeight = FontWeight.Black)
+                            Text(text = "Followers", color = textSecondaryCol, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                        }
+                    }
+
+                    if (showFollowersFollowingDialog) {
+                        FollowersFollowingDialog(
+                            viewModel = viewModel,
+                            isDarkMode = isDarkMode,
+                            developers = allKnownUsers,
+                            onDismiss = { showFollowersFollowingDialog = false }
+                        )
                     }
                 }
 
@@ -6232,6 +6308,7 @@ fun GooglePlayAccountDialog(
     userName: String,
     userEmail: String,
     submissions: List<SubmissionEntity> = emptyList(),
+    existingApps: List<com.example.data.AppEntity> = emptyList(),
     onTriggerSubmitForm: () -> Unit = {},
     onRefreshSubmissions: () -> Unit = {},
     onLogin: (String, String) -> Unit,
@@ -6610,6 +6687,7 @@ fun GooglePlayAccountDialog(
                                 MySubmissionsStatusDialog(
                                     isDarkMode = isDarkMode,
                                     submissions = submissions,
+                                    existingApps = existingApps,
                                     onDismiss = { showMySubmissionsDialog = false },
                                     onRequestUpdate = { sub ->
                                         showMySubmissionsDialog = false
@@ -6945,6 +7023,7 @@ fun GooglePlayAccountDialog(
 fun MySubmissionsStatusDialog(
     isDarkMode: Boolean,
     submissions: List<SubmissionEntity>,
+    existingApps: List<com.example.data.AppEntity> = emptyList(),
     onDismiss: () -> Unit,
     onRequestUpdate: (SubmissionEntity) -> Unit,
     onShowAppDetails: (com.example.data.AppEntity) -> Unit = {}
@@ -7083,7 +7162,7 @@ fun MySubmissionsStatusDialog(
                                     .testTag("user_sub_card_" + sub.id)
                                     .clickable {
                                         onDismiss()
-                                        onShowAppDetails(sub.toAppEntity())
+                                        onShowAppDetails(sub.toAppEntity(existingApps.find { it.packageName == sub.packageName }?.versionHistoryJson ?: ""))
                                     },
                                 shape = RoundedCornerShape(16.dp),
                                 colors = CardDefaults.cardColors(containerColor = surfaceCol),
@@ -9080,7 +9159,7 @@ fun ConsoleTabContent(
                                 onApprove = { submissionToApprove = sub; approvalFeedback = "" },
                                 onReject = { submissionToReject = sub; rejectionReason = "" },
                                 onEdit = { editingSubmission = sub },
-                                onCardClick = { onShowAppDetails(sub.toAppEntity()) }
+                                onCardClick = { onShowAppDetails(sub.toAppEntity(apps.find { it.packageName == sub.packageName }?.versionHistoryJson ?: "")) }
                             )
                         }
                     }
@@ -9106,7 +9185,7 @@ fun ConsoleTabContent(
                                 onApprove = { submissionToApprove = sub; approvalFeedback = "" },
                                 onReject = { submissionToReject = sub; rejectionReason = "" },
                                 onEdit = { editingSubmission = sub },
-                                onCardClick = { onShowAppDetails(sub.toAppEntity()) }
+                                onCardClick = { onShowAppDetails(sub.toAppEntity(apps.find { it.packageName == sub.packageName }?.versionHistoryJson ?: "")) }
                             )
                         }
                     }
@@ -9132,7 +9211,7 @@ fun ConsoleTabContent(
                                 onApprove = { submissionToApprove = sub; approvalFeedback = "" },
                                 onReject = { submissionToReject = sub; rejectionReason = "" },
                                 onEdit = { editingSubmission = sub },
-                                onCardClick = { onShowAppDetails(sub.toAppEntity()) }
+                                onCardClick = { onShowAppDetails(sub.toAppEntity(apps.find { it.packageName == sub.packageName }?.versionHistoryJson ?: "")) }
                             )
                         }
                     }
@@ -10665,6 +10744,7 @@ fun AppDetailsSkeleton(
 @Composable
 fun AppDetailsDialog(
     app: AppEntity,
+    viewModel: com.example.viewmodel.StoreViewModel,
     downloadState: DownloadEntity?,
     installedInfo: com.example.utils.ApkInstaller.InstalledAppInfo?,
     currentRating: String,
@@ -10970,6 +11050,93 @@ fun AppDetailsDialog(
                         }
 
                         Spacer(modifier = Modifier.height(16.dp))
+
+                        // Version history was already being recorded into
+                        // app.versionHistoryJson on every update (submission
+                        // approval, and now the admin's direct edit/push-update
+                        // path too) but had no UI anywhere showing it — stored
+                        // and immediately invisible. Surfaced here as a
+                        // collapsible list, newest-first, right below the
+                        // description.
+                        val versionHistory = remember(app.versionHistoryJson) {
+                            if (app.versionHistoryJson.isBlank()) {
+                                emptyList()
+                            } else {
+                                try {
+                                    val moshi = com.squareup.moshi.Moshi.Builder().build()
+                                    val listType = com.squareup.moshi.Types.newParameterizedType(List::class.java, com.example.data.AppVersionHistoryEntry::class.java)
+                                    moshi.adapter<List<com.example.data.AppVersionHistoryEntry>>(listType)
+                                        .fromJson(app.versionHistoryJson)
+                                        ?.sortedByDescending { it.publishedAt }
+                                        ?: emptyList()
+                                } catch (e: Exception) {
+                                    emptyList()
+                                }
+                            }
+                        }
+                        if (versionHistory.isNotEmpty()) {
+                            var isHistoryExpanded by remember(app.id) { mutableStateOf(false) }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { isHistoryExpanded = !isHistoryExpanded },
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "VERSION HISTORY (${versionHistory.size})",
+                                    color = textSecondary,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 1.sp,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Icon(
+                                    imageVector = if (isHistoryExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                    contentDescription = null,
+                                    tint = textSecondary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                            AnimatedVisibility(visible = isHistoryExpanded) {
+                                Column(modifier = Modifier.padding(top = 8.dp)) {
+                                    val dateFormat = remember { java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.getDefault()) }
+                                    versionHistory.forEach { entry ->
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(bottom = 10.dp)
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    text = "v${entry.versionName}",
+                                                    color = textPrimary,
+                                                    fontSize = 13.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    text = dateFormat.format(java.util.Date(entry.publishedAt)),
+                                                    color = textSecondary,
+                                                    fontSize = 11.sp
+                                                )
+                                            }
+                                            if (entry.changelog.isNotBlank()) {
+                                                Spacer(modifier = Modifier.height(2.dp))
+                                                Text(
+                                                    text = entry.changelog,
+                                                    color = textSecondary,
+                                                    fontSize = 12.sp,
+                                                    lineHeight = 16.sp,
+                                                    maxLines = 3,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(16.dp))
+                        }
 
                         Text(
                             text = "SCREENSHOT PREVIEWS",
@@ -11556,7 +11723,75 @@ fun AppDetailsDialog(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Follow / follower count. devProfile falls back to a
+                    // synthetic "fallback_uid" entry when no real UserEntity
+                    // matched this developer's name — there's nothing real to
+                    // follow in that case, so the row is skipped entirely
+                    // rather than showing a button that can never work.
+                    if (devProfile.uid != "fallback_uid") {
+                        val followingIds by viewModel.followingIds.collectAsStateWithLifecycle()
+                        val isFollowing = followingIds.contains(devProfile.uid)
+                        var followerCount by remember(devProfile.uid) { mutableStateOf<Int?>(null) }
+                        var isTogglingFollow by remember { mutableStateOf(false) }
+                        val isOwnProfile = viewModel.userUid.collectAsStateWithLifecycle().value == devProfile.uid
+
+                        LaunchedEffect(devProfile.uid) {
+                            followerCount = viewModel.fetchFollowerCount(devProfile.uid)
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = when (val count = followerCount) {
+                                    null -> "· · ·"
+                                    1 -> "1 follower"
+                                    else -> "$count followers"
+                                },
+                                color = textSecondary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (!isOwnProfile) {
+                                Button(
+                                    onClick = {
+                                        if (!isTogglingFollow) {
+                                            isTogglingFollow = true
+                                            val wasFollowing = isFollowing
+                                            viewModel.toggleFollowDeveloper(devProfile.uid) { success ->
+                                                isTogglingFollow = false
+                                                if (success) {
+                                                    followerCount = (followerCount ?: 0) + if (wasFollowing) -1 else 1
+                                                } else {
+                                                    Toast.makeText(context, "Couldn't update follow status — try again.", Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                        }
+                                    },
+                                    enabled = !isTogglingFollow,
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = if (isFollowing) {
+                                        ButtonDefaults.buttonColors(containerColor = textSecondary.copy(alpha = 0.12f), contentColor = textPrimary)
+                                    } else {
+                                        ButtonDefaults.buttonColors(containerColor = accentGreen, contentColor = Color.White)
+                                    },
+                                    modifier = Modifier.height(34.dp)
+                                ) {
+                                    Text(
+                                        text = if (isFollowing) "Following" else "Follow",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+                    }
 
                     // Bio section
                     Text(
@@ -12648,32 +12883,55 @@ fun AddNewAppForm(
                                 Text("Contains advertising (Show 'AD' badge)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             }
 
+                            // Paid apps (real payments) aren't built yet — the old
+                            // checkbox here let a developer flag an app "Premium"
+                            // and set a price, which fed into a fully fake checkout
+                            // dialog on the buyer's side (hardcoded "Play Balance
+                            // $25.00", a made-up Visa card, a delay() pretending to
+                            // process a payment). Removed that dishonest path
+                            // entirely — this row is now disabled and clearly
+                            // labeled "Coming Soon" instead of quietly lying to
+                            // both developers and buyers.
                             Row(
-                                modifier = Modifier.fillMaxWidth().testTag("is_premium_checkbox_row"),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("is_premium_checkbox_row")
+                                    .clickable {
+                                        Toast.makeText(
+                                            context,
+                                            "Paid apps aren't available yet — coming soon!",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                    .padding(vertical = 2.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Checkbox(
-                                    checked = isPremium,
-                                    onCheckedChange = {
-                                        isPremium = it
-                                        if (!it) price = "" 
-                                    },
-                                    colors = CheckboxDefaults.colors(checkedColor = Color(0xFFFF9800))
+                                    checked = false,
+                                    onCheckedChange = null,
+                                    enabled = false,
+                                    colors = CheckboxDefaults.colors(disabledUncheckedColor = Color(0xFFFF9800).copy(alpha = 0.4f))
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Premium App (Requires payment simulation)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            }
-
-                            if (isPremium) {
-                                OutlinedTextField(
-                                    value = price,
-                                    onValueChange = { price = it },
-                                    label = { Text("App Pricing / Price Tag * (e.g. $1.99)") },
-                                    leadingIcon = { Icon(Icons.Default.ShoppingCart, contentDescription = null, tint = Color(0xFFFF9800)) },
-                                    shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.fillMaxWidth().testTag("premium_price_field"),
-                                    placeholder = { Text("$2.99") }
+                                Text(
+                                    "Premium App (paid apps)",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                                 )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .background(Color(0xFFFF9800).copy(alpha = 0.15f), RoundedCornerShape(6.dp))
+                                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                                ) {
+                                    Text(
+                                        "COMING SOON",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Black,
+                                        color = Color(0xFFFF9800)
+                                    )
+                                }
                             }
 
                             Row(
@@ -12779,159 +13037,276 @@ fun AddNewAppForm(
 // 11.B SIMULATED PURCHASE / CHECKOUT DIALOG
 // ========================================================
 @Composable
-fun SimulatedPaymentCheckoutDialog(
-    app: AppEntity,
-    accentGreen: Color,
-    onDismiss: () -> Unit,
-    onPurchaseConfirmed: () -> Unit
+fun FollowersFollowingDialog(
+    viewModel: com.example.viewmodel.StoreViewModel,
+    isDarkMode: Boolean,
+    developers: List<UserEntity>,
+    onDismiss: () -> Unit
 ) {
-    var selectedMethod by remember { mutableStateOf("Play Balance") }
-    var isProcessing by remember { mutableStateOf(false) }
-    val coroutineScope = rememberCoroutineScope()
-    
-    Dialog(onDismissRequest = { if (!isProcessing) onDismiss() }) {
+    val context = LocalContext.current
+    val bgCol = if (isDarkMode) Color(0xFF13151C) else Color(0xFFFFFFFF)
+    val surfaceCol = if (isDarkMode) Color(0xFF1D202B) else Color(0xFFF8FAFC)
+    val borderCol = if (isDarkMode) Color(0xFF292E3D) else Color(0xFFE2E8F0)
+    val textPrimaryCol = if (isDarkMode) Color(0xFFF1F5F9) else Color(0xFF1E293B)
+    val textSecondaryCol = if (isDarkMode) Color(0xFF94A3B8) else Color(0xFF64748B)
+    val accentGreen = Color(0xFF22C55E)
+
+    val followingIds by viewModel.followingIds.collectAsStateWithLifecycle()
+    val followerIds by viewModel.followerIds.collectAsStateWithLifecycle()
+    var selectedTab by remember { mutableStateOf(0) } // 0 = Following, 1 = Followers
+
+    val followingUsers = remember(followingIds, developers) {
+        followingIds.mapNotNull { uid -> developers.find { it.uid == uid } }
+    }
+    val followerUsers = remember(followerIds, developers) {
+        followerIds.mapNotNull { uid -> developers.find { it.uid == uid } }
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
         Card(
-            modifier = Modifier
-                .fillMaxWidth(0.95f)
-                .wrapContentSize()
-                .border(1.dp, Color(0xFF01875F), RoundedCornerShape(16.dp)),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            shape = RoundedCornerShape(16.dp)
+            modifier = Modifier.fillMaxWidth(0.95f).fillMaxHeight(0.8f),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = bgCol),
+            border = BorderStroke(1.dp, borderCol)
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    text = "DarkStore Purchase",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(modifier = Modifier.height(14.dp))
-                
+            Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Following & Followers",
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Black,
+                        color = textPrimaryCol
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = textSecondaryCol)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
-                        .padding(10.dp)
+                        .background(surfaceCol, RoundedCornerShape(12.dp))
+                        .padding(4.dp)
                 ) {
-                    AppLogo(
-                        logoUrl = app.logo,
-                        appName = app.name,
-                        packageName = app.packageName,
-                        modifier = Modifier
-                            .size(48.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = app.name,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = app.developer,
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                    listOf("Following (${followingUsers.size})", "Followers (${followerUsers.size})").forEachIndexed { index, label ->
+                        val isSelected = selectedTab == index
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(9.dp))
+                                .background(if (isSelected) accentGreen else Color.Transparent)
+                                .clickable { selectedTab = index }
+                                .padding(vertical = 9.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = label,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isSelected) Color.White else textSecondaryCol
+                            )
+                        }
                     }
-                    Text(
-                        text = app.price.ifEmpty { "$1.99" },
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 16.sp,
-                        color = accentGreen
-                    )
                 }
-                
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                Text(
-                    text = "Choose Payment Method",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                val paymentMethods = listOf(
-                    Triple("Play Balance", "Play Balance ($25.00 remaining)", Icons.Default.Star),
-                    Triple("Visa Card", "Visa ending in •••• 5678", Icons.Default.CheckCircle),
-                    Triple("Play Points", "Redeem 200 Play Points", Icons.Default.Star)
-                )
-                
-                paymentMethods.forEach { (mId, mLabel, mIcon) ->
-                    val isSel = selectedMethod == mId
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable(enabled = !isProcessing) { selectedMethod = mId }
-                            .padding(vertical = 8.dp, horizontal = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = isSel,
-                            onClick = { if (!isProcessing) selectedMethod = mId },
-                            colors = RadioButtonDefaults.colors(selectedColor = accentGreen)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Icon(mIcon, contentDescription = null, tint = if (isSel) accentGreen else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
-                        Spacer(modifier = Modifier.width(10.dp))
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                val listToShow = if (selectedTab == 0) followingUsers else followerUsers
+
+                if (listToShow.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(
-                            text = mLabel,
+                            text = if (selectedTab == 0) "You're not following any developers yet." else "No followers yet.",
                             fontSize = 13.sp,
-                            fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
-                            color = if (isSel) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+                            color = textSecondaryCol,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(32.dp)
                         )
-                    }
-                }
-                
-                Spacer(modifier = Modifier.height(20.dp))
-                
-                if (isProcessing) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().testTag("payment_processing_indicator"),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        CircularProgressIndicator(color = accentGreen, modifier = Modifier.size(24.dp))
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text("Authorizing sandbox payment...", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 } else {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        OutlinedButton(
-                            onClick = onDismiss,
-                            modifier = Modifier.weight(1f).height(40.dp),
-                            border = BorderStroke(1.dp, Color.Gray),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Gray),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Text("CANCEL", fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                        }
-                        
-                        Button(
-                            onClick = {
-                                isProcessing = true
-                                coroutineScope.launch {
-                                    kotlinx.coroutines.delay(1200)
-                                    isProcessing = false
-                                    onPurchaseConfirmed()
+                        items(listToShow, key = { it.uid }) { person ->
+                            val personIsFollowedByMe = followingIds.contains(person.uid)
+                            var isToggling by remember(person.uid) { mutableStateOf(false) }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(42.dp)
+                                        .clip(CircleShape)
+                                        .background(accentGreen.copy(alpha = 0.15f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (person.profilePhotoUrl.isNotBlank()) {
+                                        AsyncImage(
+                                            model = person.profilePhotoUrl,
+                                            contentDescription = null,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize().clip(CircleShape)
+                                        )
+                                    } else {
+                                        Text(
+                                            text = (person.devName.ifBlank { person.displayName }).take(1).uppercase(),
+                                            color = accentGreen,
+                                            fontWeight = FontWeight.Black,
+                                            fontSize = 16.sp
+                                        )
+                                    }
                                 }
-                            },
-                            modifier = Modifier.weight(1.5f).height(40.dp).testTag("purchase_simulation_confirm"),
-                            colors = ButtonDefaults.buttonColors(containerColor = accentGreen),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Text("BUY WITH ONE-TAP", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = person.devName.ifBlank { person.displayName }.ifBlank { person.email },
+                                        color = textPrimaryCol,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = if (person.isDeveloper) "Developer" else "Member",
+                                        color = textSecondaryCol,
+                                        fontSize = 11.sp
+                                    )
+                                }
+
+                                // On the Following tab, every entry is someone we
+                                // follow — always show Unfollow. On the Followers
+                                // tab: if we already follow them back, show the
+                                // same passive "Following" state; otherwise only
+                                // offer "Follow Back" when they're a developer
+                                // themselves (there's nothing to follow about a
+                                // plain member who just follows us) — otherwise no
+                                // action, just show them in the list.
+                                val showActionButton = selectedTab == 0 || personIsFollowedByMe || person.isDeveloper
+                                if (showActionButton) {
+                                    Button(
+                                        onClick = {
+                                            if (!isToggling) {
+                                                isToggling = true
+                                                viewModel.toggleFollowDeveloper(person.uid) { _ ->
+                                                    isToggling = false
+                                                }
+                                            }
+                                        },
+                                        enabled = !isToggling,
+                                        shape = RoundedCornerShape(10.dp),
+                                        colors = if (personIsFollowedByMe) {
+                                            ButtonDefaults.buttonColors(containerColor = surfaceCol, contentColor = textPrimaryCol)
+                                        } else {
+                                            ButtonDefaults.buttonColors(containerColor = accentGreen, contentColor = Color.White)
+                                        },
+                                        modifier = Modifier.height(32.dp)
+                                    ) {
+                                        Text(
+                                            text = when {
+                                                personIsFollowedByMe -> "Following"
+                                                selectedTab == 1 -> "Follow Back"
+                                                else -> "Follow"
+                                            },
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ComingSoonDialog(
+    title: String,
+    message: String,
+    accentColor: Color,
+    onDismiss: () -> Unit
+) {
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
+
+    Dialog(onDismissRequest = onDismiss) {
+        AnimatedVisibility(
+            visible = visible,
+            enter = fadeIn(tween(220)) + scaleIn(initialScale = 0.85f, animationSpec = tween(220, easing = FastOutSlowInEasing)),
+            exit = fadeOut(tween(150)) + scaleOut(targetScale = 0.9f, animationSpec = tween(150))
+        ) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth(0.9f)
+                    .wrapContentSize()
+                    .border(1.dp, accentColor.copy(alpha = 0.35f), RoundedCornerShape(20.dp)),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(20.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    val infiniteTransition = rememberInfiniteTransition(label = "coming_soon_pulse")
+                    val pulseScale by infiniteTransition.animateFloat(
+                        initialValue = 1f,
+                        targetValue = 1.12f,
+                        animationSpec = infiniteRepeatable(tween(900, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+                        label = "pulse_scale"
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .scale(pulseScale)
+                            .clip(CircleShape)
+                            .background(accentColor.copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.RocketLaunch,
+                            contentDescription = null,
+                            tint = accentColor,
+                            modifier = Modifier.size(30.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = title,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 17.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = message,
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 18.sp
+                    )
+                    Spacer(modifier = Modifier.height(20.dp))
+                    Button(
+                        onClick = onDismiss,
+                        modifier = Modifier.fillMaxWidth().height(44.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = accentColor),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Got it", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
                 }
             }
@@ -14690,7 +15065,13 @@ fun UpdateRequiredScreen(
     }
 }
 
-fun com.example.data.SubmissionEntity.toAppEntity() = com.example.data.AppEntity(
+// existingHistoryJson lets a caller that has access to the already-published
+// app (by packageName) carry its versionHistoryJson into this synthetic
+// AppEntity — without it, viewing a submission's "details" (e.g. from the
+// admin review queue, or a developer's own submissions list) would show an
+// empty version history even when the app being updated already has a rich
+// one, since SubmissionEntity itself has no such field to draw from.
+fun com.example.data.SubmissionEntity.toAppEntity(existingHistoryJson: String = "") = com.example.data.AppEntity(
     id = id,
     name = name,
     developer = developer,
@@ -14709,7 +15090,8 @@ fun com.example.data.SubmissionEntity.toAppEntity() = com.example.data.AppEntity
     versionCode = 1,
     isApproved = status == "Approved",
     submittedBy = submittedBy,
-    hasAds = hasAds
+    hasAds = hasAds,
+    versionHistoryJson = existingHistoryJson
 )
 
 fun com.example.data.AppEntity.toSubmissionEntity() = com.example.data.SubmissionEntity(

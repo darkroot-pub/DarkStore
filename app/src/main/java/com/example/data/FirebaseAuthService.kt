@@ -122,21 +122,19 @@ object FirebaseAuthService {
 
                     Triple(true, confirmationMsg, user)
                 } else {
+                    // Firebase actually responded here — this is a REAL error
+                    // (EMAIL_EXISTS, WEAK_PASSWORD, OPERATION_NOT_ALLOWED if
+                    // Email/Password sign-in is disabled in the Firebase
+                    // console, etc.), not a connectivity problem. The old
+                    // behavior silently swallowed this and faked a successful
+                    // "sandbox" account instead — which is exactly why signups
+                    // could appear to "work" (instant login, no error) while
+                    // no real Firebase account was ever created and no
+                    // verification email was ever possible. Show the real
+                    // error instead of hiding it behind a fake success.
                     val errMsg = parseAuthError(bodyStr)
-                    if (targetKey == DEFAULT_API_KEY) {
-                        Log.w(TAG, "Auth server failure. Falling back to secure simulated local sandbox account creation.")
-                        val uid = "sim_" + email.hashCode()
-                        val role = if (email.equals("davidstha900@gmail.com", ignoreCase = true)) "admin" else "user"
-                        val fcmPrefs = context.getSharedPreferences("dark_store_fcm_prefs", Context.MODE_PRIVATE)
-                        val fcmToken = fcmPrefs.getString("fcm_token", "") ?: ""
-                        val user = UserEntity(uid, email, displayName, role, fcmToken = fcmToken)
-                        saveLocalUser(context, user, "sim_token_$uid")
-                        saveLocalSimulationUser(context, email, password, displayName, role, uid)
-                        saveUserInRealtimeDatabase(user)
-                        Triple(true, "Created offline account safely! Role: $role", user)
-                    } else {
-                        Triple(false, errMsg, null)
-                    }
+                    Log.w(TAG, "SignUp rejected by Firebase: $errMsg")
+                    Triple(false, errMsg, null)
                 }
             }
         } catch (e: Exception) {
@@ -592,46 +590,14 @@ object FirebaseAuthService {
             client.newCall(userRequest).execute().use { response ->
                 if (response.isSuccessful) {
                     Log.d(TAG, "Successfully updated user ${user.uid} in Realtime Database")
-                } else {
-                    Log.e(TAG, "Failed update user in RTDB: code ${response.code}")
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Exception saving user in Realtime Database: ${e.message}", e)
-        }
-
-        val devPayload = JSONObject().apply {
-            put("uid", user.uid)
-            put("email", user.email)
-            put("name", user.displayName)
-            put("displayName", user.displayName)
-            put("userName", user.displayName)
-            put("developer", user.displayName)
-            put("developerName", user.displayName)
-            put("isDeveloper", user.isDeveloper)
-            put("devWebsite", user.devWebsite)
-            put("devGithub", user.devGithub)
-            put("devName", user.devName)
-            put("devBio", user.devBio)
-        }
-        val devBody = devPayload.toString().toRequestBody(mediaTypeJson)
-        val devUrl = "${RTDB_URL}developers/${user.uid}.json$tokenParam"
-        val devRequest = Request.Builder()
-            .url(devUrl)
-            .put(devBody)
-            .build()
-        try {
-            client.newCall(devRequest).execute().use { response ->
-                if (response.isSuccessful) {
-                    Log.d(TAG, "Successfully updated developer ${user.uid} in Realtime Database")
                     true
                 } else {
-                    Log.e(TAG, "Failed update developer in RTDB: code ${response.code}")
+                    Log.e(TAG, "Failed update user in RTDB: code ${response.code}")
                     false
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Exception saving developer in Realtime Database: ${e.message}", e)
+            Log.e(TAG, "Exception saving user in Realtime Database: ${e.message}", e)
             false
         }
     }
@@ -672,38 +638,12 @@ object FirebaseAuthService {
             Log.e(TAG, "Error fetching user from RTDB: ${e.message}")
         }
 
-        var rtdbIsDev = false
-        var rtdbDevName = ""
-        try {
-            val devUrl = "${RTDB_URL}developers/${uid}.json$tokenParam"
-            val devRequest = Request.Builder().url(devUrl).get().build()
-            client.newCall(devRequest).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string()
-                    if (!body.isNullOrBlank() && body != "null") {
-                        val json = JSONObject(body)
-                        rtdbIsDev = json.optBoolean("isDeveloper", false)
-                        rtdbDevName = json.optString("displayName", json.optString("name", ""))
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error checking RTDB dev status: ${e.message}")
-        }
-
-        val finalUser = rtdbUser
-
-        if (finalUser != null) {
-            var updatedUser = finalUser
-            if (rtdbIsDev && !updatedUser.isDeveloper) {
-                updatedUser = updatedUser.copy(isDeveloper = true)
-            }
-            if (rtdbDevName.isNotBlank() && updatedUser.devName.isBlank()) {
-                updatedUser = updatedUser.copy(devName = rtdbDevName)
-            }
-            return@withContext updatedUser
-        }
-        null
+        // NOTE: this used to also read a separate `developers/{uid}` mirror
+        // node and merge its isDeveloper/devName in, in case the two nodes
+        // had drifted apart. That mirror node has been removed entirely
+        // (see fetchAllUsersFromRTDB) — `users/{uid}` above is now the one
+        // and only source of truth, so there's nothing left to reconcile.
+        rtdbUser
     }
 
     suspend fun getFcmTokenByEmail(email: String): String? = withContext(Dispatchers.IO) {
@@ -848,73 +788,102 @@ object FirebaseAuthService {
         fetchSubmissionsFromRTDB()
     }
 
-    private fun fetchDevelopersFromRTDB(): List<UserEntity> {
+    // Renamed from the old "developers" mirror node to reading the real
+    // `users/` node directly. The admin console's Users tab lists EVERY
+    // account, developer or not, so it should read from the one node every
+    // account unconditionally has — not a secondary mirror that was only
+    // ever written to as a side effect of saveUserInRealtimeDatabase() being
+    // called for that particular uid. Any account that predates that mirror,
+    // or simply hasn't logged in/edited its profile since, had no record
+    // under the old `developers/{uid}` path at all and silently vanished
+    // from the Users tab — which is exactly the "isDeveloper:false accounts
+    // disappear" symptom this was reported as. Reading `users/` directly
+    // means every real account always shows up, regardless of history.
+    private fun fetchAllUsersFromRTDB(): List<UserEntity> {
         val tokenParam = getTokenParam()
         val request = Request.Builder()
-            .url("${RTDB_URL}developers.json$tokenParam")
+            .url("${RTDB_URL}users.json$tokenParam")
             .get()
             .build()
 
         return try {
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
-                    Log.e(TAG, "RTDB developers HTTP error: ${response.code}")
+                    Log.e(TAG, "RTDB users HTTP error: ${response.code}")
                     return emptyList()
                 }
                 val bodyStr = response.body?.string()
-                Log.d(TAG, "RTDB Developers Response: $bodyStr")
-                parseDevelopersFirebaseResponse(bodyStr)
+                parseAllUsersFirebaseResponse(bodyStr)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "RTDB Developers Network error: ${e.message}", e)
+            Log.e(TAG, "RTDB Users Network error: ${e.message}", e)
             emptyList()
         }
     }
 
-    fun parseDevelopersFirebaseResponse(jsonStr: String?): List<UserEntity> {
+    // NOTE: this used to deserialize the WHOLE users node in one shot via
+    // Moshi as Map<String, Map<*,*>>. That's a strict, all-or-nothing parse —
+    // if even a single one of potentially dozens of user records had any
+    // field in a shape Moshi didn't expect (or was somehow malformed —
+    // manually edited in the Firebase console, a partial/interrupted write,
+    // etc.), the ENTIRE parse threw and the function returned a completely
+    // empty list, with nothing logged anywhere the person using the app
+    // could see. Every real account could exist correctly in the database
+    // and the admin Users tab would still show nothing, with zero indication
+    // of why. Rewritten to walk the raw JSON object key by key using
+    // org.json (which this codebase already relies on everywhere else for
+    // exactly this resilience) so one malformed record is skipped and
+    // logged individually — every other real, well-formed account still
+    // shows up.
+    private fun parseAllUsersFirebaseResponse(jsonStr: String?): List<UserEntity> {
         if (jsonStr.isNullOrBlank() || jsonStr == "null" || jsonStr == "{}") {
             return emptyList()
         }
         val list = mutableListOf<UserEntity>()
         try {
-            val mapType = com.squareup.moshi.Types.newParameterizedType(Map::class.java, String::class.java, Map::class.java)
-            val adapter = moshi.adapter<Map<String, Map<*, *>>>(mapType)
-            val outerMap = adapter.fromJson(jsonStr)
-            if (outerMap != null) {
-                for ((uid, devData) in outerMap) {
-                    val email = devData["email"] as? String ?: ""
-                    val displayName = devData["displayName"] as? String ?: devData["name"] as? String ?: ""
-                    val isDev = devData["isDeveloper"] as? Boolean ?: false
-                    val devWebsite = devData["devWebsite"] as? String ?: ""
-                    val devGithub = devData["devGithub"] as? String ?: ""
-                    val devName = devData["devName"] as? String ?: displayName
-                    val devBio = devData["devBio"] as? String ?: ""
-
+            val outer = JSONObject(jsonStr)
+            val uids = outer.keys()
+            while (uids.hasNext()) {
+                val uid = uids.next()
+                try {
+                    val data = outer.optJSONObject(uid) ?: continue
+                    val displayName = data.optString("displayName", "")
                     list.add(
                         UserEntity(
                             uid = uid,
-                            email = email,
+                            email = data.optString("email", ""),
                             displayName = displayName,
-                            role = "developer",
-                            createdAt = 0L,
-                            fcmToken = "",
-                            isDeveloper = isDev,
-                            devWebsite = devWebsite,
-                            devGithub = devGithub,
-                            devName = devName,
-                            devBio = devBio
+                            role = data.optString("role", "user"),
+                            createdAt = data.optLong("createdAt", 0L),
+                            fcmToken = data.optString("fcmToken", ""),
+                            isDeveloper = data.optBoolean("isDeveloper", false),
+                            devWebsite = data.optString("devWebsite", ""),
+                            devGithub = data.optString("devGithub", ""),
+                            devName = data.optString("devName", "").ifBlank { displayName },
+                            devBio = data.optString("devBio", ""),
+                            profilePhotoUrl = data.optString("profilePhotoUrl", ""),
+                            isEmailVerified = data.optBoolean("isEmailVerified", true)
                         )
                     )
+                } catch (entryError: Exception) {
+                    // One bad record — skip just this one, keep going.
+                    Log.e(TAG, "Skipping malformed user record '$uid': ${entryError.message}", entryError)
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Parsing RTDB developers failed: ${e.message}", e)
+            Log.e(TAG, "Parsing RTDB users failed entirely: ${e.message}", e)
         }
         return list
     }
 
+    // Kept the name "fetchDevelopers" since every other call site (name
+    // uniqueness checks, the admin Users tab, refreshDevelopers()) already
+    // uses it — but it now genuinely returns every user account, which is
+    // what all of those call sites actually needed anyway (the uniqueness
+    // checks, for instance, need to catch a name clash with ANY account,
+    // not just ones that happen to already be developers).
     suspend fun fetchDevelopers(): List<UserEntity> = withContext(Dispatchers.IO) {
-        fetchDevelopersFromRTDB()
+        fetchAllUsersFromRTDB()
     }
 
     suspend fun updateSubmissionStatus(id: String, entity: SubmissionEntity): Boolean = withContext(Dispatchers.IO) {

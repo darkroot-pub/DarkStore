@@ -8,6 +8,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
 import java.io.IOException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -16,8 +17,24 @@ import kotlinx.coroutines.Dispatchers
 object FirebaseService {
     private const val TAG = "FirebaseService"
 
-    @Volatile
-    var activeToken: String = ""
+    // activeToken and RTDB_URL used to be independent `var`s duplicated here
+    // AND in FirebaseAuthService — two separate copies of the same session
+    // state, which meant every login/logout/token-refresh/config-change call
+    // site had to remember to update both by hand or the two objects could
+    // silently drift out of sync (one already had exactly that: a token
+    // refresh that only updated this copy, relying on FirebaseAuthService to
+    // have already updated its own copy separately). FirebaseAuthService is
+    // the one that actually owns the auth session (it's the one that signs
+    // in, signs up, and refreshes tokens), so this now just delegates to it
+    // instead of keeping a second copy — there is exactly one value now,
+    // and setting it from either object updates the same place.
+    var activeToken: String
+        get() = FirebaseAuthService.activeToken
+        set(value) { FirebaseAuthService.activeToken = value }
+
+    var RTDB_URL: String
+        get() = FirebaseAuthService.RTDB_URL
+        set(value) { FirebaseAuthService.RTDB_URL = value }
 
     fun getTokenParam(): String {
         val token = activeToken
@@ -33,9 +50,11 @@ object FirebaseService {
         return token.isNotBlank() && !token.startsWith("sim_") && !token.startsWith("fake_")
     }
 
-    var RTDB_URL = "https://dark-store-6836d-default-rtdb.asia-southeast1.firebasedatabase.app/"
-
     fun updateConfig(projId: String, rtdb: String) {
+        // projId is accepted for call-site compatibility (FirebaseAuthService's
+        // updateConfig takes one too, for the Identity Toolkit calls it makes)
+        // but FirebaseService itself never needed a project ID — it only ever
+        // builds RTDB URLs.
         if (rtdb.isNotBlank()) {
             var url = rtdb.trim()
             if (!url.endsWith("/")) url += "/"
@@ -176,8 +195,150 @@ object FirebaseService {
         return saveAppToRTDB(app)
     }
 
+    // Used only by the review/rating flow — ANY logged-in user can leave a
+    // review on ANY app, not just its developer. saveApp() above does a full
+    // PUT of the whole AppEntity, which requires the caller to own the app
+    // (per database.rules.json: only the app's own developer, or admin, can
+    // write to apps/{id}) — perfectly correct for protecting apkUrl,
+    // isSuspended, etc. from tampering, but it means a regular reviewer can
+    // never use saveApp() to update the cached rating. This instead does a
+    // scoped PATCH touching ONLY the "rating" field, which the rules grant to
+    // any logged-in user via a dedicated apps/{id}/rating write rule — so a
+    // reviewer can update the rating without ever having permission to touch
+    // any other field on someone else's app.
+    fun updateAppRatingField(appId: String, rating: String): Boolean {
+        val body = JSONObject().apply { put("rating", rating) }.toString().toRequestBody(jsonMediaType)
+        val tokenParam = getTokenParam()
+        val request = Request.Builder()
+            .url("${RTDB_URL}apps/$appId.json$tokenParam")
+            .patch(body)
+            .build()
+        return try {
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    true
+                } else {
+                    Log.e(TAG, "Failed to update rating for $appId: code ${response.code}")
+                    false
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Exception updating rating for $appId: ${e.message}", e)
+            false
+        }
+    }
+
     fun deleteApp(id: String): Boolean {
         return deleteAppFromRTDB(id)
+    }
+
+    // ----------------------------------------------------
+    // FOLLOW / FOLLOWERS
+    // ----------------------------------------------------
+    // followers/{developerUid}/{followerUid} and following/{followerUid}/{developerUid}
+    // are two sides of the same relationship, kept as separate indexes so
+    // both "who follows this developer" and "who does this user follow" are
+    // each a cheap single-node read rather than a full scan. Written and
+    // removed together in ONE multi-path PATCH to the database root so the
+    // two sides can never drift out of sync with each other.
+
+    fun setFollowing(followerUid: String, developerUid: String, follow: Boolean): Boolean {
+        if (followerUid.isBlank() || developerUid.isBlank() || followerUid == developerUid) return false
+        val value: Any = if (follow) true else JSONObject.NULL
+        val payload = JSONObject().apply {
+            put("followers/$developerUid/$followerUid", value)
+            put("following/$followerUid/$developerUid", value)
+        }
+        val body = payload.toString().toRequestBody(jsonMediaType)
+        val tokenParam = getTokenParam()
+        val request = Request.Builder()
+            .url("$RTDB_URL.json$tokenParam")
+            .patch(body)
+            .build()
+        return try {
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.e(TAG, "setFollowing failed: code ${response.code}")
+                }
+                response.isSuccessful
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "setFollowing exception: ${e.message}", e)
+            false
+        }
+    }
+
+    fun fetchFollowerCount(developerUid: String): Int {
+        if (developerUid.isBlank()) return 0
+        val tokenParam = getTokenParam()
+        val sep = if (tokenParam.isBlank()) "?" else "$tokenParam&"
+        val request = Request.Builder()
+            .url("${RTDB_URL}followers/$developerUid.json${sep}shallow=true")
+            .get()
+            .build()
+        return try {
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return 0
+                val bodyStr = response.body?.string()
+                if (bodyStr.isNullOrBlank() || bodyStr == "null") 0
+                else JSONObject(bodyStr).length()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "fetchFollowerCount exception: ${e.message}", e)
+            0
+        }
+    }
+
+    fun fetchFollowerIds(developerUid: String): Set<String> {
+        if (developerUid.isBlank()) return emptySet()
+        val tokenParam = getTokenParam()
+        val sep = if (tokenParam.isBlank()) "?" else "$tokenParam&"
+        val request = Request.Builder()
+            .url("${RTDB_URL}followers/$developerUid.json${sep}shallow=true")
+            .get()
+            .build()
+        return try {
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return emptySet()
+                val bodyStr = response.body?.string()
+                if (bodyStr.isNullOrBlank() || bodyStr == "null") emptySet()
+                else {
+                    val json = JSONObject(bodyStr)
+                    val keys = mutableSetOf<String>()
+                    json.keys().forEach { keys.add(it) }
+                    keys
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "fetchFollowerIds exception: ${e.message}", e)
+            emptySet()
+        }
+    }
+
+    fun fetchFollowingIds(uid: String): Set<String> {
+        if (uid.isBlank()) return emptySet()
+        val tokenParam = getTokenParam()
+        val sep = if (tokenParam.isBlank()) "?" else "$tokenParam&"
+        val request = Request.Builder()
+            .url("${RTDB_URL}following/$uid.json${sep}shallow=true")
+            .get()
+            .build()
+        return try {
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return emptySet()
+                val bodyStr = response.body?.string()
+                if (bodyStr.isNullOrBlank() || bodyStr == "null") emptySet()
+                else {
+                    val json = JSONObject(bodyStr)
+                    val keys = mutableSetOf<String>()
+                    json.keys().forEach { keys.add(it) }
+                    keys
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "fetchFollowingIds exception: ${e.message}", e)
+            emptySet()
+        }
     }
 
     // ----------------------------------------------------
