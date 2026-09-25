@@ -1,0 +1,80 @@
+{
+  "rules": {
+    "apps": {
+      ".read": true,
+      "$appId": {
+        ".read": true,
+        ".write": "auth != null && (auth.token.email === 'davidstha900@gmail.com' || (!data.exists() && newData.child('submittedBy').val() === auth.token.email && newData.child('isApproved').val() === false) || (data.exists() && data.child('submittedBy').val() === auth.token.email && newData.child('isApproved').val() === data.child('isApproved').val()))",
+        "rating": {
+          ".write": "auth != null"
+        }
+      }
+    },
+
+    "reviews": {
+      ".read": true,
+      "$appId": {
+        "$reviewId": {
+          ".write": "auth != null && (!data.exists() || data.child('userId').val() === auth.uid) && newData.child('userId').val() === auth.uid",
+          ".validate": "newData.hasChildren(['id','appId','userId','userName','msg','stars','timestamp']) && newData.child('stars').isNumber() && newData.child('stars').val() >= 1 && newData.child('stars').val() <= 5"
+        }
+      }
+    },
+
+    "users": {
+      ".read": "auth != null",
+      "$userId": {
+        ".read": "auth != null",
+        ".write": "auth != null && (auth.uid === $userId || auth.token.email === 'davidstha900@gmail.com')"
+      }
+    },
+
+    "submissions": {
+      ".read": "auth != null",
+      "$submissionId": {
+        ".read": "auth != null && (auth.token.email === 'davidstha900@gmail.com' || (data.exists() && data.child('submittedBy').val() === auth.token.email))",
+        ".write": "auth != null && (auth.token.email === 'davidstha900@gmail.com' || (!data.exists() && newData.child('submittedBy').val() === auth.token.email && newData.child('status').val() === 'Pending') || (data.exists() && data.child('submittedBy').val() === auth.token.email && newData.child('status').val() === data.child('status').val()))"
+      }
+    },
+
+    "notices": {
+      ".read": true,
+      "$noticeId": {
+        ".write": "auth != null && auth.token.email === 'davidstha900@gmail.com'"
+      }
+    },
+
+    "terms_agreements": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+
+    "app_policy": {
+      ".read": true,
+      ".write": "auth != null && auth.token.email === 'davidstha900@gmail.com'"
+    },
+
+    "followers": {
+      "$developerUid": {
+        ".read": true,
+        "$followerUid": {
+          ".write": "auth != null && auth.uid === $followerUid"
+        }
+      }
+    },
+
+    "following": {
+      "$uid": {
+        ".read": true,
+        "$developerUid": {
+          ".write": "auth != null && auth.uid === $uid"
+        }
+      }
+    },
+
+    "DarkStoreUpdate": {
+      ".read": true,
+      ".write": "auth != null && auth.token.email === 'davidstha900@gmail.com'"
+    }
+  }
+}

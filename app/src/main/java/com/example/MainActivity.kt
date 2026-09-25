@@ -11063,7 +11063,14 @@ fun AppDetailsDialog(
                                 emptyList()
                             } else {
                                 try {
-                                    val moshi = com.squareup.moshi.Moshi.Builder().build()
+                                    // BUG FIX: no KotlinJsonAdapterFactory registered here
+                                    // either — fromJson() on a Kotlin data class list
+                                    // threw every time, silently caught below, so this
+                                    // always showed "no history" even for apps that
+                                    // genuinely had some.
+                                    val moshi = com.squareup.moshi.Moshi.Builder()
+                                        .add(com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory())
+                                        .build()
                                     val listType = com.squareup.moshi.Types.newParameterizedType(List::class.java, com.example.data.AppVersionHistoryEntry::class.java)
                                     moshi.adapter<List<com.example.data.AppVersionHistoryEntry>>(listType)
                                         .fromJson(app.versionHistoryJson)
@@ -13199,8 +13206,15 @@ fun FollowersFollowingDialog(
                                         onClick = {
                                             if (!isToggling) {
                                                 isToggling = true
-                                                viewModel.toggleFollowDeveloper(person.uid) { _ ->
+                                                viewModel.toggleFollowDeveloper(person.uid) { success ->
                                                     isToggling = false
+                                                    if (!success) {
+                                                        Toast.makeText(
+                                                            context,
+                                                            "Couldn't update follow status — check your connection and try again.",
+                                                            Toast.LENGTH_SHORT
+                                                        ).show()
+                                                    }
                                                 }
                                             }
                                         },

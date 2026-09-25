@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.Types
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import java.io.File
 
 object PaginationCache {
@@ -18,7 +19,13 @@ object PaginationCache {
     // adapter setup) was built from scratch on every single save/load call —
     // wasteful, since Moshi instances are stateless and safe to reuse. Built
     // once, lazily, and shared.
-    private val moshi: Moshi by lazy { Moshi.Builder().build() }
+    // BUG FIX: this also had no KotlinJsonAdapterFactory registered, so it
+    // fell back to reflective Java-style serialization, which can't handle
+    // Kotlin data classes like AppEntity. Every saveToDisk() call threw
+    // immediately (caught and logged, so no crash) — meaning the on-disk
+    // pagination cache has never actually persisted anything; every
+    // "restore from disk" was silently a no-op returning null too.
+    private val moshi: Moshi by lazy { Moshi.Builder().add(KotlinJsonAdapterFactory()).build() }
     private val appListType = Types.newParameterizedType(List::class.java, AppEntity::class.java)
     private val appListAdapter by lazy { moshi.adapter<List<AppEntity>>(appListType) }
 

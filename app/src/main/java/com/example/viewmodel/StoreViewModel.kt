@@ -1949,7 +1949,20 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     // version gets replaced, so no published version is ever lost no matter
     // which path performed the update.
     private fun buildUpdatedVersionHistoryJson(existingApp: com.example.data.AppEntity): String {
-        val historyMoshi = com.squareup.moshi.Moshi.Builder().build()
+        // BUG FIX: this built a bare Moshi instance with no Kotlin adapter
+        // factory registered, so it fell back to reflective Java-style
+        // serialization — which doesn't understand Kotlin data classes (no
+        // no-arg constructor, immutable vals) and throws
+        // IllegalArgumentException the moment anything tries to actually
+        // serialize an AppVersionHistoryEntry. fromJson() on an empty/blank
+        // history string never hit this (nothing to deserialize yet), so it
+        // looked fine for a first-ever update, but toJson() below runs
+        // unconditionally on every single update — meaning this crashed the
+        // app on every edit/update from the admin panel, every time, once
+        // there was at least one entry to serialize.
+        val historyMoshi = com.squareup.moshi.Moshi.Builder()
+            .add(com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory())
+            .build()
         val historyListType = com.squareup.moshi.Types.newParameterizedType(List::class.java, com.example.data.AppVersionHistoryEntry::class.java)
         val historyAdapter = historyMoshi.adapter<List<com.example.data.AppVersionHistoryEntry>>(historyListType)
         val existingHistory = try {
