@@ -820,16 +820,16 @@ fun PlayStoreMainDashboard(
     isDarkMode: Boolean,
     onThemeToggle: () -> Unit
 ) {
-    val rawApps by viewModel.apps.collectAsStateWithLifecycle()
-    val rawUnfilteredApps by viewModel.unfilteredApps.collectAsStateWithLifecycle()
+    // NOTE: this used to remap every app's hasAds to false for Premium
+    // members — but hasAds is real, developer-declared metadata about
+    // whether THAT SPECIFIC APP shows its own third-party ads (unrelated to
+    // DarkStore's own — already fully removed — ad integration). Overriding
+    // it hid genuinely useful, true information ("this app you're about to
+    // install shows ads") from Premium members for no real reason. Apps are
+    // now passed through unchanged regardless of Premium status.
+    val apps by viewModel.apps.collectAsStateWithLifecycle()
+    val unfilteredApps by viewModel.unfilteredApps.collectAsStateWithLifecycle()
     val isPremiumMember by viewModel.isPremiumMember.collectAsStateWithLifecycle()
-    
-    val apps = remember(rawApps, isPremiumMember) {
-        if (isPremiumMember) rawApps.map { it.copy(hasAds = false) } else rawApps
-    }
-    val unfilteredApps = remember(rawUnfilteredApps, isPremiumMember) {
-        if (isPremiumMember) rawUnfilteredApps.map { it.copy(hasAds = false) } else rawUnfilteredApps
-    }
     
     val downloads by viewModel.downloads.collectAsStateWithLifecycle()
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
@@ -4693,6 +4693,16 @@ fun ProfileTabContent(
                                             tint = Color(0xFF3B82F6),
                                             modifier = Modifier.size(20.dp)
                                         )
+                                        val isPremiumMemberForBadge by viewModel.isPremiumMember.collectAsStateWithLifecycle()
+                                        if (isPremiumMemberForBadge) {
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Icon(
+                                                imageVector = Icons.Default.Star,
+                                                contentDescription = "Premium member",
+                                                tint = if (isDarkMode) Color(0xFFFBBF24) else Color(0xFFD97706),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
                                     }
                                 }
 
@@ -7385,7 +7395,18 @@ fun SettingsTabContent(
         // ----------------------------------------------------
         item {
             val isPremiumMember by viewModel.isPremiumMember.collectAsStateWithLifecycle()
+            val isPremiumFreeMode by viewModel.isPremiumFreeMode.collectAsStateWithLifecycle()
+            var showPremiumComingSoonDialog by remember { mutableStateOf(false) }
             val premiumGold = if (isDarkMode) Color(0xFFFBBF24) else Color(0xFFD97706)
+
+            if (showPremiumComingSoonDialog) {
+                ComingSoonDialog(
+                    title = "Paid Premium — Coming Soon",
+                    message = "DarkStore Premium now requires a subscription. We're building real payment support and will let you know the moment it's ready.",
+                    accentColor = premiumGold,
+                    onDismiss = { showPremiumComingSoonDialog = false }
+                )
+            }
 
             Card(
                 modifier = Modifier
@@ -7460,9 +7481,11 @@ fun SettingsTabContent(
 
                     Text(
                         text = if (isPremiumMember) {
-                            "Thank you for supporting DarkStore! You have unlocked the custom theme and a luxury visual workspace."
+                            "Thank you for being a Premium member! Your badge and highlighted reviews are now visible to everyone."
+                        } else if (isPremiumFreeMode) {
+                            "Free while we build this out — enable Premium to unlock a custom theme, a badge on your name, and highlighted reviews."
                         } else {
-                            "Upgrade your repository workspace to DarkStore Premium. Support independent development and unlock a luxury custom theme."
+                            "DarkStore Premium now requires a subscription. Real payment support is coming soon."
                         },
                         fontSize = 12.sp,
                         color = textPrimary,
@@ -7474,7 +7497,9 @@ fun SettingsTabContent(
                     Column(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        PremiumBenefitItem("Golden Accent Theme", "Transforms your catalog interface with a high-fidelity amber look.", isPremiumMember, premiumGold, textSecondary)
+                        PremiumBenefitItem("Custom Accent Theme", "Transforms your catalog interface with one of five signature color looks.", isPremiumMember, premiumGold, textSecondary)
+                        PremiumBenefitItem("Premium Badge", "A gold badge next to your name on your reviews and profile, visible to everyone.", isPremiumMember, premiumGold, textSecondary)
+                        PremiumBenefitItem("Highlighted Reviews", "Your reviews stand out with a subtle gold accent in every app's review list.", isPremiumMember, premiumGold, textSecondary)
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
@@ -7498,7 +7523,11 @@ fun SettingsTabContent(
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = if (isPremiumMember) "Premium features active (Free Trial)" else "Enable to unlock premium features instantly",
+                                text = when {
+                                    isPremiumMember -> "Premium features active (free for now)"
+                                    isPremiumFreeMode -> "Enable to unlock premium features instantly — free for now"
+                                    else -> "Requires a subscription — tap to learn more"
+                                },
                                 color = textSecondary,
                                 fontSize = 11.sp,
                                 lineHeight = 14.sp
@@ -7508,12 +7537,16 @@ fun SettingsTabContent(
                         Switch(
                             checked = isPremiumMember,
                             onCheckedChange = { isChecked ->
-                                viewModel.setPremiumMember(isChecked)
-                                Toast.makeText(
-                                    context,
-                                    if (isChecked) "DarkStore Premium Activated! (Sandbox Trial)" else "Premium features deactivated.",
-                                    Toast.LENGTH_SHORT
-                                ).show()
+                                val allowed = viewModel.setPremiumMember(isChecked)
+                                if (!allowed) {
+                                    showPremiumComingSoonDialog = true
+                                } else {
+                                    Toast.makeText(
+                                        context,
+                                        if (isChecked) "DarkStore Premium activated — free for now!" else "Premium features deactivated.",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
                             },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = premiumGold,
@@ -9566,6 +9599,63 @@ fun ConsoleTabContent(
                             }
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Premium is free-to-enable for now (no real payment
+                    // processor exists yet) — this is the one switch that
+                    // controls that for every user in the app, without
+                    // needing a new build. Flipping it off doesn't touch
+                    // anyone who's already enabled Premium; it only stops
+                    // NEW activations, showing a Coming Soon message instead.
+                    val isPremiumFreeModeAdmin by viewModel.isPremiumFreeMode.collectAsStateWithLifecycle()
+                    var isSavingPremiumConfig by remember { mutableStateOf(false) }
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                        border = BorderStroke(1.dp, cardBorderColor)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text("PREMIUM MEMBERSHIP", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = textSecondary, letterSpacing = 1.sp)
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = if (isPremiumFreeModeAdmin) "Free to enable (no payment yet)" else "Requires subscription",
+                                        color = textPrimary,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = if (isPremiumFreeModeAdmin) "Any user can turn Premium on for free right now." else "New activations are blocked with a Coming Soon message.",
+                                        color = textSecondary,
+                                        fontSize = 11.sp,
+                                        lineHeight = 15.sp
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Switch(
+                                    checked = isPremiumFreeModeAdmin,
+                                    enabled = !isSavingPremiumConfig,
+                                    onCheckedChange = { newIsFree ->
+                                        isSavingPremiumConfig = true
+                                        viewModel.setPremiumFreeModeAsAdmin(newIsFree) { success ->
+                                            isSavingPremiumConfig = false
+                                            Toast.makeText(
+                                                context,
+                                                if (success) "Premium is now ${if (newIsFree) "free" else "paid"} for all users." else "Couldn't save — try again.",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
@@ -11326,14 +11416,40 @@ fun AppDetailsDialog(
                         } else if (appReviews.isEmpty()) {
                             Text("No reviews yet. Be the first to review!", color = textSecondary, fontSize = 12.sp)
                         } else {
+                            val reviewerPremiumGold = if (isDarkMode) Color(0xFFFBBF24) else Color(0xFFD97706)
                             appReviews.forEach { review ->
+                                // Premium badge + highlight: resolved by matching the
+                                // review's userId against the already-loaded users
+                                // list, same lookup pattern used for the developer
+                                // profile popup. A reviewer whose account isn't
+                                // found (or isn't Premium) just renders like normal.
+                                val reviewerIsPremium = remember(review.userId, developers) {
+                                    developers.find { it.uid == review.userId }?.isPremiumMember == true
+                                }
                                 Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(vertical = 4.dp)
+                                        .then(
+                                            if (reviewerIsPremium) {
+                                                Modifier
+                                                    .background(reviewerPremiumGold.copy(alpha = 0.06f), RoundedCornerShape(8.dp))
+                                                    .padding(6.dp)
+                                            } else {
+                                                Modifier.padding(vertical = 4.dp)
+                                            }
+                                        )
                                 ) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(review.userName, color = textPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        if (reviewerIsPremium) {
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Icon(
+                                                imageVector = Icons.Default.Star,
+                                                contentDescription = "Premium member",
+                                                tint = reviewerPremiumGold,
+                                                modifier = Modifier.size(12.dp)
+                                            )
+                                        }
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Row {
                                             for (j in 1..5) {
@@ -11348,7 +11464,9 @@ fun AppDetailsDialog(
                                     }
                                     Text(review.msg, color = textPrimary.copy(alpha = 0.8f), fontSize = 11.sp)
                                     Spacer(modifier = Modifier.height(4.dp))
-                                    Divider(color = textSecondary.copy(alpha = 0.1f))
+                                    if (!reviewerIsPremium) {
+                                        Divider(color = textSecondary.copy(alpha = 0.1f))
+                                    }
                                 }
                             }
                         }

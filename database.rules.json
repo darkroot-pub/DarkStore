@@ -54,6 +54,11 @@
       ".write": "auth != null && auth.token.email === 'davidstha900@gmail.com'"
     },
 
+    "premiumConfig": {
+      ".read": true,
+      ".write": "auth != null && auth.token.email === 'davidstha900@gmail.com'"
+    },
+
     "followers": {
       "$developerUid": {
         ".read": true,

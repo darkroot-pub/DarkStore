@@ -19,5 +19,10 @@ data class UserEntity(
     // "click the link we emailed you" flow. Defaults to true so accounts created
     // before this feature existed (and non-email sign-in methods, where there's
     // no real inbox to verify) are never retroactively nagged or blocked.
-    val isEmailVerified: Boolean = true
+    val isEmailVerified: Boolean = true,
+    // Was previously a local-only SharedPrefs flag with no server record at
+    // all — meant nobody else could ever see it (no premium badge was
+    // possible), it reset on reinstall/new device, and there was no way for
+    // an admin to ever see or revoke it. Now a real per-account field.
+    val isPremiumMember: Boolean = false
 ) : Serializable

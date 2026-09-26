@@ -641,6 +641,57 @@ object FirebaseService {
         }
     }
 
+    // ----------------------------------------------------
+    // PREMIUM CONFIG — admin-controlled "is Premium currently free?" switch
+    // ----------------------------------------------------
+    // Premium membership has no real payment processor behind it yet, so for
+    // now anyone can toggle it on for free — same honest "not implemented
+    // yet" philosophy as the paid-apps Coming Soon screen. This one flag is
+    // what lets an admin flip that later without an app update: as long as
+    // isFree stays true, the Settings toggle instantly grants Premium; once
+    // an admin sets it false, the same toggle shows a Coming Soon message
+    // instead of silently granting something that's supposed to cost money.
+    fun fetchPremiumIsFree(): Boolean {
+        return try {
+            val tokenParam = getTokenParam()
+            val request = Request.Builder()
+                .url("${RTDB_URL}premiumConfig/isFree.json$tokenParam")
+                .get()
+                .build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return true
+                val bodyStr = response.body?.string()
+                // Defaults to true (free) when unset — an admin has to
+                // deliberately turn paid mode on, it never silently starts
+                // paid on its own.
+                if (bodyStr.isNullOrBlank() || bodyStr == "null") true else bodyStr.trim().toBooleanStrictOrNull() ?: true
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "fetchPremiumIsFree exception: ${e.message}", e)
+            true
+        }
+    }
+
+    fun savePremiumIsFree(isFree: Boolean): Boolean {
+        return try {
+            val body = isFree.toString().toRequestBody(jsonMediaType)
+            val tokenParam = getTokenParam()
+            val request = Request.Builder()
+                .url("${RTDB_URL}premiumConfig/isFree.json$tokenParam")
+                .put(body)
+                .build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.e(TAG, "savePremiumIsFree failed: code ${response.code}")
+                }
+                response.isSuccessful
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "savePremiumIsFree exception: ${e.message}", e)
+            false
+        }
+    }
+
     fun fetchUpdateConfig(): UpdateConfigEntity? {
         try {
             val tokenParam = getTokenParam()

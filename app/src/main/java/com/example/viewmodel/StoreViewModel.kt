@@ -63,6 +63,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 refreshDevelopers()
                 loadFollowingIds()
                 loadFollowerIds()
+                loadPremiumFreeMode()
                 val savedEmail = sharedPrefs.getString("user_email", "") ?: ""
                 if (savedEmail.isNotBlank() && savedEmail != "guest@darkroot.io") {
                     updateEcosystemPolicyAcceptedForCurrentUser(savedEmail)
@@ -332,9 +333,61 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     private val _isPremiumMember = MutableStateFlow(sharedPrefs.getBoolean("is_premium_member", false))
     val isPremiumMember: StateFlow<Boolean> = _isPremiumMember.asStateFlow()
 
-    fun setPremiumMember(enabled: Boolean) {
+    // Whether Premium can currently be turned on for free — admin-controlled,
+    // see setPremiumFreeModeAsAdmin() below. Defaults true (free) until the
+    // real value loads, so nobody is ever blocked by a slow network request;
+    // an admin has to deliberately switch this off.
+    private val _isPremiumFreeMode = MutableStateFlow(true)
+    val isPremiumFreeMode: StateFlow<Boolean> = _isPremiumFreeMode.asStateFlow()
+
+    fun loadPremiumFreeMode() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val isFree = FirebaseService.fetchPremiumIsFree()
+            _isPremiumFreeMode.value = isFree
+        }
+    }
+
+    // Admin-only — enforced by the RTDB rules on premiumConfig, not just this
+    // client check, so a non-admin calling this would simply have the write
+    // rejected server-side.
+    fun setPremiumFreeModeAsAdmin(isFree: Boolean, onResult: ((Boolean) -> Unit)? = null) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val success = FirebaseService.savePremiumIsFree(isFree)
+            if (success) {
+                _isPremiumFreeMode.value = isFree
+            }
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                onResult?.invoke(success)
+            }
+        }
+    }
+
+    // Returns true if the change was actually allowed to happen. Turning
+    // Premium OFF is always allowed. Turning it ON is only allowed while
+    // isPremiumFreeMode is true — once an admin switches that off, this
+    // returns false and changes nothing, so the caller can show a Coming
+    // Soon message instead of silently granting something that's supposed
+    // to require a real subscription.
+    fun setPremiumMember(enabled: Boolean): Boolean {
+        if (enabled && !_isPremiumFreeMode.value) {
+            return false
+        }
         sharedPrefs.edit().putBoolean("is_premium_member", enabled).apply()
         _isPremiumMember.value = enabled
+        // Synced to the real account record (not just this device) so it
+        // survives reinstalls, works across devices, and — unlike the old
+        // local-only flag — is something OTHER users can actually see (the
+        // premium badge on reviews/profile).
+        val uid = _userUid.value
+        if (uid.isNotBlank() && uid != "guest_uid") {
+            viewModelScope.launch(Dispatchers.IO) {
+                val current = FirebaseAuthService.getUserProfile(uid)
+                if (current != null && current.isPremiumMember != enabled) {
+                    FirebaseAuthService.saveUserInRealtimeDatabase(current.copy(isPremiumMember = enabled))
+                }
+            }
+        }
+        return true
     }
 
     private val _premiumTheme = MutableStateFlow(sharedPrefs.getString("premium_theme_color", "gold") ?: "gold")

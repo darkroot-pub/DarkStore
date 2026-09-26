@@ -71,6 +71,7 @@ entirely, see the changelog below).
 | isDeveloper, devWebsite, devGithub, devName, devBio | | developer profile |
 | isEmailVerified | bool | defaults true so pre-existing accounts aren't retroactively blocked |
 | profilePhotoUrl | string | |
+| isPremiumMember | bool | drives the gold badge on this user's name/reviews and the highlighted-review styling; see `premiumConfig` below |
 
 **Access:** requires being logged in to read (any account — the admin Users
 tab and developer name-uniqueness checks both need the full list). Write is
@@ -98,6 +99,18 @@ Records of which users have accepted which policy version.
 The current Terms/Ecosystem Policy text and version number.
 
 **Access:** public read, admin-only write.
+
+### `premiumConfig/isFree` (singleton)
+The one switch controlling whether DarkStore Premium membership can
+currently be turned on for free. There's no real payment processor behind
+Premium yet — this defaults to `true` so nobody is ever blocked while the
+value loads, and requires the admin to deliberately flip it to `false` once
+real payment support exists. Flipping it off only blocks *new* activations
+(shown a Coming Soon message) — it doesn't retroactively revoke Premium from
+anyone who already has it via `users/{uid}.isPremiumMember`.
+
+**Access:** public read (every app launch checks this), admin-only write —
+toggleable from the admin console's Update Config tab.
 
 ### `DarkStoreUpdate` (singleton)
 Self-update config for the DarkStore app itself (latest version code, force
@@ -176,6 +189,13 @@ admin branch of the rule can change status.
   any level defaults to fully denied in RTDB).
 - **Added (rules only, not yet built):** `followers/{developerUid}/{followerUid}`
   and `following/{uid}/{developerUid}` — see that section above.
+- **Added:** `premiumConfig/isFree` and `users/{uid}.isPremiumMember`.
+  Premium membership moved from a local-only, device-only SharedPrefs flag to
+  a real per-account field, enabling a visible gold badge on reviews/profile
+  and highlighted reviews for Premium members — neither was possible when
+  the flag lived only on one device with no server record at all. The
+  free/paid switch lets an admin turn on real payment requirements later
+  without an app update.
 - **Fixed (Sep 24):** the follow/follower rules only granted `.read: true` at
   the deepest level (e.g. `followers/{devUid}/{followerUid}`), never at
   `followers/{devUid}` itself — but the app fetches the whole list at that

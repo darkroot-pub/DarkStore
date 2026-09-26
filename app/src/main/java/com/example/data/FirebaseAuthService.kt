@@ -577,6 +577,7 @@ object FirebaseAuthService {
             put("devBio", user.devBio)
             put("profilePhotoUrl", user.profilePhotoUrl)
             put("isEmailVerified", user.isEmailVerified)
+            put("isPremiumMember", user.isPremiumMember)
         }
         val body = payload.toString().toRequestBody(mediaTypeJson)
         val tokenParam = getTokenParam()
@@ -629,7 +630,8 @@ object FirebaseAuthService {
                             profilePhotoUrl = json.optString("profilePhotoUrl", ""),
                             // Missing field (accounts created before this feature existed)
                             // defaults to true — never retroactively nag/block old accounts.
-                            isEmailVerified = json.optBoolean("isEmailVerified", true)
+                            isEmailVerified = json.optBoolean("isEmailVerified", true),
+                            isPremiumMember = json.optBoolean("isPremiumMember", false)
                         )
                     }
                 }
@@ -862,7 +864,8 @@ object FirebaseAuthService {
                             devName = data.optString("devName", "").ifBlank { displayName },
                             devBio = data.optString("devBio", ""),
                             profilePhotoUrl = data.optString("profilePhotoUrl", ""),
-                            isEmailVerified = data.optBoolean("isEmailVerified", true)
+                            isEmailVerified = data.optBoolean("isEmailVerified", true),
+                            isPremiumMember = data.optBoolean("isPremiumMember", false)
                         )
                     )
                 } catch (entryError: Exception) {
