@@ -854,6 +854,39 @@ fun PlayStoreMainDashboard(
     val isReviewsLoading by viewModel.isReviewsLoading.collectAsStateWithLifecycle()
     val isAdmin = userRole == "admin" || userEmail.equals("davidstha900@gmail.com", ignoreCase = true) || userUid == "JN4BPhEKBBRUb5hpMdQJQmRrjiq1"
     val context = LocalContext.current
+    val maintenanceConfig by viewModel.maintenanceConfig.collectAsStateWithLifecycle()
+
+    // Non-admins see a full-screen maintenance message when the store is offline.
+    if (maintenanceConfig.isEnabled && !isAdmin) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(if (isDarkMode) Color(0xFF0F0F0F) else Color(0xFFF5F5F5)),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.padding(32.dp)
+            ) {
+                Icon(Icons.Default.Build, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(64.dp))
+                Text(
+                    "Under Maintenance",
+                    color = if (isDarkMode) Color.White else Color.Black,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 22.sp
+                )
+                Text(
+                    maintenanceConfig.message,
+                    color = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666),
+                    fontSize = 14.sp,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 20.sp
+                )
+            }
+        }
+        return
+    }
 
     var showOfflineDialog by remember { mutableStateOf(false) }
 
@@ -8670,6 +8703,7 @@ fun ConsoleTabContent(
     // Admin Subviews Segment selection: "SUBMISSIONS" vs "CATALOG"
     var adminSegmentIndex by remember { mutableStateOf(0) }
     var adminSearchQuery by remember { mutableStateOf("") }
+    val selectedSubmissionIds = remember { mutableStateListOf<String>() }
 
     val filteredSubmissions = remember(submissions, adminSearchQuery) {
         if (adminSearchQuery.isBlank()) {
@@ -8926,6 +8960,9 @@ fun ConsoleTabContent(
                     val rejectedCount = submissions.count { it.status == "Rejected" }
                     val totalSubmissions = submissions.size
                     val complianceRate = if (totalSubmissions == 0) 100 else (approvedCount * 100) / totalSubmissions
+                    val userCount = developers.size
+                    val reportedAppsCount = apps.count { it.reportsJson.isNotBlank() }
+                    val suspendedUsersCount = developers.count { it.isSuspended }
                     val categoriesList = remember { listOf("Utilities", "Games", "Tools", "Entertainment") }
                     val categoryCounts = remember(apps) {
                         categoriesList.associateWith { cat -> apps.count { it.category.equals(cat, ignoreCase = true) } }
@@ -8958,15 +8995,35 @@ fun ConsoleTabContent(
                                 }
                             }
 
-                            // 4 stat tiles
+                            // Overview stat tiles
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 val stats = listOf(
+                                    Triple("Users", userCount, Color(0xFFA78BFA)),
                                     Triple("Live Apps", liveCount, Color(0xFF38BDF8)),
                                     Triple("Pending", pendingCount, Color(0xFFFBBF24)),
-                                    Triple("Approved", approvedCount, Color(0xFF34D399)),
-                                    Triple("Rejected", rejectedCount, Color(0xFFF87171))
+                                    Triple("Reports", reportedAppsCount, Color(0xFFF59E0B))
                                 )
                                 stats.forEach { (label, value, color) ->
+                                    Column(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .background(color.copy(alpha = 0.07f), RoundedCornerShape(12.dp))
+                                            .border(1.dp, color.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                                            .padding(vertical = 10.dp, horizontal = 4.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Text(value.toString(), color = color, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
+                                        Text(label, color = textSecondary, fontSize = 9.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+                                    }
+                                }
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                val stats2 = listOf(
+                                    Triple("Approved", approvedCount, Color(0xFF34D399)),
+                                    Triple("Rejected", rejectedCount, Color(0xFFF87171)),
+                                    Triple("Suspended", suspendedUsersCount, Color(0xFFEF4444))
+                                )
+                                stats2.forEach { (label, value, color) ->
                                     Column(
                                         modifier = Modifier
                                             .weight(1f)
@@ -9084,7 +9141,8 @@ fun ConsoleTabContent(
                             Pair("Submissions", Icons.Default.Inbox),
                             Pair("Live Catalog", Icons.Default.Store),
                             Pair("Push Update", Icons.Default.SystemUpdate),
-                            Pair("Users", Icons.Default.People)
+                            Pair("Users", Icons.Default.People),
+                            Pair("Audit", Icons.Default.History)
                         )
                         tabs.forEachIndexed { idx, (label, icon) ->
                             val selected = adminSegmentIndex == idx
@@ -9098,13 +9156,14 @@ fun ConsoleTabContent(
                                         adminSearchQuery = ""
                                         if (idx == 2) viewModel.refreshUpdateConfig()
                                         if (idx == 3) viewModel.refreshDevelopers()
+                                        if (idx == 4) viewModel.refreshAuditLog()
                                     }
                                     .padding(vertical = 9.dp),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                     Icon(icon, contentDescription = null, modifier = Modifier.size(15.dp), tint = if (selected) Color.White else textSecondary)
-                                    Text(label, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, color = if (selected) Color.White else textSecondary, letterSpacing = 0.2.sp)
+                                    Text(label, fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, color = if (selected) Color.White else textSecondary, letterSpacing = 0.2.sp)
                                 }
                             }
                         }
@@ -9176,24 +9235,90 @@ fun ConsoleTabContent(
                             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Icon(Icons.Default.HourglassEmpty, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(14.dp))
                                 Text("PENDING REVIEW (${pendingSubs.size})", color = Color(0xFFF59E0B), fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 0.5.sp)
+                                Spacer(modifier = Modifier.weight(1f))
+                                TextButton(onClick = {
+                                    if (selectedSubmissionIds.size == pendingSubs.size) {
+                                        selectedSubmissionIds.clear()
+                                    } else {
+                                        selectedSubmissionIds.clear()
+                                        selectedSubmissionIds.addAll(pendingSubs.map { it.id })
+                                    }
+                                }) {
+                                    Text(
+                                        if (selectedSubmissionIds.size == pendingSubs.size) "Deselect all" else "Select all",
+                                        color = accentGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                        if (selectedSubmissionIds.isNotEmpty()) {
+                            item {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Button(
+                                        onClick = {
+                                            val ids = selectedSubmissionIds.toList()
+                                            viewModel.bulkApproveSubmissions(ids) { ok, fail ->
+                                                Toast.makeText(context, "Approved $ok, failed $fail", Toast.LENGTH_LONG).show()
+                                                selectedSubmissionIds.clear()
+                                            }
+                                        },
+                                        modifier = Modifier.weight(1f).height(40.dp),
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981))
+                                    ) {
+                                        Text("Approve ${selectedSubmissionIds.size}", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    }
+                                    Button(
+                                        onClick = {
+                                            val ids = selectedSubmissionIds.toList()
+                                            viewModel.bulkRejectSubmissions(ids) { ok, fail ->
+                                                Toast.makeText(context, "Rejected $ok, failed $fail", Toast.LENGTH_LONG).show()
+                                                selectedSubmissionIds.clear()
+                                            }
+                                        },
+                                        modifier = Modifier.weight(1f).height(40.dp),
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
+                                    ) {
+                                        Text("Reject ${selectedSubmissionIds.size}", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    }
+                                }
                             }
                         }
                         items(pendingSubs, key = { it.id }) { sub ->
-                            AdminSubmissionCard(
-                                sub = sub,
-                                isAdmin = isAdmin,
-                                accentGreen = accentGreen,
-                                textPrimary = textPrimary,
-                                textSecondary = textSecondary,
-                                cardBgColor = cardBgColor,
-                                cardBorderColor = cardBorderColor,
-                                statusColor = statusColor(sub.status),
-                                statusIcon = statusIcon(sub.status),
-                                onApprove = { submissionToApprove = sub; approvalFeedback = "" },
-                                onReject = { submissionToReject = sub; rejectionReason = "" },
-                                onEdit = { editingSubmission = sub },
-                                onCardClick = { onShowAppDetails(sub.toAppEntity(apps.find { it.packageName == sub.packageName }?.versionHistoryJson ?: "")) }
-                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                androidx.compose.material3.Checkbox(
+                                    checked = sub.id in selectedSubmissionIds,
+                                    onCheckedChange = { checked ->
+                                        if (checked) selectedSubmissionIds.add(sub.id)
+                                        else selectedSubmissionIds.remove(sub.id)
+                                    },
+                                    colors = androidx.compose.material3.CheckboxDefaults.colors(checkedColor = accentGreen)
+                                )
+                                Box(modifier = Modifier.weight(1f)) {
+                                    AdminSubmissionCard(
+                                        sub = sub,
+                                        isAdmin = isAdmin,
+                                        accentGreen = accentGreen,
+                                        textPrimary = textPrimary,
+                                        textSecondary = textSecondary,
+                                        cardBgColor = cardBgColor,
+                                        cardBorderColor = cardBorderColor,
+                                        statusColor = statusColor(sub.status),
+                                        statusIcon = statusIcon(sub.status),
+                                        onApprove = { submissionToApprove = sub; approvalFeedback = "" },
+                                        onReject = { submissionToReject = sub; rejectionReason = "" },
+                                        onEdit = { editingSubmission = sub },
+                                        onCardClick = { onShowAppDetails(sub.toAppEntity(apps.find { it.packageName == sub.packageName }?.versionHistoryJson ?: "")) }
+                                    )
+                                }
+                            }
                         }
                     }
                     if (approvedSubs.isNotEmpty()) {
@@ -9298,9 +9423,31 @@ fun ConsoleTabContent(
                                                 Text("SUSPENDED", color = Color(0xFFEF4444), fontSize = 8.sp, fontWeight = FontWeight.ExtraBold)
                                             }
                                         }
+                                        if (app.reportsJson.isNotBlank()) {
+                                            val reportCount = app.reportsJson.split("||").filter { it.isNotBlank() }.size
+                                            Box(modifier = Modifier.background(Color(0xFFF59E0B).copy(alpha = 0.15f), RoundedCornerShape(4.dp)).padding(horizontal = 5.dp, vertical = 1.dp)) {
+                                                Text("$reportCount REPORT${if (reportCount == 1) "" else "S"}", color = Color(0xFFF59E0B), fontSize = 8.sp, fontWeight = FontWeight.ExtraBold)
+                                            }
+                                        }
                                     }
                                     Text("${app.developer}  •  v${app.version}  •  ${app.category}", color = textSecondary, fontSize = 11.sp, maxLines = 1)
                                     Text(app.packageName, color = textSecondary.copy(alpha = 0.6f), fontSize = 10.sp, maxLines = 1)
+                                    if (app.reportsJson.isNotBlank()) {
+                                        val reports = app.reportsJson.split("||").filter { it.isNotBlank() }
+                                        reports.take(3).forEach { r ->
+                                            Text("• $r", color = Color(0xFFF59E0B), fontSize = 10.sp, maxLines = 2)
+                                        }
+                                        if (reports.size > 3) {
+                                            Text("+${reports.size - 3} more…", color = textSecondary, fontSize = 10.sp)
+                                        }
+                                        TextButton(onClick = {
+                                            viewModel.clearAppReports(app.id) { success, msg ->
+                                                Toast.makeText(context, msg ?: if (success) "Cleared" else "Failed", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }) {
+                                            Text("Clear reports", color = accentGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
                                 }
                             }
                             // Action row
@@ -9656,6 +9803,135 @@ fun ConsoleTabContent(
                             }
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Maintenance mode — take the whole store offline for users
+                    // (admins can still reach the console).
+                    val maintenanceCfg by viewModel.maintenanceConfig.collectAsStateWithLifecycle()
+                    var isSavingMaintenance by remember { mutableStateOf(false) }
+                    var maintenanceMessage by remember(maintenanceCfg.message) { mutableStateOf(maintenanceCfg.message) }
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                        border = BorderStroke(1.dp, if (maintenanceCfg.isEnabled) Color(0xFFEF4444).copy(alpha = 0.4f) else cardBorderColor)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text("MAINTENANCE MODE", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = textSecondary, letterSpacing = 1.sp)
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = if (maintenanceCfg.isEnabled) "Store is OFFLINE for users" else "Store is online",
+                                        color = if (maintenanceCfg.isEnabled) Color(0xFFEF4444) else textPrimary,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "When enabled, non-admin users see a maintenance screen instead of the catalog.",
+                                        color = textSecondary,
+                                        fontSize = 11.sp,
+                                        lineHeight = 15.sp
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Switch(
+                                    checked = maintenanceCfg.isEnabled,
+                                    enabled = !isSavingMaintenance,
+                                    onCheckedChange = { enabled ->
+                                        isSavingMaintenance = true
+                                        viewModel.setMaintenanceModeAsAdmin(enabled, maintenanceMessage) { success ->
+                                            isSavingMaintenance = false
+                                            Toast.makeText(
+                                                context,
+                                                if (success) (if (enabled) "Maintenance mode ON" else "Maintenance mode OFF") else "Couldn't save — try again.",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                    }
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(10.dp))
+                            OutlinedTextField(
+                                value = maintenanceMessage,
+                                onValueChange = { maintenanceMessage = it },
+                                label = { Text("Message shown to users", color = textSecondary) },
+                                singleLine = false,
+                                maxLines = 3,
+                                colors = TextFieldDefaults.colors(
+                                    focusedContainerColor = Color.Transparent,
+                                    unfocusedContainerColor = Color.Transparent,
+                                    focusedIndicatorColor = accentGreen,
+                                    unfocusedIndicatorColor = cardBorderColor,
+                                    focusedTextColor = textPrimary,
+                                    unfocusedTextColor = textPrimary
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                }
+            }
+
+            // ── AUDIT LOG TAB ─────────────────────────────────────────────────────
+            if (isAdmin && adminSegmentIndex == 4) {
+                val auditEntries by viewModel.auditLog.collectAsStateWithLifecycle()
+                if (auditEntries.isEmpty()) {
+                    item {
+                        Box(modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Icon(Icons.Default.History, contentDescription = null, tint = textSecondary, modifier = Modifier.size(48.dp))
+                                Text("No audit events yet", color = textPrimary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                Text("Admin actions (approve, reject, suspend, rollback…) will appear here.", color = textSecondary, fontSize = 12.sp, textAlign = TextAlign.Center)
+                                TextButton(onClick = { viewModel.refreshAuditLog() }) {
+                                    Text("Refresh", color = accentGreen, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("${auditEntries.size} events", color = textSecondary, fontSize = 12.sp)
+                            TextButton(onClick = { viewModel.refreshAuditLog() }) {
+                                Text("Refresh", color = accentGreen, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                    items(auditEntries, key = { it.id }) { entry ->
+                        val timeFmt = remember { java.text.SimpleDateFormat("MMM d, HH:mm", java.util.Locale.getDefault()) }
+                        Card(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                            border = BorderStroke(1.dp, cardBorderColor)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text(entry.action, color = accentGreen, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
+                                    Text(timeFmt.format(java.util.Date(entry.timestamp)), color = textSecondary, fontSize = 10.sp)
+                                }
+                                Text(
+                                    "${entry.targetType}: ${entry.targetName.ifBlank { entry.targetId }}",
+                                    color = textPrimary,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                if (entry.details.isNotBlank()) {
+                                    Text(entry.details, color = textSecondary, fontSize = 11.sp, maxLines = 3)
+                                }
+                                Text("by ${entry.adminEmail.ifBlank { entry.adminUid }}", color = textSecondary.copy(alpha = 0.7f), fontSize = 10.sp)
+                            }
+                        }
+                    }
                 }
             }
 
@@ -9708,7 +9984,28 @@ fun ConsoleTabContent(
                                                 Text("DEVELOPER", fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF10B981))
                                             }
                                         }
+                                        if (user.isSuspended) {
+                                            Box(modifier = Modifier.background(Color(0xFFEF4444).copy(alpha = 0.15f), RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 2.dp)) {
+                                                Text("SUSPENDED", fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFFEF4444))
+                                            }
+                                        }
                                     }
+                                    if (user.isSuspended && user.suspensionReason.isNotBlank()) {
+                                        Text(user.suspensionReason, color = Color(0xFFEF4444), fontSize = 10.sp, maxLines = 2)
+                                    }
+                                }
+                                IconButton(onClick = {
+                                    val newState = !user.isSuspended
+                                    viewModel.suspendUser(user, newState, if (newState) "Suspended by admin" else "") { success ->
+                                        Toast.makeText(context, if (success) (if (newState) "User suspended" else "User unsuspended") else "Failed", Toast.LENGTH_SHORT).show()
+                                    }
+                                }) {
+                                    Icon(
+                                        if (user.isSuspended) Icons.Default.PlayArrow else Icons.Default.Block,
+                                        contentDescription = if (user.isSuspended) "Unsuspend" else "Suspend",
+                                        tint = if (user.isSuspended) Color(0xFF10B981) else Color(0xFFEF4444),
+                                        modifier = Modifier.size(18.dp)
+                                    )
                                 }
                                 IconButton(onClick = { userToEdit = user }) {
                                     Icon(Icons.Default.Edit, contentDescription = "Edit User", tint = textSecondary, modifier = Modifier.size(18.dp))
@@ -11203,7 +11500,10 @@ fun AppDetailsDialog(
                                                 .fillMaxWidth()
                                                 .padding(bottom = 10.dp)
                                         ) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
                                                 Text(
                                                     text = "v${entry.versionName}",
                                                     color = textPrimary,
@@ -11216,6 +11516,19 @@ fun AppDetailsDialog(
                                                     color = textSecondary,
                                                     fontSize = 11.sp
                                                 )
+                                                Spacer(modifier = Modifier.weight(1f))
+                                                if (isAdmin) {
+                                                    TextButton(
+                                                        onClick = {
+                                                            viewModel.rollbackAppToVersion(app.id, entry) { success, msg ->
+                                                                Toast.makeText(context, msg ?: if (success) "Rolled back" else "Failed", Toast.LENGTH_LONG).show()
+                                                            }
+                                                        },
+                                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                                                    ) {
+                                                        Text("Rollback", color = accentGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                    }
+                                                }
                                             }
                                             if (entry.changelog.isNotBlank()) {
                                                 Spacer(modifier = Modifier.height(2.dp))

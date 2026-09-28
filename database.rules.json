@@ -80,6 +80,18 @@
     "DarkStoreUpdate": {
       ".read": true,
       ".write": "auth != null && auth.token.email === 'davidstha900@gmail.com'"
+    },
+
+    "maintenanceConfig": {
+      ".read": true,
+      ".write": "auth != null && auth.token.email === 'davidstha900@gmail.com'"
+    },
+
+    "auditLog": {
+      ".read": "auth != null && auth.token.email === 'davidstha900@gmail.com'",
+      "$logId": {
+        ".write": "auth != null && auth.token.email === 'davidstha900@gmail.com'"
+      }
     }
   }
 }

@@ -24,6 +24,8 @@ import kotlinx.coroutines.flow.*
 
 
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 
@@ -64,6 +66,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 loadFollowingIds()
                 loadFollowerIds()
                 loadPremiumFreeMode()
+                loadMaintenanceConfig()
                 val savedEmail = sharedPrefs.getString("user_email", "") ?: ""
                 if (savedEmail.isNotBlank() && savedEmail != "guest@darkroot.io") {
                     updateEcosystemPolicyAcceptedForCurrentUser(savedEmail)
@@ -340,11 +343,73 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     private val _isPremiumFreeMode = MutableStateFlow(true)
     val isPremiumFreeMode: StateFlow<Boolean> = _isPremiumFreeMode.asStateFlow()
 
+    private val _maintenanceConfig = MutableStateFlow(FirebaseService.MaintenanceConfig())
+    val maintenanceConfig: StateFlow<FirebaseService.MaintenanceConfig> = _maintenanceConfig.asStateFlow()
+
+    private val _auditLog = MutableStateFlow<List<FirebaseService.AuditLogEntry>>(emptyList())
+    val auditLog: StateFlow<List<FirebaseService.AuditLogEntry>> = _auditLog.asStateFlow()
+
     fun loadPremiumFreeMode() {
         viewModelScope.launch(Dispatchers.IO) {
             val isFree = FirebaseService.fetchPremiumIsFree()
             _isPremiumFreeMode.value = isFree
         }
+    }
+
+    fun loadMaintenanceConfig() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _maintenanceConfig.value = FirebaseService.fetchMaintenanceConfig()
+        }
+    }
+
+    fun setMaintenanceModeAsAdmin(
+        isEnabled: Boolean,
+        message: String = "Dark Store is temporarily offline for maintenance. Please check back soon.",
+        onResult: ((Boolean) -> Unit)? = null
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val config = FirebaseService.MaintenanceConfig(isEnabled = isEnabled, message = message)
+            val success = FirebaseService.saveMaintenanceConfig(config)
+            if (success) {
+                _maintenanceConfig.value = config
+                logAdminAction(
+                    action = if (isEnabled) "MAINTENANCE_ON" else "MAINTENANCE_OFF",
+                    targetType = "config",
+                    targetId = "maintenanceConfig",
+                    targetName = "Store Maintenance",
+                    details = message
+                )
+            }
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                onResult?.invoke(success)
+            }
+        }
+    }
+
+    fun refreshAuditLog() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _auditLog.value = FirebaseService.fetchAuditLog(150)
+        }
+    }
+
+    private fun logAdminAction(
+        action: String,
+        targetType: String,
+        targetId: String,
+        targetName: String,
+        details: String = ""
+    ) {
+        FirebaseService.writeAuditLog(
+            FirebaseService.AuditLogEntry(
+                action = action,
+                targetType = targetType,
+                targetId = targetId,
+                targetName = targetName,
+                adminEmail = _userEmail.value,
+                adminUid = _userUid.value,
+                details = details
+            )
+        )
     }
 
     // Admin-only — enforced by the RTDB rules on premiumConfig, not just this
@@ -355,6 +420,13 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
             val success = FirebaseService.savePremiumIsFree(isFree)
             if (success) {
                 _isPremiumFreeMode.value = isFree
+                logAdminAction(
+                    action = if (isFree) "PREMIUM_FREE_ON" else "PREMIUM_FREE_OFF",
+                    targetType = "config",
+                    targetId = "premiumConfig",
+                    targetName = "Premium Free Mode",
+                    details = "isFree=$isFree"
+                )
             }
             kotlinx.coroutines.withContext(Dispatchers.Main) {
                 onResult?.invoke(success)
@@ -2119,11 +2191,25 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 if (repoSuccess) {
                     refreshMarketplace()
                     refreshSubmissions()
+                    logAdminAction(
+                        action = "APPROVE_SUBMISSION",
+                        targetType = "submission",
+                        targetId = submission.id,
+                        targetName = submission.name,
+                        details = feedback
+                    )
                     kotlinx.coroutines.withContext(Dispatchers.Main) {
                         onFinished(true, "Submission status set to Approved and deployed live to catalog!")
                     }
                 } else {
                     refreshSubmissions()
+                    logAdminAction(
+                        action = "APPROVE_SUBMISSION",
+                        targetType = "submission",
+                        targetId = submission.id,
+                        targetName = submission.name,
+                        details = "partial: catalog sync failed"
+                    )
                     kotlinx.coroutines.withContext(Dispatchers.Main) {
                         onFinished(true, "Approved in submissions collector, but failed catalog sync. Set again.")
                     }
@@ -2170,6 +2256,13 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 _isRefreshing.value = false
                 refreshSubmissions()
+                logAdminAction(
+                    action = "REJECT_SUBMISSION",
+                    targetType = "submission",
+                    targetId = submission.id,
+                    targetName = submission.name,
+                    details = reason
+                )
                 kotlinx.coroutines.withContext(Dispatchers.Main) {
                     onFinished(true, "Submission successfully rejected and updated.")
                 }
@@ -2252,9 +2345,171 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
             _isRefreshing.value = false
             if (success) {
                 refreshMarketplace()
+                logAdminAction(
+                    action = if (isSuspended) "APP_SUSPEND" else "APP_UNSUSPEND",
+                    targetType = "app",
+                    targetId = app.id,
+                    targetName = app.name,
+                    details = reason
+                )
                 onFinished(true, if (isSuspended) "App suspended successfully." else "App unsuspended successfully.")
             } else {
                 onFinished(false, "Failed to update suspension status.")
+            }
+        }
+    }
+
+    fun suspendUser(
+        user: com.example.data.UserEntity,
+        isSuspended: Boolean,
+        reason: String = "",
+        onResult: (Boolean) -> Unit
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val updated = user.copy(isSuspended = isSuspended, suspensionReason = reason)
+            val success = FirebaseAuthService.saveUserInRealtimeDatabase(updated)
+            if (success) {
+                try {
+                    _developers.value = FirebaseAuthService.fetchDevelopers()
+                } catch (_: Exception) {}
+                logAdminAction(
+                    action = if (isSuspended) "USER_SUSPEND" else "USER_UNSUSPEND",
+                    targetType = "user",
+                    targetId = user.uid,
+                    targetName = user.email,
+                    details = reason
+                )
+            }
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                onResult(success)
+            }
+        }
+    }
+
+    fun clearAppReports(appId: String, onFinished: (Boolean, String?) -> Unit) {
+        viewModelScope.launch {
+            FirebaseAuthService.refreshIdTokenIfNeeded(getApplication())
+            val app = unfilteredApps.value.find { it.id == appId }
+            if (app == null) {
+                onFinished(false, "App not found.")
+                return@launch
+            }
+            val success = repository.saveApp(app.copy(reportsJson = ""))
+            if (success) {
+                refreshMarketplace()
+                logAdminAction(
+                    action = "CLEAR_REPORTS",
+                    targetType = "app",
+                    targetId = app.id,
+                    targetName = app.name,
+                    details = "Cleared reports"
+                )
+                onFinished(true, "Reports cleared.")
+            } else {
+                onFinished(false, "Failed to clear reports.")
+            }
+        }
+    }
+
+    fun rollbackAppToVersion(
+        appId: String,
+        entry: com.example.data.AppVersionHistoryEntry,
+        onFinished: (Boolean, String?) -> Unit
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            FirebaseAuthService.refreshIdTokenIfNeeded(getApplication())
+            val app = unfilteredApps.value.find { it.id == appId }
+            if (app == null) {
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    onFinished(false, "App not found.")
+                }
+                return@launch
+            }
+            // Append current version to history before rolling back
+            val updatedHistoryJson = buildUpdatedVersionHistoryJson(app)
+            val rolled = app.copy(
+                version = entry.versionName,
+                versionCode = entry.versionCode,
+                apkUrl = entry.apkUrl,
+                changelog = entry.changelog.ifBlank { "Rolled back to ${entry.versionName}" },
+                versionHistoryJson = updatedHistoryJson
+            )
+            val success = repository.saveApp(rolled)
+            if (success) {
+                refreshMarketplace()
+                logAdminAction(
+                    action = "VERSION_ROLLBACK",
+                    targetType = "app",
+                    targetId = app.id,
+                    targetName = app.name,
+                    details = "Rolled back to ${entry.versionName} (code ${entry.versionCode})"
+                )
+            }
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                onFinished(
+                    success,
+                    if (success) "Rolled back to ${entry.versionName}." else "Rollback failed."
+                )
+            }
+        }
+    }
+
+    fun bulkApproveSubmissions(
+        ids: List<String>,
+        feedback: String = "Approved and published inside Dark Store catalog.",
+        onFinished: (Int, Int) -> Unit
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            var ok = 0
+            var fail = 0
+            val pending = _submissions.value.filter { it.id in ids && it.status.equals("Pending", ignoreCase = true) }
+            for (sub in pending) {
+                val result = kotlinx.coroutines.suspendCancellableCoroutine<Boolean> { cont ->
+                    approveSubmission(sub, feedback) { success, _ ->
+                        cont.resume(success) {}
+                    }
+                }
+                if (result) ok++ else fail++
+            }
+            logAdminAction(
+                action = "BULK_APPROVE",
+                targetType = "submission",
+                targetId = ids.joinToString(","),
+                targetName = "${ids.size} submissions",
+                details = "ok=$ok fail=$fail"
+            )
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                onFinished(ok, fail)
+            }
+        }
+    }
+
+    fun bulkRejectSubmissions(
+        ids: List<String>,
+        reason: String = "Submission did not satisfy safety regulations.",
+        onFinished: (Int, Int) -> Unit
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            var ok = 0
+            var fail = 0
+            val pending = _submissions.value.filter { it.id in ids && it.status.equals("Pending", ignoreCase = true) }
+            for (sub in pending) {
+                val result = kotlinx.coroutines.suspendCancellableCoroutine<Boolean> { cont ->
+                    rejectSubmission(sub, reason) { success, _ ->
+                        cont.resume(success) {}
+                    }
+                }
+                if (result) ok++ else fail++
+            }
+            logAdminAction(
+                action = "BULK_REJECT",
+                targetType = "submission",
+                targetId = ids.joinToString(","),
+                targetName = "${ids.size} submissions",
+                details = "ok=$ok fail=$fail reason=$reason"
+            )
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                onFinished(ok, fail)
             }
         }
     }

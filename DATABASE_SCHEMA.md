@@ -208,3 +208,14 @@ admin branch of the rule can change status.
   `following/{uid}`. **This is a rules-only fix — it requires re-deploying
   database.rules.json to the Firebase Console; no app rebuild changes this
   behavior on its own.**
+
+- **Added (admin ops):** `users/{uid}.isSuspended` + `suspensionReason` —
+  admin can disable an account entirely; suspended users are blocked at
+  sign-in. `maintenanceConfig/{isEnabled,message}` — store-wide offline
+  switch for non-admins (same pattern as premiumConfig). `auditLog/{id}` —
+  every significant admin action (approve/reject/suspend/rollback/bulk/
+  maintenance/premium) is recorded with actor, target, and timestamp.
+  Reports already stored on `apps/{id}.reportsJson` are now visible and
+  clearable in the Live Catalog admin tab. Version history entries support
+  one-tap rollback. Submissions support bulk approve/reject. Dashboard
+  telemetry tiles now include users, reports, and suspended accounts.

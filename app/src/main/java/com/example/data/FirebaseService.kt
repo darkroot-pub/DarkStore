@@ -823,4 +823,145 @@ object FirebaseService {
             return@withContext false
         }
     }
+
+    // ----------------------------------------------------
+    // MAINTENANCE MODE (store-wide offline switch)
+    // ----------------------------------------------------
+    data class MaintenanceConfig(
+        val isEnabled: Boolean = false,
+        val message: String = "Dark Store is temporarily offline for maintenance. Please check back soon."
+    )
+
+    fun fetchMaintenanceConfig(): MaintenanceConfig {
+        return try {
+            val tokenParam = getTokenParam()
+            val request = Request.Builder()
+                .url("${RTDB_URL}maintenanceConfig.json$tokenParam")
+                .get()
+                .build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return MaintenanceConfig()
+                val bodyStr = response.body?.string()
+                if (bodyStr.isNullOrBlank() || bodyStr == "null") return MaintenanceConfig()
+                val json = JSONObject(bodyStr)
+                MaintenanceConfig(
+                    isEnabled = json.optBoolean("isEnabled", false),
+                    message = json.optString("message", "Dark Store is temporarily offline for maintenance. Please check back soon.")
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "fetchMaintenanceConfig exception: ${e.message}", e)
+            MaintenanceConfig()
+        }
+    }
+
+    fun saveMaintenanceConfig(config: MaintenanceConfig): Boolean {
+        return try {
+            val payload = JSONObject().apply {
+                put("isEnabled", config.isEnabled)
+                put("message", config.message)
+            }
+            val body = payload.toString().toRequestBody(jsonMediaType)
+            val tokenParam = getTokenParam()
+            val request = Request.Builder()
+                .url("${RTDB_URL}maintenanceConfig.json$tokenParam")
+                .put(body)
+                .build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.e(TAG, "saveMaintenanceConfig failed: code ${response.code}")
+                }
+                response.isSuccessful
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "saveMaintenanceConfig exception: ${e.message}", e)
+            false
+        }
+    }
+
+    // ----------------------------------------------------
+    // AUDIT TRAIL — every significant admin action is logged
+    // ----------------------------------------------------
+    data class AuditLogEntry(
+        val id: String = "",
+        val action: String = "",
+        val targetType: String = "", // app | submission | user | config
+        val targetId: String = "",
+        val targetName: String = "",
+        val adminEmail: String = "",
+        val adminUid: String = "",
+        val details: String = "",
+        val timestamp: Long = System.currentTimeMillis()
+    )
+
+    fun writeAuditLog(entry: AuditLogEntry): Boolean {
+        return try {
+            val id = entry.id.ifBlank { "audit_${System.currentTimeMillis()}_${(0..9999).random()}" }
+            val payload = JSONObject().apply {
+                put("id", id)
+                put("action", entry.action)
+                put("targetType", entry.targetType)
+                put("targetId", entry.targetId)
+                put("targetName", entry.targetName)
+                put("adminEmail", entry.adminEmail)
+                put("adminUid", entry.adminUid)
+                put("details", entry.details)
+                put("timestamp", entry.timestamp)
+            }
+            val body = payload.toString().toRequestBody(jsonMediaType)
+            val tokenParam = getTokenParam()
+            val request = Request.Builder()
+                .url("${RTDB_URL}auditLog/$id.json$tokenParam")
+                .put(body)
+                .build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.e(TAG, "writeAuditLog failed: code ${response.code}")
+                }
+                response.isSuccessful
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "writeAuditLog exception: ${e.message}", e)
+            false
+        }
+    }
+
+    fun fetchAuditLog(limit: Int = 100): List<AuditLogEntry> {
+        return try {
+            val tokenParam = getTokenParam()
+            val request = Request.Builder()
+                .url("${RTDB_URL}auditLog.json$tokenParam")
+                .get()
+                .build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return emptyList()
+                val bodyStr = response.body?.string()
+                if (bodyStr.isNullOrBlank() || bodyStr == "null") return emptyList()
+                val outer = JSONObject(bodyStr)
+                val list = mutableListOf<AuditLogEntry>()
+                val keys = outer.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    val data = outer.optJSONObject(key) ?: continue
+                    list.add(
+                        AuditLogEntry(
+                            id = data.optString("id", key),
+                            action = data.optString("action", ""),
+                            targetType = data.optString("targetType", ""),
+                            targetId = data.optString("targetId", ""),
+                            targetName = data.optString("targetName", ""),
+                            adminEmail = data.optString("adminEmail", ""),
+                            adminUid = data.optString("adminUid", ""),
+                            details = data.optString("details", ""),
+                            timestamp = data.optLong("timestamp", 0L)
+                        )
+                    )
+                }
+                list.sortedByDescending { it.timestamp }.take(limit)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "fetchAuditLog exception: ${e.message}", e)
+            emptyList()
+        }
+    }
 }

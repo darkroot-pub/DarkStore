@@ -230,6 +230,12 @@ object FirebaseAuthService {
                         }
                     }
 
+                    // Block suspended accounts from signing in.
+                    if (user.isSuspended) {
+                        val reason = user.suspensionReason.ifBlank { "Please contact support." }
+                        return@use Triple(false, "Account suspended: $reason", null)
+                    }
+
                     saveLocalUser(context, user, idToken, refreshToken)
 
                     Triple(true, "Welcome back!", user)
@@ -578,6 +584,8 @@ object FirebaseAuthService {
             put("profilePhotoUrl", user.profilePhotoUrl)
             put("isEmailVerified", user.isEmailVerified)
             put("isPremiumMember", user.isPremiumMember)
+            put("isSuspended", user.isSuspended)
+            put("suspensionReason", user.suspensionReason)
         }
         val body = payload.toString().toRequestBody(mediaTypeJson)
         val tokenParam = getTokenParam()
@@ -631,7 +639,9 @@ object FirebaseAuthService {
                             // Missing field (accounts created before this feature existed)
                             // defaults to true — never retroactively nag/block old accounts.
                             isEmailVerified = json.optBoolean("isEmailVerified", true),
-                            isPremiumMember = json.optBoolean("isPremiumMember", false)
+                            isPremiumMember = json.optBoolean("isPremiumMember", false),
+                            isSuspended = json.optBoolean("isSuspended", false),
+                            suspensionReason = json.optString("suspensionReason", "")
                         )
                     }
                 }
@@ -865,7 +875,9 @@ object FirebaseAuthService {
                             devBio = data.optString("devBio", ""),
                             profilePhotoUrl = data.optString("profilePhotoUrl", ""),
                             isEmailVerified = data.optBoolean("isEmailVerified", true),
-                            isPremiumMember = data.optBoolean("isPremiumMember", false)
+                            isPremiumMember = data.optBoolean("isPremiumMember", false),
+                            isSuspended = data.optBoolean("isSuspended", false),
+                            suspensionReason = data.optString("suspensionReason", "")
                         )
                     )
                 } catch (entryError: Exception) {

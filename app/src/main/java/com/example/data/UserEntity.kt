@@ -24,5 +24,9 @@ data class UserEntity(
     // all — meant nobody else could ever see it (no premium badge was
     // possible), it reset on reinstall/new device, and there was no way for
     // an admin to ever see or revoke it. Now a real per-account field.
-    val isPremiumMember: Boolean = false
+    val isPremiumMember: Boolean = false,
+    // Admin can fully disable a problematic account. Suspended users cannot
+    // sign in or perform authenticated actions until an admin lifts it.
+    val isSuspended: Boolean = false,
+    val suspensionReason: String = ""
 ) : Serializable
