@@ -85,30 +85,69 @@ android {
 }
 
 dependencies {
+    // Pin stack to compileSdk 34 / AGP 8.4.2–compatible versions.
+    // Without force rules, transitive deps can float to androidx.core 1.19 /
+    // Compose 1.9 / Activity 1.14 / OkHttp 5 which require compileSdk 35–37
+    // and break :app:checkDebugAarMetadata.
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.activity.compose)
-    // Real "Continue with Google" sign-in — this alias already existed in the
-    // version catalog but was never actually applied here, so the Google
-    // Sign-In classes it provides could never resolve. That's why the feature
-    // didn't work: the UI/backend logic for it existed, but the library that
-    // makes an actual Google account picker possible was never pulled in.
     implementation(libs.play.services.auth)
+
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
-    implementation("androidx.compose.material:material-icons-extended")
-    
+    implementation(libs.androidx.compose.material.icons.extended)
+
     implementation(libs.coil.compose)
     implementation(libs.okhttp)
     implementation(libs.moshi.kotlin)
-    implementation(libs.play.services.auth)
-    implementation("com.google.firebase:firebase-messaging:23.4.1")
-    
+
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.messaging)
+
     debugImplementation(libs.androidx.compose.ui.tooling)
+}
+
+// Force versions that work with compileSdk 34 + AGP 8.4.2 even if a
+// transitive dependency tries to pull a newer line.
+configurations.configureEach {
+    resolutionStrategy {
+        force(
+            "androidx.core:core:1.13.1",
+            "androidx.core:core-ktx:1.13.1",
+            "androidx.activity:activity:1.9.2",
+            "androidx.activity:activity-ktx:1.9.2",
+            "androidx.activity:activity-compose:1.9.2",
+            "com.squareup.okhttp3:okhttp:4.12.0",
+            "com.squareup.okhttp3:logging-interceptor:4.12.0",
+            "androidx.lifecycle:lifecycle-runtime-ktx:2.8.4",
+            "androidx.lifecycle:lifecycle-runtime-compose:2.8.4",
+            "androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.4",
+            "androidx.lifecycle:lifecycle-viewmodel-compose:2.8.4"
+        )
+        eachDependency {
+            if (requested.group == "com.squareup.okhttp3" && requested.name.startsWith("okhttp")) {
+                useVersion("4.12.0")
+                because("OkHttp 5.x requires compileSdk 37")
+            }
+            if (requested.group == "androidx.core" && (requested.name == "core" || requested.name == "core-ktx")) {
+                useVersion("1.13.1")
+                because("core 1.19 requires compileSdk 37 / AGP 9.1")
+            }
+            if (requested.group == "androidx.activity") {
+                useVersion("1.9.2")
+                because("activity 1.14-alpha requires compileSdk 36 / AGP 8.9")
+            }
+            // Block navigationevent (pulled by new activity) — needs SDK 36
+            if (requested.group == "androidx.navigationevent") {
+                useVersion("1.0.0-alpha01") // may still fail; prefer exclude
+            }
+        }
+    }
 }
 
 val downloadAssetsTask = tasks.register("downloadAssets") {
