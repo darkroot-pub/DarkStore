@@ -168,6 +168,9 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     private val _devBio = MutableStateFlow(sharedPrefs.getString("dev_bio", "") ?: "")
     val devBio: StateFlow<String> = _devBio.asStateFlow()
 
+    private val _devLocation = MutableStateFlow(sharedPrefs.getString("dev_location", "") ?: "")
+    val devLocation: StateFlow<String> = _devLocation.asStateFlow()
+
     // Profile photo — visible to other users when they view this developer's
     // public profile (e.g. from an app's "By <developer>" listing).
     private val _profilePhotoUrl = MutableStateFlow(sharedPrefs.getString("profile_photo_url", "") ?: "")
@@ -771,6 +774,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 _devGithub.value = user.devGithub
                 _devName.value = user.devName
                 _devBio.value = user.devBio
+                _devLocation.value = user.devLocation
                 _isEmailVerified.value = user.isEmailVerified
                 sharedPrefs.edit().putBoolean("is_email_verified", user.isEmailVerified).apply()
                 // Only a genuinely fresh, real-account signup should trigger the
@@ -811,6 +815,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 _devGithub.value = user.devGithub
                 _devName.value = user.devName
                 _devBio.value = user.devBio
+                _devLocation.value = user.devLocation
                 _profilePhotoUrl.value = user.profilePhotoUrl
                 _isEmailVerified.value = user.isEmailVerified
                 // Login never triggers the full-screen gate (only signup does) —
@@ -888,6 +893,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 _devGithub.value = user.devGithub
                 _devName.value = user.devName
                 _devBio.value = user.devBio
+                _devLocation.value = user.devLocation
                 _profilePhotoUrl.value = user.profilePhotoUrl
 
                 // BUG FIX: same missing-persistence issue as signInWithEmail above.
@@ -944,6 +950,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 _devGithub.value = user.devGithub
                 _devName.value = user.devName
                 _devBio.value = user.devBio
+                _devLocation.value = user.devLocation
                 _profilePhotoUrl.value = user.profilePhotoUrl
 
                 // BUG FIX: same missing-persistence issue as signInWithEmail above.
@@ -1033,6 +1040,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         _devWebsite.value = ""
         _devGithub.value = ""
         _devBio.value = ""
+        _devLocation.value = ""
         _profilePhotoUrl.value = ""
         _isTermsAccepted.value = false
         _isEcosystemPolicyAccepted.value = false
@@ -1170,6 +1178,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                     _devGithub.value = user.devGithub
                     _devName.value = user.devName
                     _devBio.value = user.devBio
+                _devLocation.value = user.devLocation
                     _userName.value = user.displayName
                     _profilePhotoUrl.value = user.profilePhotoUrl
 
@@ -1261,6 +1270,65 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 )
                 FirebaseAuthService.saveUserInRealtimeDatabase(user)
             }
+        }
+    }
+
+
+    /**
+     * Updates a single public profile field (name, bio, website, github, location)
+     * and syncs to RTDB + local prefs.
+     */
+    fun updateDeveloperField(field: String, value: String, onDone: (Boolean, String) -> Unit = { _, _ -> }) {
+        val clean = value.trim()
+        when (field) {
+            "name" -> {
+                val result = updateDeveloperName(clean)
+                onDone(result.first, result.second)
+                return
+            }
+            "bio" -> {
+                sharedPrefs.edit().putString("dev_bio", clean).apply()
+                _devBio.value = clean
+            }
+            "website" -> {
+                sharedPrefs.edit().putString("dev_website", clean).apply()
+                _devWebsite.value = clean
+            }
+            "github" -> {
+                sharedPrefs.edit().putString("dev_github", clean).apply()
+                _devGithub.value = clean
+            }
+            "location" -> {
+                sharedPrefs.edit().putString("dev_location", clean).apply()
+                _devLocation.value = clean
+            }
+            else -> {
+                onDone(false, "Unknown field")
+                return
+            }
+        }
+        val uid = _userUid.value
+        if (uid.isBlank() || uid == "guest_uid") {
+            onDone(true, "Saved locally")
+            return
+        }
+        viewModelScope.launch {
+            val user = UserEntity(
+                uid = uid,
+                email = _userEmail.value,
+                displayName = _userName.value,
+                role = _userRole.value,
+                isDeveloper = _isDeveloper.value,
+                devWebsite = _devWebsite.value,
+                devGithub = _devGithub.value,
+                devName = _devName.value.ifBlank { _userName.value },
+                devBio = _devBio.value,
+                profilePhotoUrl = _profilePhotoUrl.value,
+                devLocation = _devLocation.value
+            )
+            val ok = FirebaseAuthService.saveUserInRealtimeDatabase(user)
+            if (ok) refreshDevelopers()
+            onDone(ok, if (ok) "Profile updated" else "Saved offline — will sync later")
         }
     }
 

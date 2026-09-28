@@ -647,6 +647,7 @@ object FirebaseAuthService {
             put("devName", user.devName)
             put("devBio", user.devBio)
             put("profilePhotoUrl", user.profilePhotoUrl)
+            put("devLocation", user.devLocation)
             put("isEmailVerified", user.isEmailVerified)
             put("isPremiumMember", user.isPremiumMember)
             put("isSuspended", user.isSuspended)
@@ -701,6 +702,7 @@ object FirebaseAuthService {
                             devName = json.optString("devName", ""),
                             devBio = json.optString("devBio", ""),
                             profilePhotoUrl = json.optString("profilePhotoUrl", ""),
+                            devLocation = json.optString("devLocation", ""),
                             // Missing field (accounts created before this feature existed)
                             // defaults to true — never retroactively nag/block old accounts.
                             isEmailVerified = json.optBoolean("isEmailVerified", true),
@@ -939,6 +941,7 @@ object FirebaseAuthService {
                             devName = data.optString("devName", "").ifBlank { displayName },
                             devBio = data.optString("devBio", ""),
                             profilePhotoUrl = data.optString("profilePhotoUrl", ""),
+                            devLocation = data.optString("devLocation", ""),
                             isEmailVerified = data.optBoolean("isEmailVerified", true),
                             isPremiumMember = data.optBoolean("isPremiumMember", false),
                             isSuspended = data.optBoolean("isSuspended", false),

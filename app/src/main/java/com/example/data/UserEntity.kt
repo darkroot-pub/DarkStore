@@ -15,6 +15,7 @@ data class UserEntity(
     val devName: String = "",
     val devBio: String = "",
     val profilePhotoUrl: String = "",
+    val devLocation: String = "",
     // Whether this account's email address has been confirmed via the Firebase
     // "click the link we emailed you" flow. Defaults to true so accounts created
     // before this feature existed (and non-email sign-in methods, where there's

@@ -4816,7 +4816,8 @@ fun ProfileTabContent(
                                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
                                         Icon(Icons.Default.LocationOn, contentDescription = "Location", tint = textSecondaryCol, modifier = Modifier.size(14.dp))
-                                        Text("Kathmandu, Nepal", fontSize = 12.sp, color = textSecondaryCol)
+                                        val locState by viewModel.devLocation.collectAsStateWithLifecycle()
+                                        Text(locState.ifBlank { "Add location" }, fontSize = 12.sp, color = textSecondaryCol)
                                     }
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
@@ -4832,7 +4833,154 @@ fun ProfileTabContent(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
+                // Option 3 — Public profile fields (inline edit)
+                val devLocationVal by viewModel.devLocation.collectAsStateWithLifecycle()
+                val liveDevBio by viewModel.devBio.collectAsStateWithLifecycle()
+                var editField by remember { mutableStateOf<String?>(null) }
+                var editValue by remember { mutableStateOf("") }
+
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = surfaceCol),
+                    border = BorderStroke(1.dp, borderCol)
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)) {
+                        Text(
+                            text = "Public profile",
+                            color = textPrimaryCol,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        data class ProfileRow(val key: String, val label: String, val value: String, val icon: ImageVector)
+                        val rows = listOf(
+                            ProfileRow("name", "Display name", devName.ifBlank { userName }, Icons.Default.Person),
+                            ProfileRow("bio", "Bio", liveDevBio.ifBlank { "Tap to add a short bio" }, Icons.Default.Description),
+                            ProfileRow("location", "Location", devLocationVal.ifBlank { "Not set" }, Icons.Default.LocationOn),
+                            ProfileRow("website", "Website URL", devWebsite.ifBlank { "Not set" }, Icons.Default.Language),
+                            ProfileRow("github", "GitHub username", devGithub.ifBlank { "Not set" }, Icons.Default.Code)
+                        )
+                        rows.forEachIndexed { index, row ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable {
+                                        editField = row.key
+                                        editValue = when (row.key) {
+                                            "name" -> devName.ifBlank { userName }
+                                            "bio" -> liveDevBio
+                                            "location" -> devLocationVal
+                                            "website" -> devWebsite
+                                            "github" -> devGithub
+                                            else -> ""
+                                        }
+                                    }
+                                    .padding(vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    row.icon,
+                                    contentDescription = null,
+                                    tint = textSecondaryCol,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(row.label, color = textSecondaryCol, fontSize = 11.sp)
+                                    Text(
+                                        row.value,
+                                        color = textPrimaryCol,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        maxLines = if (row.key == "bio") 2 else 1
+                                    )
+                                }
+                                Icon(
+                                    Icons.Default.Edit,
+                                    contentDescription = "Edit",
+                                    tint = textSecondaryCol.copy(alpha = 0.7f),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            if (index < rows.lastIndex) {
+                                HorizontalDivider(color = borderCol.copy(alpha = 0.7f))
+                            }
+                        }
+                    }
+                }
+
+                if (editField != null) {
+                    val title = when (editField) {
+                        "name" -> "Display name"
+                        "bio" -> "Bio"
+                        "location" -> "Location"
+                        "website" -> "Website URL"
+                        "github" -> "GitHub username"
+                        else -> "Edit"
+                    }
+                    Dialog(onDismissRequest = { editField = null }) {
+                        Card(
+                            shape = RoundedCornerShape(20.dp),
+                            colors = CardDefaults.cardColors(containerColor = surfaceCol),
+                            border = BorderStroke(1.dp, borderCol),
+                            modifier = Modifier.fillMaxWidth(0.92f)
+                        ) {
+                            Column(modifier = Modifier.padding(20.dp)) {
+                                Text(title, color = textPrimaryCol, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                Spacer(modifier = Modifier.height(12.dp))
+                                OutlinedTextField(
+                                    value = editValue,
+                                    onValueChange = { editValue = it },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = editField != "bio",
+                                    minLines = if (editField == "bio") 3 else 1,
+                                    maxLines = if (editField == "bio") 5 else 1,
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = Color(0xFF3B82F6),
+                                        unfocusedBorderColor = borderCol,
+                                        focusedTextColor = textPrimaryCol,
+                                        unfocusedTextColor = textPrimaryCol,
+                                        cursorColor = Color(0xFF3B82F6)
+                                    ),
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End
+                                ) {
+                                    TextButton(onClick = { editField = null }) {
+                                        Text("Cancel", color = textSecondaryCol)
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Button(
+                                        onClick = {
+                                            val field = editField ?: return@Button
+                                            viewModel.updateDeveloperField(field, editValue) { ok, msg ->
+                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                            }
+                                            editField = null
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B82F6)),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Text("Save", color = Color.White, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
                 // Beautiful Dashboard Quick Stat Counters Replicated from Pro developer panel
+
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween
