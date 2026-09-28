@@ -11383,6 +11383,7 @@ fun AppDetailsDialog(
 ) {
     val context = LocalContext.current
     var showDevProfileDialog by remember { mutableStateOf(false) }
+    val cardBorderColor = if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFE0E0E0)
     val isInstalled = installedInfo != null
     var isWritingReview by remember { mutableStateOf(false) }
     var inputRatingStars by remember { mutableStateOf(5) }
@@ -12309,16 +12310,17 @@ fun AppDetailsDialog(
 
     if (showDevProfileDialog) {
         val devProfile = remember(app.developer, developers) {
-            developers.find { 
-                it.devName.equals(app.developer, ignoreCase = true) || 
-                it.displayName.equals(app.developer, ignoreCase = true) 
+            developers.find {
+                it.devName.equals(app.developer, ignoreCase = true) ||
+                it.displayName.equals(app.developer, ignoreCase = true) ||
+                it.email.equals(app.submittedBy, ignoreCase = true)
             } ?: UserEntity(
                 uid = "fallback_uid",
                 email = "",
                 displayName = app.developer,
                 role = "user",
                 devName = app.developer,
-                devBio = "This developer builds professional tools for Dark Store.",
+                devBio = "This developer builds apps for Dark Store.",
                 isDeveloper = true
             )
         }
@@ -12327,331 +12329,306 @@ fun AppDetailsDialog(
             allApps.filter { it.developer.equals(app.developer, ignoreCase = true) }
         }
 
-        Dialog(onDismissRequest = { showDevProfileDialog = false }) {
-            Surface(
+        Dialog(
+            onDismissRequest = { showDevProfileDialog = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Card(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-                    .wrapContentHeight(),
-                shape = RoundedCornerShape(24.dp),
-                color = cardBgColor,
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.12f))
+                    .fillMaxWidth(0.92f)
+                    .padding(vertical = 20.dp)
+                    .heightIn(max = 620.dp),
+                shape = RoundedCornerShape(28.dp),
+                colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                border = BorderStroke(1.dp, cardBorderColor.copy(alpha = 0.9f)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 16.dp)
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(24.dp)
-                ) {
-                    // Header Row with Avatar and Info
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    // Soft header band (login-style visual accent)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(88.dp)
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(
+                                        accentGreen.copy(alpha = 0.22f),
+                                        accentGreen.copy(alpha = 0.04f)
+                                    )
+                                )
+                            )
                     ) {
+                        IconButton(
+                            onClick = { showDevProfileDialog = false },
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(8.dp)
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = textSecondary)
+                        }
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 22.dp)
+                            .offset(y = (-36).dp)
+                    ) {
+                        // Avatar — real photo when available
                         Box(
                             modifier = Modifier
-                                .size(56.dp)
-                                .background(accentGreen.copy(alpha = 0.15f), CircleShape)
-                                .border(1.5.dp, accentGreen.copy(alpha = 0.4f), CircleShape),
+                                .size(80.dp)
+                                .align(Alignment.CenterHorizontally)
+                                .clip(CircleShape)
+                                .background(accentGreen.copy(alpha = 0.12f))
+                                .border(3.dp, cardBgColor, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Person,
-                                contentDescription = "Developer",
-                                tint = accentGreen,
-                                modifier = Modifier.size(28.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = devProfile.devName.ifBlank { devProfile.displayName.ifBlank { app.developer } },
-                                color = textPrimary,
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-                            )
-                            if (devProfile.email.isNotBlank() && !devProfile.email.contains("guest")) {
-                                Text(
-                                    text = devProfile.email,
-                                    color = textSecondary,
-                                    fontSize = 11.sp
+                            if (devProfile.profilePhotoUrl.isNotBlank()) {
+                                AsyncImage(
+                                    model = devProfile.profilePhotoUrl,
+                                    contentDescription = "Developer photo",
+                                    modifier = Modifier.fillMaxSize().clip(CircleShape),
+                                    contentScale = ContentScale.Crop
                                 )
                             } else {
                                 Text(
-                                    text = "Verified Developer Account",
+                                    text = (devProfile.devName.ifBlank { devProfile.displayName }.ifBlank { app.developer }).take(1).uppercase(),
                                     color = accentGreen,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Medium
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 28.sp
                                 )
                             }
                         }
-                    }
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
 
-                    // Follow / follower count. devProfile falls back to a
-                    // synthetic "fallback_uid" entry when no real UserEntity
-                    // matched this developer's name — there's nothing real to
-                    // follow in that case, so the row is skipped entirely
-                    // rather than showing a button that can never work.
-                    if (devProfile.uid != "fallback_uid") {
-                        val followingIds by viewModel.followingIds.collectAsStateWithLifecycle()
-                        val isFollowing = followingIds.contains(devProfile.uid)
-                        var followerCount by remember(devProfile.uid) { mutableStateOf<Int?>(null) }
-                        var isTogglingFollow by remember { mutableStateOf(false) }
-                        val isOwnProfile = viewModel.userUid.collectAsStateWithLifecycle().value == devProfile.uid
+                        Text(
+                            text = devProfile.devName.ifBlank { devProfile.displayName.ifBlank { app.developer } },
+                            color = textPrimary,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 20.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        )
 
-                        LaunchedEffect(devProfile.uid) {
-                            followerCount = viewModel.fetchFollowerCount(devProfile.uid)
-                        }
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
+                        if (devProfile.email.isNotBlank() && !devProfile.email.contains("guest", ignoreCase = true)) {
                             Text(
-                                text = when (val count = followerCount) {
-                                    null -> "· · ·"
-                                    1 -> "1 follower"
-                                    else -> "$count followers"
-                                },
+                                text = devProfile.email,
                                 color = textSecondary,
                                 fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium,
-                                modifier = Modifier.weight(1f)
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth().padding(top = 2.dp)
                             )
-                            if (!isOwnProfile) {
-                                Button(
-                                    onClick = {
-                                        if (!isTogglingFollow) {
-                                            isTogglingFollow = true
-                                            val wasFollowing = isFollowing
-                                            viewModel.toggleFollowDeveloper(devProfile.uid) { success ->
-                                                isTogglingFollow = false
-                                                if (success) {
-                                                    followerCount = (followerCount ?: 0) + if (wasFollowing) -1 else 1
-                                                } else {
-                                                    Toast.makeText(context, "Couldn't update follow status — try again.", Toast.LENGTH_SHORT).show()
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Follow row
+                        if (devProfile.uid != "fallback_uid") {
+                            val followingIds by viewModel.followingIds.collectAsStateWithLifecycle()
+                            val isFollowing = followingIds.contains(devProfile.uid)
+                            var followerCount by remember(devProfile.uid) { mutableStateOf<Int?>(null) }
+                            var isTogglingFollow by remember { mutableStateOf(false) }
+                            val isOwnProfile = viewModel.userUid.collectAsStateWithLifecycle().value == devProfile.uid
+
+                            LaunchedEffect(devProfile.uid) {
+                                followerCount = viewModel.fetchFollowerCount(devProfile.uid)
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Text(
+                                    text = when (val count = followerCount) {
+                                        null -> "···"
+                                        1 -> "1 follower"
+                                        else -> "$count followers"
+                                    },
+                                    color = textSecondary,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                if (!isOwnProfile) {
+                                    Spacer(modifier = Modifier.width(14.dp))
+                                    Button(
+                                        onClick = {
+                                            if (!isTogglingFollow) {
+                                                isTogglingFollow = true
+                                                val wasFollowing = isFollowing
+                                                viewModel.toggleFollowDeveloper(devProfile.uid) { success ->
+                                                    isTogglingFollow = false
+                                                    if (success) {
+                                                        followerCount = (followerCount ?: 0) + if (wasFollowing) -1 else 1
+                                                    }
                                                 }
                                             }
-                                        }
-                                    },
-                                    enabled = !isTogglingFollow,
-                                    shape = RoundedCornerShape(10.dp),
-                                    colors = if (isFollowing) {
-                                        ButtonDefaults.buttonColors(containerColor = textSecondary.copy(alpha = 0.12f), contentColor = textPrimary)
-                                    } else {
-                                        ButtonDefaults.buttonColors(containerColor = accentGreen, contentColor = Color.White)
-                                    },
-                                    modifier = Modifier.height(34.dp)
-                                ) {
-                                    Text(
-                                        text = if (isFollowing) "Following" else "Follow",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
+                                        },
+                                        enabled = !isTogglingFollow,
+                                        shape = RoundedCornerShape(20.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = if (isFollowing) textSecondary.copy(alpha = 0.12f) else accentGreen,
+                                            contentColor = if (isFollowing) textPrimary else Color.White
+                                        ),
+                                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
+                                    ) {
+                                        Text(
+                                            if (isFollowing) "Following" else "Follow",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp
+                                        )
+                                    }
                                 }
                             }
                         }
 
+                        // About
+                        val bio = devProfile.devBio.ifBlank { "Developer on Dark Store" }
                         Spacer(modifier = Modifier.height(14.dp))
-                    }
+                        Text("About", color = textSecondary, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.6.sp)
+                        Text(
+                            text = bio,
+                            color = textPrimary,
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
 
-                    // Bio section
-                    Text(
-                        text = "About",
-                        color = textPrimary,
-                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold)
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = devProfile.devBio.ifBlank { "No bio description provided yet." },
-                        color = textSecondary,
-                        fontSize = 12.sp,
-                        lineHeight = 16.sp
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Links (Website, GitHub)
-                    if (devProfile.devWebsite.isNotBlank() || devProfile.devGithub.isNotBlank()) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            if (devProfile.devWebsite.isNotBlank()) {
-                                Row(
-                                    modifier = Modifier
-                                        .background(textSecondary.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
-                                        .clickable {
+                        // Links
+                        val hasLinks = devProfile.devWebsite.isNotBlank() || devProfile.devGithub.isNotBlank()
+                        if (hasLinks) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (devProfile.devWebsite.isNotBlank()) {
+                                    OutlinedButton(
+                                        onClick = {
                                             try {
-                                                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(
-                                                    if (!devProfile.devWebsite.startsWith("http://") && !devProfile.devWebsite.startsWith("https://")) {
-                                                        "https://" + devProfile.devWebsite
-                                                    } else {
-                                                        devProfile.devWebsite
-                                                    }
-                                                ))
-                                                context.startActivity(intent)
+                                                val url = if (devProfile.devWebsite.startsWith("http")) devProfile.devWebsite else "https://${devProfile.devWebsite}"
+                                                context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)))
                                             } catch (e: Exception) {
-                                                Toast.makeText(context, "Cannot open: ${e.message}", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, "Cannot open link", Toast.LENGTH_SHORT).show()
                                             }
-                                        }
-                                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Home,
-                                        contentDescription = "Website",
-                                        tint = accentGreen,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = "Website",
-                                        color = textPrimary,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Medium
-                                    )
+                                        },
+                                        shape = RoundedCornerShape(12.dp),
+                                        border = BorderStroke(1.dp, cardBorderColor),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                    ) {
+                                        Icon(Icons.Default.Language, null, tint = accentGreen, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Website", color = textPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                    }
                                 }
-                            }
-
-                            if (devProfile.devGithub.isNotBlank()) {
-                                Row(
-                                    modifier = Modifier
-                                        .background(textSecondary.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
-                                        .clickable {
+                                if (devProfile.devGithub.isNotBlank()) {
+                                    OutlinedButton(
+                                        onClick = {
                                             try {
-                                                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(
-                                                    if (!devProfile.devGithub.startsWith("http://") && !devProfile.devGithub.startsWith("https://")) {
-                                                        "https://github.com/" + devProfile.devGithub
-                                                    } else {
-                                                        devProfile.devGithub
-                                                    }
-                                                ))
-                                                context.startActivity(intent)
+                                                val gh = if (devProfile.devGithub.startsWith("http")) devProfile.devGithub else "https://github.com/${devProfile.devGithub}"
+                                                context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(gh)))
                                             } catch (e: Exception) {
-                                                Toast.makeText(context, "Cannot open: ${e.message}", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, "Cannot open GitHub", Toast.LENGTH_SHORT).show()
                                             }
-                                        }
-                                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Build,
-                                        contentDescription = "GitHub",
-                                        tint = accentGreen,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = "GitHub",
-                                        color = textPrimary,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Medium
-                                    )
+                                        },
+                                        shape = RoundedCornerShape(12.dp),
+                                        border = BorderStroke(1.dp, cardBorderColor),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                    ) {
+                                        Icon(Icons.Default.Code, null, tint = accentGreen, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("GitHub", color = textPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                    }
                                 }
                             }
                         }
-                        Spacer(modifier = Modifier.height(20.dp))
-                    }
 
-                    // Published Apps list section
-                    Text(
-                        text = "Published Apps (${developerApps.size})",
-                        color = textPrimary,
-                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold)
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(16.dp))
+                        HorizontalDivider(color = cardBorderColor.copy(alpha = 0.7f))
+                        Spacer(modifier = Modifier.height(12.dp))
 
-                    if (developerApps.isEmpty()) {
                         Text(
-                            text = "No other published apps listed in the catalog.",
-                            color = textSecondary.copy(alpha = 0.6f),
-                            fontSize = 12.sp,
-                            modifier = Modifier.padding(vertical = 4.dp)
+                            text = "Published Apps (${developerApps.size})",
+                            color = textPrimary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
                         )
-                    } else {
-                        // Max height for list scroll
-                        androidx.compose.foundation.lazy.LazyColumn(
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .heightIn(max = 200.dp),
+                                .heightIn(max = 220.dp)
+                                .verticalScroll(rememberScrollState()),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            items(developerApps.size) { index ->
-                                val devApp = developerApps[index]
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(textSecondary.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
-                                        .clickable {
-                                            showDevProfileDialog = false
-                                            onAppClick(devApp)
-                                        }
-                                        .padding(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    // App Icon using AppLogo Composable!
-                                    AppLogo(
-                                        logoUrl = devApp.logo,
-                                        appName = devApp.name,
-                                        packageName = devApp.packageName,
-                                        modifier = Modifier.size(36.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = devApp.name,
-                                            color = textPrimary,
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            maxLines = 1
-                                        )
-                                        Text(
-                                            text = devApp.category,
-                                            color = textSecondary,
-                                            fontSize = 10.sp,
-                                            maxLines = 1
-                                        )
-                                    }
+                            if (developerApps.isEmpty()) {
+                                Text("No published apps yet.", color = textSecondary, fontSize = 12.sp)
+                            } else {
+                                developerApps.forEach { devApp ->
                                     Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(14.dp))
+                                            .background(textSecondary.copy(alpha = 0.05f))
+                                            .clickable {
+                                                showDevProfileDialog = false
+                                                onAppClick(devApp)
+                                            }
+                                            .padding(10.dp),
                                         verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.padding(start = 4.dp)
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                                     ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Star,
-                                            contentDescription = "Rating",
-                                            tint = Color(0xFFFFB300),
-                                            modifier = Modifier.size(12.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(2.dp))
-                                        Text(
-                                            text = devApp.rating,
-                                            color = textPrimary,
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
+                                        Box(
+                                            modifier = Modifier
+                                                .size(42.dp)
+                                                .clip(RoundedCornerShape(11.dp))
+                                                .background(accentGreen.copy(alpha = 0.1f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (devApp.logo.isNotBlank()) {
+                                                AsyncImage(
+                                                    model = devApp.logo,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(11.dp)),
+                                                    contentScale = ContentScale.Crop
+                                                )
+                                            } else {
+                                                Text(devApp.name.take(1).uppercase(), color = accentGreen, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(devApp.name, color = textPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
+                                            Text(devApp.category, color = textSecondary, fontSize = 11.sp, maxLines = 1)
+                                        }
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Default.Star, null, tint = Color(0xFFFFB300), modifier = Modifier.size(13.dp))
+                                            Spacer(modifier = Modifier.width(3.dp))
+                                            Text(devApp.rating, color = textPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
 
-                    Spacer(modifier = Modifier.height(24.dp))
-
-                    // Close Button
-                    Button(
-                        onClick = { showDevProfileDialog = false },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = accentGreen),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text("Close", color = Color.White)
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(
+                            onClick = { showDevProfileDialog = false },
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = accentGreen),
+                            shape = RoundedCornerShape(14.dp),
+                            elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
+                        ) {
+                            Text("Close", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
                     }
                 }
             }
         }
     }
 }
+
 
 @Composable
 fun DetailBadgeRowItem(
@@ -13705,11 +13682,11 @@ fun FollowersFollowingDialog(
     developers: List<UserEntity>,
     onDismiss: () -> Unit
 ) {
-    val context = LocalContext.current
-    val bgCol = if (isDarkMode) Color(0xFF13151C) else Color(0xFFFFFFFF)
-    val surfaceCol = if (isDarkMode) Color(0xFF1D202B) else Color(0xFFF8FAFC)
-    val borderCol = if (isDarkMode) Color(0xFF292E3D) else Color(0xFFE2E8F0)
-    val textPrimaryCol = if (isDarkMode) Color(0xFFF1F5F9) else Color(0xFF1E293B)
+    // Option A: dark card, pill tabs, compact rows
+    val bgCol = if (isDarkMode) Color(0xFF1A1C22) else Color(0xFFFFFFFF)
+    val rowCol = if (isDarkMode) Color(0xFF22252E) else Color(0xFFF8FAFC)
+    val borderCol = if (isDarkMode) Color(0xFF2E3340) else Color(0xFFE2E8F0)
+    val textPrimaryCol = if (isDarkMode) Color(0xFFF1F5F9) else Color(0xFF0F172A)
     val textSecondaryCol = if (isDarkMode) Color(0xFF94A3B8) else Color(0xFF64748B)
     val accentGreen = Color(0xFF22C55E)
 
@@ -13723,18 +13700,27 @@ fun FollowersFollowingDialog(
     val followerUsers = remember(followerIds, developers) {
         followerIds.mapNotNull { uid -> developers.find { it.uid == uid } }
     }
+    val list = if (selectedTab == 0) followingUsers else followerUsers
 
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Card(
-            modifier = Modifier.fillMaxWidth(0.95f).fillMaxHeight(0.8f),
-            shape = RoundedCornerShape(24.dp),
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .fillMaxHeight(0.72f),
+            shape = RoundedCornerShape(28.dp),
             colors = CardDefaults.cardColors(containerColor = bgCol),
-            border = BorderStroke(1.dp, borderCol)
+            border = BorderStroke(1.dp, borderCol),
+            elevation = CardDefaults.cardElevation(defaultElevation = 12.dp)
         ) {
-            Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 20.dp, vertical = 18.dp)
+            ) {
+                // Header
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -13742,74 +13728,102 @@ fun FollowersFollowingDialog(
                 ) {
                     Text(
                         text = "Following & Followers",
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Black,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
                         color = textPrimaryCol
                     )
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = textSecondaryCol)
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = "Close",
+                            tint = textSecondaryCol,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
+                // Pill tabs
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(surfaceCol, RoundedCornerShape(12.dp))
-                        .padding(4.dp)
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    listOf("Following (${followingUsers.size})", "Followers (${followerUsers.size})").forEachIndexed { index, label ->
-                        val isSelected = selectedTab == index
+                    listOf(
+                        0 to "Following (${followingUsers.size})",
+                        1 to "Followers (${followerUsers.size})"
+                    ).forEach { (index, label) ->
+                        val selected = selectedTab == index
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .clip(RoundedCornerShape(9.dp))
-                                .background(if (isSelected) accentGreen else Color.Transparent)
+                                .clip(RoundedCornerShape(24.dp))
+                                .background(if (selected) accentGreen else Color.Transparent)
+                                .border(
+                                    width = if (selected) 0.dp else 1.dp,
+                                    color = if (selected) Color.Transparent else borderCol,
+                                    shape = RoundedCornerShape(24.dp)
+                                )
                                 .clickable { selectedTab = index }
-                                .padding(vertical = 9.dp),
+                                .padding(vertical = 11.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
                                 text = label,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isSelected) Color.White else textSecondaryCol
+                                color = if (selected) Color.White else textSecondaryCol,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 13.sp
                             )
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
-                val listToShow = if (selectedTab == 0) followingUsers else followerUsers
-
-                if (listToShow.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(
-                            text = if (selectedTab == 0) "You're not following any developers yet." else "No followers yet.",
-                            fontSize = 13.sp,
-                            color = textSecondaryCol,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(32.dp)
-                        )
+                if (list.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                imageVector = if (selectedTab == 0) Icons.Default.PersonAdd else Icons.Default.Group,
+                                contentDescription = null,
+                                tint = textSecondaryCol.copy(alpha = 0.5f),
+                                modifier = Modifier.size(40.dp)
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = if (selectedTab == 0) "Not following anyone yet" else "No followers yet",
+                                color = textSecondaryCol,
+                                fontSize = 14.sp
+                            )
+                        }
                     }
                 } else {
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        items(listToShow, key = { it.uid }) { person ->
+                        items(list, key = { it.uid }) { person ->
                             val personIsFollowedByMe = followingIds.contains(person.uid)
                             var isToggling by remember(person.uid) { mutableStateOf(false) }
 
                             Row(
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(rowCol)
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
+                                // Avatar
                                 Box(
                                     modifier = Modifier
-                                        .size(42.dp)
+                                        .size(46.dp)
                                         .clip(CircleShape)
                                         .background(accentGreen.copy(alpha = 0.15f)),
                                     contentAlignment = Alignment.Center
@@ -13818,78 +13832,77 @@ fun FollowersFollowingDialog(
                                         AsyncImage(
                                             model = person.profilePhotoUrl,
                                             contentDescription = null,
-                                            contentScale = ContentScale.Crop,
-                                            modifier = Modifier.fillMaxSize().clip(CircleShape)
+                                            modifier = Modifier.fillMaxSize().clip(CircleShape),
+                                            contentScale = ContentScale.Crop
                                         )
                                     } else {
                                         Text(
                                             text = (person.devName.ifBlank { person.displayName }).take(1).uppercase(),
                                             color = accentGreen,
-                                            fontWeight = FontWeight.Black,
+                                            fontWeight = FontWeight.Bold,
                                             fontSize = 16.sp
                                         )
                                     }
                                 }
+
                                 Spacer(modifier = Modifier.width(12.dp))
+
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = person.devName.ifBlank { person.displayName }.ifBlank { person.email },
+                                        text = person.devName.ifBlank { person.displayName }.ifBlank { "Developer" },
                                         color = textPrimaryCol,
+                                        fontWeight = FontWeight.SemiBold,
                                         fontSize = 14.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
+                                        maxLines = 1
                                     )
                                     Text(
-                                        text = if (person.isDeveloper) "Developer" else "Member",
+                                        text = if (person.isDeveloper) "Developer" else "User",
                                         color = textSecondaryCol,
-                                        fontSize = 11.sp
+                                        fontSize = 12.sp
                                     )
                                 }
 
-                                // On the Following tab, every entry is someone we
-                                // follow — always show Unfollow. On the Followers
-                                // tab: if we already follow them back, show the
-                                // same passive "Following" state; otherwise only
-                                // offer "Follow Back" when they're a developer
-                                // themselves (there's nothing to follow about a
-                                // plain member who just follows us) — otherwise no
-                                // action, just show them in the list.
-                                val showActionButton = selectedTab == 0 || personIsFollowedByMe || person.isDeveloper
-                                if (showActionButton) {
-                                    Button(
-                                        onClick = {
-                                            if (!isToggling) {
-                                                isToggling = true
-                                                viewModel.toggleFollowDeveloper(person.uid) { success ->
-                                                    isToggling = false
-                                                    if (!success) {
-                                                        Toast.makeText(
-                                                            context,
-                                                            "Couldn't update follow status — check your connection and try again.",
-                                                            Toast.LENGTH_SHORT
-                                                        ).show()
-                                                    }
-                                                }
+                                // Follow / Following chip
+                                val chipLabel = when {
+                                    personIsFollowedByMe -> "Following"
+                                    selectedTab == 1 -> "Follow Back"
+                                    else -> "Follow"
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(20.dp))
+                                        .background(
+                                            if (personIsFollowedByMe) Color.Transparent
+                                            else accentGreen.copy(alpha = 0.15f)
+                                        )
+                                        .border(
+                                            1.dp,
+                                            if (personIsFollowedByMe) borderCol else accentGreen.copy(alpha = 0.45f),
+                                            RoundedCornerShape(20.dp)
+                                        )
+                                        .clickable(enabled = !isToggling) {
+                                            isToggling = true
+                                            viewModel.toggleFollowDeveloper(person.uid) {
+                                                isToggling = false
                                             }
-                                        },
-                                        enabled = !isToggling,
-                                        shape = RoundedCornerShape(10.dp),
-                                        colors = if (personIsFollowedByMe) {
-                                            ButtonDefaults.buttonColors(containerColor = surfaceCol, contentColor = textPrimaryCol)
-                                        } else {
-                                            ButtonDefaults.buttonColors(containerColor = accentGreen, contentColor = Color.White)
-                                        },
-                                        modifier = Modifier.height(32.dp)
-                                    ) {
+                                        }
+                                        .padding(horizontal = 12.dp, vertical = 7.dp)
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        if (personIsFollowedByMe) {
+                                            Icon(
+                                                Icons.Default.Check,
+                                                contentDescription = null,
+                                                tint = accentGreen,
+                                                modifier = Modifier.size(13.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                        }
                                         Text(
-                                            text = when {
-                                                personIsFollowedByMe -> "Following"
-                                                selectedTab == 1 -> "Follow Back"
-                                                else -> "Follow"
-                                            },
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold
+                                            text = chipLabel,
+                                            color = if (personIsFollowedByMe) textSecondaryCol else accentGreen,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold
                                         )
                                     }
                                 }
@@ -13901,6 +13914,7 @@ fun FollowersFollowingDialog(
         }
     }
 }
+
 
 @Composable
 fun ComingSoonDialog(
@@ -13996,6 +14010,8 @@ fun NoticeDetailsDialog(
     val onSurface = if (isDark) Color.White else Color(0xFF111827)
     val muted = if (isDark) Color(0xFF9CA3AF) else Color(0xFF6B7280)
     val border = if (isDark) Color(0xFF2A3140) else Color(0xFFE5E7EB)
+    val accent = Color(0xFF3B82F6)
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -14003,150 +14019,171 @@ fun NoticeDetailsDialog(
         Card(
             modifier = Modifier
                 .fillMaxWidth(0.92f)
-                .padding(vertical = 20.dp),
+                .padding(vertical = 20.dp)
+                .heightIn(max = 640.dp),
             shape = RoundedCornerShape(28.dp),
             colors = CardDefaults.cardColors(containerColor = surface),
             border = BorderStroke(1.dp, border),
-            elevation = CardDefaults.cardElevation(defaultElevation = 12.dp)
+            elevation = CardDefaults.cardElevation(defaultElevation = 16.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+            Column(modifier = Modifier.fillMaxWidth()) {
+                // Header image / gradient
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(if (notice.imageUrl.isNotBlank()) 180.dp else 110.dp)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .background(Color(0xFF00AAFF).copy(alpha = 0.1f), RoundedCornerShape(8.dp))
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Text(
-                            text = "SYSTEM NOTICE",
-                            color = Color(0xFF00AAFF),
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace
+                    if (notice.imageUrl.isNotBlank()) {
+                        AsyncImage(
+                            model = notice.imageUrl,
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(Color.Transparent, surface.copy(alpha = 0.85f))
+                                    )
+                                )
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(accent.copy(alpha = 0.25f), surface)
+                                    )
+                                )
+                        )
+                        Icon(
+                            imageVector = Icons.Default.Campaign,
+                            contentDescription = null,
+                            tint = accent.copy(alpha = 0.7f),
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .size(48.dp)
                         )
                     }
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = muted)
-                    }
-                }
-                
-                Spacer(modifier = Modifier.height(14.dp))
-                
-                if (notice.imageUrl.isNotBlank()) {
-                    AsyncImage(
-                        model = notice.imageUrl,
-                        contentDescription = "Announcement photograph",
+
+                    // Badge + close
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(180.dp)
-                            .clip(RoundedCornerShape(14.dp)),
-                        contentScale = ContentScale.Crop
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
+                            .padding(12.dp)
+                            .align(Alignment.TopStart),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .background(accent.copy(alpha = 0.9f), RoundedCornerShape(8.dp))
+                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = "SYSTEM NOTICE",
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                letterSpacing = 0.5.sp
+                            )
+                        }
+                        IconButton(
+                            onClick = onDismiss,
+                            modifier = Modifier
+                                .size(36.dp)
+                                .background(surface.copy(alpha = 0.75f), CircleShape)
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = onSurface, modifier = Modifier.size(18.dp))
+                        }
+                    }
                 }
-                
-                Text(
-                    text = notice.title,
-                    color = onSurface,
-                    style = MaterialTheme.typography.titleLarge.copy(
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.15.sp
-                    )
-                )
-                
-                Spacer(modifier = Modifier.height(6.dp))
-                
-                val timeStr = java.text.SimpleDateFormat("MMM dd, yyyy - HH:mm", java.util.Locale.getDefault()).format(java.util.Date(notice.timestamp))
-                Text(
-                    text = "Sent on $timeStr",
-                    color = muted,
-                    fontSize = 11.sp
-                )
-                
-                Spacer(modifier = Modifier.height(14.dp))
-                
+
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .verticalScroll(rememberScrollState())
-                        .weight(1f, fill = false)
+                        .padding(horizontal = 22.dp, vertical = 8.dp)
                 ) {
                     Text(
-                        text = notice.message,
-                        color = onSurface.copy(alpha = 0.9f),
-                        fontSize = 13.sp,
-                        lineHeight = 18.sp
+                        text = notice.title,
+                        color = onSurface,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 20.sp,
+                        lineHeight = 26.sp
                     )
-                }
-                
-                Spacer(modifier = Modifier.height(18.dp))
-                
-                val urlPattern = """https?://[^\s]+""".toRegex()
-                val detectedUrl = urlPattern.find(notice.message)?.value 
-                    ?: urlPattern.find(notice.title)?.value
 
-                if (detectedUrl != null) {
-                    val context = LocalContext.current
-                    Button(
-                        onClick = {
-                            try {
-                                val uri = android.net.Uri.parse(detectedUrl)
-                                val intent = Intent(Intent.ACTION_VIEW, uri).apply {
-                                    setPackage("com.android.chrome")
-                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                }
-                                context.startActivity(intent)
-                            } catch (e: Exception) {
-                                try {
-                                    val uri = android.net.Uri.parse(detectedUrl)
-                                    val intent = Intent(Intent.ACTION_VIEW, uri).apply {
-                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                    }
-                                    context.startActivity(intent)
-                                } catch (ex: Exception) {
-                                    android.widget.Toast.makeText(context, "No web browser found.", android.widget.Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        },
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF5350)),
-                        modifier = Modifier.fillMaxWidth().height(44.dp)
+                    val timeStr = java.text.SimpleDateFormat("MMM d, yyyy · HH:mm", java.util.Locale.getDefault())
+                        .format(java.util.Date(notice.timestamp))
+                    Text(
+                        text = timeStr,
+                        color = muted,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(top = 6.dp, bottom = 14.dp)
+                    )
+
+                    HorizontalDivider(color = border.copy(alpha = 0.8f))
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 14.dp)
+                            .heightIn(max = 220.dp)
+                            .verticalScroll(rememberScrollState())
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.ArrowForward,
-                                contentDescription = "Chrome Redirect icon",
-                                tint = Color.White,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Text("RUN IN GOOGLE CHROME", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        }
+                        Text(
+                            text = notice.message,
+                            color = onSurface.copy(alpha = 0.92f),
+                            fontSize = 14.sp,
+                            lineHeight = 21.sp
+                        )
                     }
-                    Spacer(modifier = Modifier.height(10.dp))
-                }
 
-                Button(
-                    onClick = onDismiss,
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00AAFF)),
-                    modifier = Modifier.fillMaxWidth().height(44.dp)
-                ) {
-                    Text("I UNDERSTAND", color = Color.White, fontWeight = FontWeight.SemiBold)
+                    val urlPattern = """https?://[^\s]+""".toRegex()
+                    val detectedUrl = urlPattern.find(notice.message)?.value
+                        ?: urlPattern.find(notice.title)?.value
+
+                    if (detectedUrl != null) {
+                        val context = LocalContext.current
+                        OutlinedButton(
+                            onClick = {
+                                try {
+                                    val intent = android.content.Intent(
+                                        android.content.Intent.ACTION_VIEW,
+                                        android.net.Uri.parse(detectedUrl)
+                                    ).apply { addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK) }
+                                    context.startActivity(intent)
+                                } catch (_: Exception) {}
+                            },
+                            modifier = Modifier.fillMaxWidth().height(46.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, accent.copy(alpha = 0.4f))
+                        ) {
+                            Icon(Icons.Default.OpenInNew, null, tint = accent, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Open link", color = accent, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+                    }
+
+                    Button(
+                        onClick = onDismiss,
+                        modifier = Modifier.fillMaxWidth().height(50.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = accent),
+                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
+                    ) {
+                        Text("I understand", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    }
+                    Spacer(modifier = Modifier.height(14.dp))
                 }
             }
         }
     }
 }
+
 
 @Composable
 fun SendNoticeFormDialog(

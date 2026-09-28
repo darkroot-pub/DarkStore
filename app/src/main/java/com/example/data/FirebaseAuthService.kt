@@ -230,9 +230,10 @@ object FirebaseAuthService {
                         }
                     }
 
-                    // Block suspended accounts from signing in.
-                    if (user.isSuspended) {
-                        val reason = user.suspensionReason.ifBlank { "Please contact support." }
+                    // Block suspended accounts from signing in (by uid or matching email).
+                    val (suspended, suspReason) = checkAccountSuspended(user.uid, user.email)
+                    if (user.isSuspended || suspended) {
+                        val reason = user.suspensionReason.ifBlank { suspReason }.ifBlank { "Please contact support." }
                         return@use Triple(false, "Account suspended: $reason", null)
                     }
 
@@ -421,6 +422,12 @@ object FirebaseAuthService {
         }
 
         val finalUser = user!!
+        val (suspended, reason) = checkAccountSuspended(finalUser.uid, finalUser.email)
+        if (suspended || finalUser.isSuspended) {
+            val msg = (if (finalUser.suspensionReason.isNotBlank()) finalUser.suspensionReason else reason)
+                .ifBlank { "Please contact support." }
+            return@withContext Triple(false, "Account suspended: $msg", null)
+        }
         saveUserInRealtimeDatabase(finalUser)
         saveLocalUser(context, finalUser, "google_oauth_token_$uid")
 
@@ -489,6 +496,12 @@ object FirebaseAuthService {
                     }
 
                     val finalUser = user!!
+                    val (suspended, reason) = checkAccountSuspended(finalUser.uid, finalUser.email)
+                    if (suspended || finalUser.isSuspended) {
+                        val msg = (if (finalUser.suspensionReason.isNotBlank()) finalUser.suspensionReason else reason)
+                            .ifBlank { "Please contact support." }
+                        return@use Triple(false, "Account suspended: $msg", null)
+                    }
                     saveUserInRealtimeDatabase(finalUser)
                     saveLocalUser(context, finalUser, token, refreshToken)
                     Triple(true, "Successfully authenticated with Google through Firebase IDP!", finalUser)
@@ -522,6 +535,12 @@ object FirebaseAuthService {
                         )
                     }
                     val finalUser = user!!
+                    val (suspended, reason) = checkAccountSuspended(finalUser.uid, finalUser.email)
+                    if (suspended || finalUser.isSuspended) {
+                        val msg = (if (finalUser.suspensionReason.isNotBlank()) finalUser.suspensionReason else reason)
+                            .ifBlank { "Please contact support." }
+                        return@use Triple(false, "Account suspended: $msg", null)
+                    }
                     saveUserInRealtimeDatabase(finalUser)
                     saveLocalUser(context, finalUser, "fake_token_$uid")
                     Triple(true, "Authenticated via Google Account (offline compatibility).", finalUser)
@@ -559,10 +578,56 @@ object FirebaseAuthService {
                 )
             }
             val finalUser = user!!
+            val (suspended, reason) = checkAccountSuspended(finalUser.uid, finalUser.email)
+            if (suspended || finalUser.isSuspended) {
+                val msg = (if (finalUser.suspensionReason.isNotBlank()) finalUser.suspensionReason else reason)
+                    .ifBlank { "Please contact support." }
+                return@withContext Triple(false, "Account suspended: $msg", null)
+            }
             saveUserInRealtimeDatabase(finalUser)
             saveLocalUser(context, finalUser, "fake_token_$uid")
             Triple(true, "Google Sign-In offline fallback successful.", finalUser)
         }
+    }
+
+
+    /**
+     * Checks whether this account is suspended in RTDB.
+     * Looks up by uid first, then by email (Google sign-in can use a different
+     * uid shape than the record an admin suspended from the Users tab).
+     */
+    private fun checkAccountSuspended(uid: String, email: String): Pair<Boolean, String> {
+        try {
+            if (uid.isNotBlank()) {
+                val tokenParam = getTokenParam()
+                val request = Request.Builder()
+                    .url("${RTDB_URL}users/${uid}.json$tokenParam")
+                    .get()
+                    .build()
+                client.newCall(request).execute().use { response ->
+                    if (response.isSuccessful) {
+                        val body = response.body?.string()
+                        if (!body.isNullOrBlank() && body != "null") {
+                            val json = JSONObject(body)
+                            if (json.optBoolean("isSuspended", false)) {
+                                return true to json.optString("suspensionReason", "")
+                            }
+                        }
+                    }
+                }
+            }
+            // Fallback: match any users/{id} with the same email
+            if (email.isNotBlank()) {
+                for (u in fetchAllUsersFromRTDB()) {
+                    if (u.email.equals(email, ignoreCase = true) && u.isSuspended) {
+                        return true to u.suspensionReason
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "checkAccountSuspended: ${e.message}")
+        }
+        return false to ""
     }
 
     suspend fun saveUserInRealtimeDatabase(user: UserEntity): Boolean = withContext(Dispatchers.IO) {
