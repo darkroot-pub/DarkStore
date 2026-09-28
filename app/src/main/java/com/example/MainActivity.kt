@@ -8637,38 +8637,52 @@ fun ConsoleTabContent(
     val developers by viewModel.developers.collectAsStateWithLifecycle()
     val termsAgreements by viewModel.termsAgreements.collectAsStateWithLifecycle()
     val devName by viewModel.devName.collectAsStateWithLifecycle()
+    val auditEntries by viewModel.auditLog.collectAsStateWithLifecycle()
+    val maintenanceCfg by viewModel.maintenanceConfig.collectAsStateWithLifecycle()
+    val isPremiumFreeModeAdmin by viewModel.isPremiumFreeMode.collectAsStateWithLifecycle()
     
     val isAdmin = userRole == "admin" || userEmail.equals("davidstha900@gmail.com", ignoreCase = true) || userUid == "JN4BPhEKBBRUb5hpMdQJQmRrjiq1"
     
     if (!isAdmin) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(24.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
+        Box(
+            modifier = Modifier.fillMaxSize().padding(24.dp),
+            contentAlignment = Alignment.Center
         ) {
-            Icon(
-                imageVector = Icons.Default.Lock,
-                contentDescription = "Access Denied",
-                tint = Color(0xFFEF5350),
-                modifier = Modifier.size(60.dp)
-            )
-            Spacer(modifier = Modifier.height(14.dp))
-            Text(
-                "Access Denied",
-                fontWeight = FontWeight.Bold,
-                color = textPrimary,
-                fontSize = 18.sp
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                "The Admin Review Console is restricted to Administrators only. To register as a developer and submit your own apps, go to Profile — every user can submit apps for review there.",
-                color = textSecondary,
-                fontSize = 12.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = 20.dp)
-            )
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                shape = RoundedCornerShape(28.dp),
+                colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.2f)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(28.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(72.dp)
+                            .background(Color(0xFFEF4444).copy(alpha = 0.12f), RoundedCornerShape(22.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = null,
+                            tint = Color(0xFFEF4444),
+                            modifier = Modifier.size(36.dp)
+                        )
+                    }
+                    Text("Access Denied", fontWeight = FontWeight.ExtraBold, color = textPrimary, fontSize = 22.sp)
+                    Text(
+                        "The Admin Console is for administrators only. Register as a developer in Profile to submit your own apps for review.",
+                        color = textSecondary,
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 18.sp
+                    )
+                }
+            }
         }
         return
     }
@@ -8771,80 +8785,100 @@ fun ConsoleTabContent(
     }
 
     if (!isAuthorized) {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(24.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
+                .padding(24.dp),
+            contentAlignment = Alignment.Center
         ) {
-            Icon(
-                imageVector = Icons.Default.Lock,
-                contentDescription = "Locked console",
-                tint = accentGreen,
-                modifier = Modifier.size(60.dp)
-            )
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            Text(
-                "Developer Authorization Console",
-                fontWeight = FontWeight.Bold,
-                color = textPrimary,
-                fontSize = 16.sp
-            )
-
-            Spacer(modifier = Modifier.height(6.dp))
-
-            Text(
-                "Access developer portal of Dark Store to manage catalog entries, delete packages, or upload applications directly.",
-                color = textSecondary,
-                fontSize = 11.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = 20.dp)
-            )
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            OutlinedTextField(
-                value = pinValue,
-                onValueChange = { pinValue = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("admin_password_field"),
-                placeholder = { Text("Developer Security PIN") },
-                singleLine = true,
-                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = textPrimary,
-                    unfocusedTextColor = textPrimary,
-                    focusedBorderColor = accentGreen,
-                    unfocusedBorderColor = cardBorderColor
-                )
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Button(
-                onClick = {
-                    if (pinValue == "4321") {
-                        isAuthorized = true
-                    } else {
-                        Toast.makeText(context, "Incorrect credential PIN!", Toast.LENGTH_SHORT).show()
-                    }
-                },
-                shape = RoundedCornerShape(10.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = accentGreen),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(44.dp)
-                    .testTag("admin_auth_submit_button")
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                shape = RoundedCornerShape(28.dp),
+                colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                border = BorderStroke(1.dp, cardBorderColor),
+                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
             ) {
-                Text("AUTHORIZE CONSOLE", color = Color.White, fontWeight = FontWeight.Bold)
+                Column(
+                    modifier = Modifier.padding(28.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(72.dp)
+                            .background(accentGreen.copy(alpha = 0.12f), RoundedCornerShape(22.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = null,
+                            tint = accentGreen,
+                            modifier = Modifier.size(36.dp)
+                        )
+                    }
+
+                    Text(
+                        "Admin Console",
+                        fontWeight = FontWeight.ExtraBold,
+                        color = textPrimary,
+                        fontSize = 22.sp
+                    )
+
+                    Text(
+                        "Enter your security PIN to manage submissions, catalog, and store settings.",
+                        color = textSecondary,
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 18.sp
+                    )
+
+                    OutlinedTextField(
+                        value = pinValue,
+                        onValueChange = { pinValue = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("admin_password_field"),
+                        placeholder = { Text("Security PIN", color = textSecondary.copy(alpha = 0.5f)) },
+                        singleLine = true,
+                        shape = RoundedCornerShape(16.dp),
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        leadingIcon = {
+                            Icon(Icons.Default.VpnKey, contentDescription = null, tint = textSecondary, modifier = Modifier.size(20.dp))
+                        },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = textPrimary,
+                            unfocusedTextColor = textPrimary,
+                            focusedBorderColor = accentGreen,
+                            unfocusedBorderColor = cardBorderColor,
+                            focusedContainerColor = textSecondary.copy(alpha = 0.04f),
+                            unfocusedContainerColor = textSecondary.copy(alpha = 0.04f),
+                            cursorColor = accentGreen
+                        )
+                    )
+
+                    Button(
+                        onClick = {
+                            if (pinValue == "4321") {
+                                isAuthorized = true
+                            } else {
+                                Toast.makeText(context, "Incorrect PIN", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = accentGreen),
+                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp)
+                            .testTag("admin_auth_submit_button")
+                    ) {
+                        Text("Unlock", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    }
+                }
             }
         }
+
     } else {
         // ─── NEW REDESIGNED ADMIN PANEL ───────────────────────────────────────────
         LazyColumn(
@@ -9755,7 +9789,6 @@ fun ConsoleTabContent(
                     // needing a new build. Flipping it off doesn't touch
                     // anyone who's already enabled Premium; it only stops
                     // NEW activations, showing a Coming Soon message instead.
-                    val isPremiumFreeModeAdmin by viewModel.isPremiumFreeMode.collectAsStateWithLifecycle()
                     var isSavingPremiumConfig by remember { mutableStateOf(false) }
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -9808,7 +9841,6 @@ fun ConsoleTabContent(
 
                     // Maintenance mode — take the whole store offline for users
                     // (admins can still reach the console).
-                    val maintenanceCfg by viewModel.maintenanceConfig.collectAsStateWithLifecycle()
                     var isSavingMaintenance by remember { mutableStateOf(false) }
                     var maintenanceMessage by remember(maintenanceCfg.message) { mutableStateOf(maintenanceCfg.message) }
                     Card(
@@ -9879,7 +9911,6 @@ fun ConsoleTabContent(
 
             // ── AUDIT LOG TAB ─────────────────────────────────────────────────────
             if (isAdmin && adminSegmentIndex == 4) {
-                val auditEntries by viewModel.auditLog.collectAsStateWithLifecycle()
                 if (auditEntries.isEmpty()) {
                     item {
                         Box(modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
@@ -10145,201 +10176,310 @@ fun ConsoleTabContent(
 
         if (submissionToApprove != null) {
             val sub = submissionToApprove!!
-            AlertDialog(
+            Dialog(
                 onDismissRequest = { submissionToApprove = null },
-                shape = RoundedCornerShape(20.dp),
-                containerColor = cardBgColor,
-                title = {
-                    Text(
-                        text = "Specify Approval Feedback (Optional)",
-                        fontWeight = FontWeight.Bold,
-                        color = accentGreen,
-                        fontSize = 18.sp
-                    )
-                },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                properties = DialogProperties(usePlatformDefaultWidth = false)
+            ) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth(0.92f)
+                        .padding(vertical = 24.dp),
+                    shape = RoundedCornerShape(28.dp),
+                    colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                    border = BorderStroke(1.dp, accentGreen.copy(alpha = 0.25f)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 12.dp)
+                ) {
+                    Column(modifier = Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                        // Header with icon
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                            Box(
+                                modifier = Modifier
+                                    .size(52.dp)
+                                    .background(accentGreen.copy(alpha = 0.12f), RoundedCornerShape(16.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = accentGreen, modifier = Modifier.size(28.dp))
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Approve App", fontWeight = FontWeight.ExtraBold, color = textPrimary, fontSize = 20.sp)
+                                Text(sub.name, color = textSecondary, fontSize = 13.sp, maxLines = 1)
+                            }
+                            IconButton(onClick = { submissionToApprove = null }, modifier = Modifier.size(32.dp)) {
+                                Icon(Icons.Default.Close, contentDescription = "Close", tint = textSecondary, modifier = Modifier.size(20.dp))
+                            }
+                        }
+
+                        HorizontalDivider(color = cardBorderColor.copy(alpha = 0.6f))
+
                         Text(
-                            text = "You can write optional approval feedback explaining guidelines matched or congratulating the developer. This feedback is saved in the database and visible to the developer.",
+                            text = "Optional feedback is saved and shown to the developer after approval.",
                             color = textSecondary,
-                            fontSize = 12.sp
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp
                         )
+
                         OutlinedTextField(
                             value = approvalFeedback,
                             onValueChange = { approvalFeedback = it },
-                            label = { Text("Approval Feedback", color = textSecondary) },
+                            placeholder = { Text("e.g. Looks great — welcome to the catalog!", color = textSecondary.copy(alpha = 0.5f), fontSize = 13.sp) },
                             singleLine = false,
-                            maxLines = 4,
+                            minLines = 3,
+                            maxLines = 5,
+                            shape = RoundedCornerShape(16.dp),
                             colors = TextFieldDefaults.colors(
-                                focusedContainerColor = Color.Transparent,
-                                unfocusedContainerColor = Color.Transparent,
+                                focusedContainerColor = textSecondary.copy(alpha = 0.04f),
+                                unfocusedContainerColor = textSecondary.copy(alpha = 0.04f),
                                 focusedIndicatorColor = accentGreen,
                                 unfocusedIndicatorColor = cardBorderColor,
                                 focusedTextColor = textPrimary,
-                                unfocusedTextColor = textPrimary
+                                unfocusedTextColor = textPrimary,
+                                cursorColor = accentGreen
                             ),
                             modifier = Modifier.fillMaxWidth().testTag("approval_feedback_input")
                         )
-                    }
-                },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            viewModel.approveSubmission(sub, feedback = approvalFeedback.ifBlank { "Approved and published inside Dark Store catalog." }) { success, msg ->
-                                Toast.makeText(context, msg ?: "Submission Approved", Toast.LENGTH_SHORT).show()
-                                submissionToApprove = null
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            OutlinedButton(
+                                onClick = { submissionToApprove = null },
+                                modifier = Modifier.weight(1f).height(48.dp).testTag("cancel_approve_btn"),
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(1.dp, cardBorderColor)
+                            ) {
+                                Text("Cancel", color = textSecondary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                             }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = accentGreen),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.testTag("confirm_approve_btn")
-                    ) {
-                        Text("APPROVE APP", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    }
-                },
-                dismissButton = {
-                    TextButton(
-                        onClick = { submissionToApprove = null },
-                        modifier = Modifier.testTag("cancel_approve_btn")
-                    ) {
-                        Text("CANCEL", color = textSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Button(
+                                onClick = {
+                                    viewModel.approveSubmission(sub, feedback = approvalFeedback.ifBlank { "Approved and published inside Dark Store catalog." }) { success, msg ->
+                                        Toast.makeText(context, msg ?: "Submission Approved", Toast.LENGTH_SHORT).show()
+                                        submissionToApprove = null
+                                    }
+                                },
+                                modifier = Modifier.weight(1f).height(48.dp).testTag("confirm_approve_btn"),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = accentGreen),
+                                elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
+                            ) {
+                                Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Approve", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            }
+                        }
                     }
                 }
-            )
+            }
         }
 
         if (submissionToReject != null) {
             val sub = submissionToReject!!
-            AlertDialog(
+            Dialog(
                 onDismissRequest = { submissionToReject = null },
-                shape = RoundedCornerShape(20.dp),
-                containerColor = cardBgColor,
-                title = {
-                    Text(
-                        text = "Specify Rejection Reason",
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFFEF5350),
-                        fontSize = 18.sp
-                    )
-                },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                properties = DialogProperties(usePlatformDefaultWidth = false)
+            ) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth(0.92f)
+                        .padding(vertical = 24.dp),
+                    shape = RoundedCornerShape(28.dp),
+                    colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                    border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.25f)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 12.dp)
+                ) {
+                    Column(modifier = Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                            Box(
+                                modifier = Modifier
+                                    .size(52.dp)
+                                    .background(Color(0xFFEF4444).copy(alpha = 0.12f), RoundedCornerShape(16.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.Cancel, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(28.dp))
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Reject App", fontWeight = FontWeight.ExtraBold, color = textPrimary, fontSize = 20.sp)
+                                Text(sub.name, color = textSecondary, fontSize = 13.sp, maxLines = 1)
+                            }
+                            IconButton(onClick = { submissionToReject = null }, modifier = Modifier.size(32.dp)) {
+                                Icon(Icons.Default.Close, contentDescription = "Close", tint = textSecondary, modifier = Modifier.size(20.dp))
+                            }
+                        }
+
+                        HorizontalDivider(color = cardBorderColor.copy(alpha = 0.6f))
+
                         Text(
-                            text = "Please write a concise reason explaining why the application '${sub.name}' was rejected. This reason will be dispatched instantly to the developer's client device via FCM.",
+                            text = "Tell the developer why this submission was declined. They will see this message.",
                             color = textSecondary,
-                            fontSize = 12.sp
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp
                         )
+
                         OutlinedTextField(
                             value = rejectionReason,
                             onValueChange = { rejectionReason = it },
-                            label = { Text("Reason for Rejection", color = textSecondary) },
+                            placeholder = { Text("e.g. Missing privacy policy / malware scan failed…", color = textSecondary.copy(alpha = 0.5f), fontSize = 13.sp) },
                             singleLine = false,
-                            maxLines = 4,
+                            minLines = 3,
+                            maxLines = 5,
+                            shape = RoundedCornerShape(16.dp),
                             colors = TextFieldDefaults.colors(
-                                focusedContainerColor = Color.Transparent,
-                                unfocusedContainerColor = Color.Transparent,
-                                focusedIndicatorColor = accentGreen,
+                                focusedContainerColor = textSecondary.copy(alpha = 0.04f),
+                                unfocusedContainerColor = textSecondary.copy(alpha = 0.04f),
+                                focusedIndicatorColor = Color(0xFFEF4444),
                                 unfocusedIndicatorColor = cardBorderColor,
                                 focusedTextColor = textPrimary,
-                                unfocusedTextColor = textPrimary
+                                unfocusedTextColor = textPrimary,
+                                cursorColor = Color(0xFFEF4444)
                             ),
                             modifier = Modifier.fillMaxWidth().testTag("rejection_reason_input")
                         )
-                    }
-                },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            viewModel.rejectSubmission(sub, reason = rejectionReason.ifBlank { "Submission did not satisfy safety regulations." }) { success, msg ->
-                                Toast.makeText(context, msg ?: "Submission Rejected", Toast.LENGTH_SHORT).show()
-                                submissionToReject = null
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            OutlinedButton(
+                                onClick = { submissionToReject = null },
+                                modifier = Modifier.weight(1f).height(48.dp).testTag("cancel_reject_btn"),
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(1.dp, cardBorderColor)
+                            ) {
+                                Text("Cancel", color = textSecondary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                             }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF5350)),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.testTag("confirm_reject_btn")
-                    ) {
-                        Text("REJECT APP", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    }
-                },
-                dismissButton = {
-                    TextButton(
-                        onClick = { submissionToReject = null },
-                        modifier = Modifier.testTag("cancel_reject_btn")
-                    ) {
-                        Text("CANCEL", color = textSecondary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Button(
+                                onClick = {
+                                    viewModel.rejectSubmission(sub, reason = rejectionReason.ifBlank { "Submission did not satisfy safety regulations." }) { success, msg ->
+                                        Toast.makeText(context, msg ?: "Submission Rejected", Toast.LENGTH_SHORT).show()
+                                        submissionToReject = null
+                                    }
+                                },
+                                modifier = Modifier.weight(1f).height(48.dp).testTag("confirm_reject_btn"),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                                elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
+                            ) {
+                                Icon(Icons.Default.Close, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Reject", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            }
+                        }
                     }
                 }
-            )
+            }
         }
 
         if (isSuspensionDialogActive && appToManageSuspension != null) {
             val app = appToManageSuspension!!
-            AlertDialog(
+            val isCurrentlySuspended = app.isSuspended
+            val accent = if (isCurrentlySuspended) Color(0xFF10B981) else Color(0xFFEF4444)
+            Dialog(
                 onDismissRequest = { isSuspensionDialogActive = false; appToManageSuspension = null },
-                shape = RoundedCornerShape(20.dp),
-                containerColor = cardBgColor,
-                title = {
-                    Text(
-                        text = if (app.isSuspended) "Unsuspend Application" else "Suspend Application",
-                        fontWeight = FontWeight.Bold,
-                        color = if (app.isSuspended) Color(0xFF10B981) else Color(0xFFEF5350),
-                        fontSize = 18.sp
-                    )
-                },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(
-                            text = if (app.isSuspended) 
-                                "Are you sure you want to reactivate and unsuspend '${app.name}'? Regulating its visibility back to standard users."
-                            else 
-                                "Enter the reason for suspending '${app.name}'. Suspended applications are filtered out from the marketplace views of normal users.",
-                            color = textSecondary,
-                            fontSize = 12.sp
-                        )
-                        OutlinedTextField(
-                            value = suspensionDialogReason,
-                            onValueChange = { suspensionDialogReason = it },
-                            label = { Text("Reason for action", color = textSecondary) },
-                            singleLine = false,
-                            maxLines = 4,
-                            colors = TextFieldDefaults.colors(
-                                focusedContainerColor = Color.Transparent,
-                                unfocusedContainerColor = Color.Transparent,
-                                focusedIndicatorColor = if (app.isSuspended) Color(0xFF10B981) else Color(0xFFEF5350),
-                                unfocusedIndicatorColor = cardBorderColor,
-                                focusedTextColor = textPrimary,
-                                unfocusedTextColor = textPrimary
-                            ),
-                            modifier = Modifier.fillMaxWidth().testTag("suspension_reason_input")
-                        )
-                    }
-                },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            val targetState = !app.isSuspended
-                            viewModel.suspendApp(app.id, targetState, suspensionDialogReason) { success, msg ->
-                                Toast.makeText(context, msg ?: "Action performed", Toast.LENGTH_SHORT).show()
-                                if (success) {
-                                    isSuspensionDialogActive = false
-                                    appToManageSuspension = null
-                                }
+                properties = DialogProperties(usePlatformDefaultWidth = false)
+            ) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth(0.92f)
+                        .padding(vertical = 24.dp),
+                    shape = RoundedCornerShape(28.dp),
+                    colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                    border = BorderStroke(1.dp, accent.copy(alpha = 0.25f)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 12.dp)
+                ) {
+                    Column(modifier = Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                            Box(
+                                modifier = Modifier
+                                    .size(52.dp)
+                                    .background(accent.copy(alpha = 0.12f), RoundedCornerShape(16.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    if (isCurrentlySuspended) Icons.Default.PlayArrow else Icons.Default.Block,
+                                    contentDescription = null,
+                                    tint = accent,
+                                    modifier = Modifier.size(28.dp)
+                                )
                             }
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (app.isSuspended) Color(0xFF10B981) else Color(0xFFEF5350)
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    if (isCurrentlySuspended) "Resume App" else "Suspend App",
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = textPrimary,
+                                    fontSize = 20.sp
+                                )
+                                Text(app.name, color = textSecondary, fontSize = 13.sp, maxLines = 1)
+                            }
+                            IconButton(
+                                onClick = { isSuspensionDialogActive = false; appToManageSuspension = null },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(Icons.Default.Close, contentDescription = "Close", tint = textSecondary, modifier = Modifier.size(20.dp))
+                            }
+                        }
+
+                        HorizontalDivider(color = cardBorderColor.copy(alpha = 0.6f))
+
+                        Text(
+                            text = if (isCurrentlySuspended)
+                                "This will make the app visible and downloadable in the store again."
+                            else
+                                "Suspended apps stay in the catalog but are hidden from normal browsing and downloads.",
+                            color = textSecondary,
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp
                         )
-                    ) {
-                        Text(if (app.isSuspended) "UNSUSPEND" else "SUSPEND", color = Color.White)
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { isSuspensionDialogActive = false; appToManageSuspension = null }) {
-                        Text("CANCEL", color = textSecondary)
+
+                        if (!isCurrentlySuspended) {
+                            OutlinedTextField(
+                                value = suspensionDialogReason,
+                                onValueChange = { suspensionDialogReason = it },
+                                placeholder = { Text("Reason (optional)", color = textSecondary.copy(alpha = 0.5f), fontSize = 13.sp) },
+                                singleLine = false,
+                                minLines = 2,
+                                maxLines = 4,
+                                shape = RoundedCornerShape(16.dp),
+                                colors = TextFieldDefaults.colors(
+                                    focusedContainerColor = textSecondary.copy(alpha = 0.04f),
+                                    unfocusedContainerColor = textSecondary.copy(alpha = 0.04f),
+                                    focusedIndicatorColor = accent,
+                                    unfocusedIndicatorColor = cardBorderColor,
+                                    focusedTextColor = textPrimary,
+                                    unfocusedTextColor = textPrimary,
+                                    cursorColor = accent
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            OutlinedButton(
+                                onClick = { isSuspensionDialogActive = false; appToManageSuspension = null },
+                                modifier = Modifier.weight(1f).height(48.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(1.dp, cardBorderColor)
+                            ) {
+                                Text("Cancel", color = textSecondary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                            }
+                            Button(
+                                onClick = {
+                                    val targetState = !isCurrentlySuspended
+                                    viewModel.suspendApp(app.id, targetState, suspensionDialogReason) { success, msg ->
+                                        Toast.makeText(context, msg ?: if (success) "Updated" else "Failed", Toast.LENGTH_SHORT).show()
+                                        isSuspensionDialogActive = false
+                                        appToManageSuspension = null
+                                    }
+                                },
+                                modifier = Modifier.weight(1f).height(48.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = accent),
+                                elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
+                            ) {
+                                Text(
+                                    if (isCurrentlySuspended) "Resume" else "Suspend",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                            }
+                        }
                     }
                 }
-            )
+            }
         }
 
         if (showPushUpdateFormFor != null) {
@@ -10683,53 +10823,135 @@ fun ConsoleTabContent(
             var displayNameLocal by remember { mutableStateOf(user.displayName) }
             var isSaving by remember { mutableStateOf(false) }
 
-            androidx.compose.ui.window.Dialog(onDismissRequest = { userToEdit = null }) {
+            Dialog(
+                onDismissRequest = { userToEdit = null },
+                properties = DialogProperties(usePlatformDefaultWidth = false)
+            ) {
                 Card(
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = cardBgColor)
+                    modifier = Modifier
+                        .fillMaxWidth(0.92f)
+                        .padding(vertical = 24.dp),
+                    shape = RoundedCornerShape(28.dp),
+                    colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                    border = BorderStroke(1.dp, cardBorderColor),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 12.dp)
                 ) {
                     Column(
-                        modifier = Modifier.padding(20.dp),
+                        modifier = Modifier.padding(24.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        Text("Edit User Data", color = textPrimary, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                        Text(text = "Email: ${user.email}", color = textSecondary, fontSize = 12.sp)
-                        
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                            Box(
+                                modifier = Modifier
+                                    .size(52.dp)
+                                    .background(accentGreen.copy(alpha = 0.12f), RoundedCornerShape(16.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    user.displayName.ifBlank { user.email }.take(1).uppercase(),
+                                    color = accentGreen,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 20.sp
+                                )
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Edit User", fontWeight = FontWeight.ExtraBold, color = textPrimary, fontSize = 20.sp)
+                                Text(user.email, color = textSecondary, fontSize = 12.sp, maxLines = 1)
+                            }
+                            IconButton(onClick = { userToEdit = null }, modifier = Modifier.size(32.dp)) {
+                                Icon(Icons.Default.Close, contentDescription = "Close", tint = textSecondary, modifier = Modifier.size(20.dp))
+                            }
+                        }
+
+                        HorizontalDivider(color = cardBorderColor.copy(alpha = 0.6f))
+
                         OutlinedTextField(
                             value = displayNameLocal,
                             onValueChange = { displayNameLocal = it },
-                            label = { Text("Display Name") },
+                            label = { Text("Display name", color = textSecondary) },
                             singleLine = true,
+                            shape = RoundedCornerShape(14.dp),
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = textSecondary.copy(alpha = 0.04f),
+                                unfocusedContainerColor = textSecondary.copy(alpha = 0.04f),
+                                focusedIndicatorColor = accentGreen,
+                                unfocusedIndicatorColor = cardBorderColor,
+                                focusedTextColor = textPrimary,
+                                unfocusedTextColor = textPrimary
+                            ),
                             modifier = Modifier.fillMaxWidth()
                         )
-                        
+
                         OutlinedTextField(
                             value = devNameLocal,
                             onValueChange = { devNameLocal = it },
-                            label = { Text("Developer Name") },
+                            label = { Text("Developer name", color = textSecondary) },
                             singleLine = true,
+                            shape = RoundedCornerShape(14.dp),
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = textSecondary.copy(alpha = 0.04f),
+                                unfocusedContainerColor = textSecondary.copy(alpha = 0.04f),
+                                focusedIndicatorColor = accentGreen,
+                                unfocusedIndicatorColor = cardBorderColor,
+                                focusedTextColor = textPrimary,
+                                unfocusedTextColor = textPrimary
+                            ),
                             modifier = Modifier.fillMaxWidth()
                         )
-                        
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(checked = isDev, onCheckedChange = { isDev = it })
-                            Text("Is Developer?", color = textPrimary)
-                        }
-                        
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Role: ", color = textPrimary)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Box(modifier = Modifier
-                                .clickable { role = if (role == "admin") "user" else "admin" }
-                                .background(if (role == "admin") Color(0xFFEF4444).copy(alpha = 0.2f) else Color(0xFF3B82F6).copy(alpha = 0.2f), RoundedCornerShape(8.dp))
-                                .padding(8.dp)) {
-                                Text(role.uppercase(), fontWeight = FontWeight.Bold, color = if (role == "admin") Color(0xFFEF4444) else Color(0xFF3B82F6))
+
+                        // Role chips
+                        Text("Role", color = textSecondary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            listOf("user", "admin").forEach { r ->
+                                val selected = role == r
+                                val chipColor = if (r == "admin") Color(0xFFEF4444) else Color(0xFF3B82F6)
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(if (selected) chipColor.copy(alpha = 0.15f) else textSecondary.copy(alpha = 0.06f))
+                                        .border(1.dp, if (selected) chipColor.copy(alpha = 0.5f) else cardBorderColor, RoundedCornerShape(12.dp))
+                                        .clickable { role = r }
+                                        .padding(horizontal = 16.dp, vertical = 10.dp)
+                                ) {
+                                    Text(
+                                        r.uppercase(),
+                                        color = if (selected) chipColor else textSecondary,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp
+                                    )
+                                }
                             }
                         }
-                        
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                            TextButton(onClick = { userToEdit = null }) {
-                                Text("Cancel", color = textSecondary)
+
+                        // Developer toggle
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(textSecondary.copy(alpha = 0.04f))
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text("Developer access", color = textPrimary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                Text("Can submit apps for review", color = textSecondary, fontSize = 11.sp)
+                            }
+                            Switch(
+                                checked = isDev,
+                                onCheckedChange = { isDev = it },
+                                colors = SwitchDefaults.colors(checkedTrackColor = accentGreen)
+                            )
+                        }
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            OutlinedButton(
+                                onClick = { userToEdit = null },
+                                modifier = Modifier.weight(1f).height(48.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(1.dp, cardBorderColor)
+                            ) {
+                                Text("Cancel", color = textSecondary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                             }
                             Button(
                                 onClick = {
@@ -10743,17 +10965,19 @@ fun ConsoleTabContent(
                                     viewModel.updateUserAdmin(updatedUser) { success ->
                                         isSaving = false
                                         Toast.makeText(context, if (success) "User updated" else "Update failed", Toast.LENGTH_SHORT).show()
-                                        if (success) {
-                                            userToEdit = null
-                                        }
+                                        if (success) userToEdit = null
                                     }
                                 },
-                                enabled = !isSaving
+                                enabled = !isSaving,
+                                modifier = Modifier.weight(1f).height(48.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = accentGreen),
+                                elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
                             ) {
                                 if (isSaving) {
-                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                                    CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
                                 } else {
-                                    Text("Save")
+                                    Text("Save", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                                 }
                             }
                         }
@@ -13767,14 +13991,23 @@ fun NoticeDetailsDialog(
     notice: com.example.data.NoticeEntity,
     onDismiss: () -> Unit
 ) {
-    Dialog(onDismissRequest = onDismiss) {
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val surface = if (isDark) Color(0xFF141820) else Color(0xFFFFFFFF)
+    val onSurface = if (isDark) Color.White else Color(0xFF111827)
+    val muted = if (isDark) Color(0xFF9CA3AF) else Color(0xFF6B7280)
+    val border = if (isDark) Color(0xFF2A3140) else Color(0xFFE5E7EB)
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
         Card(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF0F1218)),
-            border = BorderStroke(1.dp, Color(0xFF232A36))
+                .fillMaxWidth(0.92f)
+                .padding(vertical = 20.dp),
+            shape = RoundedCornerShape(28.dp),
+            colors = CardDefaults.cardColors(containerColor = surface),
+            border = BorderStroke(1.dp, border),
+            elevation = CardDefaults.cardElevation(defaultElevation = 12.dp)
         ) {
             Column(
                 modifier = Modifier
@@ -13800,7 +14033,7 @@ fun NoticeDetailsDialog(
                         )
                     }
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Close description", tint = Color.LightGray)
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = muted)
                     }
                 }
                 
@@ -13821,7 +14054,7 @@ fun NoticeDetailsDialog(
                 
                 Text(
                     text = notice.title,
-                    color = Color.White,
+                    color = onSurface,
                     style = MaterialTheme.typography.titleLarge.copy(
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 0.15.sp
@@ -13833,7 +14066,7 @@ fun NoticeDetailsDialog(
                 val timeStr = java.text.SimpleDateFormat("MMM dd, yyyy - HH:mm", java.util.Locale.getDefault()).format(java.util.Date(notice.timestamp))
                 Text(
                     text = "Sent on $timeStr",
-                    color = Color.Gray,
+                    color = muted,
                     fontSize = 11.sp
                 )
                 
@@ -13847,7 +14080,7 @@ fun NoticeDetailsDialog(
                 ) {
                     Text(
                         text = notice.message,
-                        color = Color.White.copy(alpha = 0.9f),
+                        color = onSurface.copy(alpha = 0.9f),
                         fontSize = 13.sp,
                         lineHeight = 18.sp
                     )
