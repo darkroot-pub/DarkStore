@@ -4160,10 +4160,9 @@ fun ProfileTabContent(
                     }
                 }
 
-                // Following/Followers is available to every logged-in account,
-                // not just developers — any user can follow a developer, and
-                // any developer can see who follows them (and follow back).
-                run {
+                // Following/Followers for non-developers only (developers get this
+                // inside the Option 2 profile card below).
+                if (!isDeveloper) {
                     val followingIds by viewModel.followingIds.collectAsStateWithLifecycle()
                     val followerIds by viewModel.followerIds.collectAsStateWithLifecycle()
                     val allKnownUsers by viewModel.developers.collectAsStateWithLifecycle()
@@ -4515,521 +4514,462 @@ fun ProfileTabContent(
                             )
                         }
                     }
-                } else {                    // Verified Developer Card Block
+                } else {
+                    // Option 2 — Cover banner profile + Links + About + Edit
+                    val profilePhotoUrl by viewModel.profilePhotoUrl.collectAsStateWithLifecycle()
+                    val devLocationVal by viewModel.devLocation.collectAsStateWithLifecycle()
+                    val liveDevBio by viewModel.devBio.collectAsStateWithLifecycle()
+                    val followingIds by viewModel.followingIds.collectAsStateWithLifecycle()
+                    val followerIds by viewModel.followerIds.collectAsStateWithLifecycle()
+                    val allKnownUsers by viewModel.developers.collectAsStateWithLifecycle()
+                    var showEditProfile by remember { mutableStateOf(false) }
+                    var showFollowersFollowingDialog by remember { mutableStateOf(false) }
+
+                    // Cover + identity card
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(24.dp),
+                        shape = RoundedCornerShape(20.dp),
                         colors = CardDefaults.cardColors(containerColor = surfaceCol),
                         border = BorderStroke(1.dp, borderCol)
                     ) {
-                        Column(
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Spacer(modifier = Modifier.height(24.dp))
-                            // Content overlapping banner
-                            Column(
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            // Gradient cover banner
+                            Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 22.dp, vertical = 0.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
+                                    .height(96.dp)
+                                    .background(
+                                        Brush.linearGradient(
+                                            listOf(
+                                                Color(0xFF4C1D95),
+                                                Color(0xFF1E3A8A),
+                                                Color(0xFF0EA5E9).copy(alpha = 0.6f)
+                                            )
+                                        )
+                                    )
                             ) {
-                                val initialLetter = userName.trim().take(1).uppercase()
-                                val profilePhotoUrl by viewModel.profilePhotoUrl.collectAsStateWithLifecycle()
-                                var isUploadingPhoto by remember { mutableStateOf(false) }
-
-                                // FEATURE: profile picture upload — visible to other users when
-                                // they view this developer's public profile elsewhere in the app.
-                                val photoPickerLauncher = rememberLauncherForActivityResult(
-                                    contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
-                                ) { uri ->
-                                    if (uri != null) {
-                                        isUploadingPhoto = true
-                                        coroutineScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                                            try {
-                                                val inputStream = context.contentResolver.openInputStream(uri)
-                                                val bytes = inputStream?.readBytes()
-                                                inputStream?.close()
-                                                if (bytes != null) {
-                                                    val url = uploadImageToImgBB(context, bytes) { errorMsg ->
-                                                        coroutineScope.launch(kotlinx.coroutines.Dispatchers.Main) {
-                                                            Toast.makeText(context, errorMsg, Toast.LENGTH_LONG).show()
-                                                        }
-                                                    }
-                                                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                                        isUploadingPhoto = false
-                                                        if (url != null) {
-                                                            viewModel.updateProfilePhoto(url)
-                                                            Toast.makeText(context, "Profile photo updated!", Toast.LENGTH_SHORT).show()
-                                                        }
-                                                    }
-                                                } else {
-                                                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                                        isUploadingPhoto = false
-                                                    }
-                                                }
-                                            } catch (e: Exception) {
-                                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                                    isUploadingPhoto = false
-                                                    Toast.makeText(context, "Failed to read image: ${e.message}", Toast.LENGTH_SHORT).show()
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                
+                                Icon(
+                                    imageVector = Icons.Default.Code,
+                                    contentDescription = null,
+                                    tint = Color.White.copy(alpha = 0.15f),
+                                    modifier = Modifier
+                                        .align(Alignment.CenterEnd)
+                                        .padding(end = 20.dp)
+                                        .size(64.dp)
+                                )
+                                // Edit chip on banner
                                 Box(
-                                    modifier = Modifier.padding(bottom = 8.dp)
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(10.dp)
+                                        .clip(RoundedCornerShape(20.dp))
+                                        .background(Color.Black.copy(alpha = 0.35f))
+                                        .clickable { showEditProfile = true }
+                                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    Text("Edit", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+
+                            // Avatar overlapping banner
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp)
+                                    .offset(y = (-28).dp),
+                                verticalAlignment = Alignment.Bottom
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(76.dp)
+                                        .clip(CircleShape)
+                                        .background(surfaceCol)
+                                        .border(3.dp, surfaceCol, CircleShape),
+                                    contentAlignment = Alignment.Center
                                 ) {
                                     Box(
                                         modifier = Modifier
-                                            .size(120.dp)
+                                            .fillMaxSize()
                                             .clip(CircleShape)
-                                            .background(if (isDarkMode) Color(0xFF0F172A) else Color(0xFF1E293B))
-                                            .border(4.dp, surfaceCol, CircleShape)
-                                            .clickable(enabled = !isUploadingPhoto) {
-                                                photoPickerLauncher.launch("image/*")
-                                            },
+                                            .background(Color(0xFF3B82F6).copy(alpha = 0.15f)),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        if (isUploadingPhoto) {
-                                            CircularProgressIndicator(color = Color(0xFF3B82F6), strokeWidth = 3.dp, modifier = Modifier.size(36.dp))
-                                        } else if (profilePhotoUrl.isNotBlank()) {
-                                            coil.compose.AsyncImage(
+                                        if (profilePhotoUrl.isNotBlank()) {
+                                            AsyncImage(
                                                 model = profilePhotoUrl,
-                                                contentDescription = "Profile photo",
-                                                contentScale = ContentScale.Crop,
-                                                modifier = Modifier.fillMaxSize().clip(CircleShape)
+                                                contentDescription = "Avatar",
+                                                modifier = Modifier.fillMaxSize().clip(CircleShape),
+                                                contentScale = ContentScale.Crop
                                             )
                                         } else {
-                                            Icon(
-                                                imageVector = Icons.Default.Security,
-                                                contentDescription = "Profile Logo",
-                                                tint = Color(0xFF3B82F6),
-                                                modifier = Modifier.size(60.dp)
+                                            Text(
+                                                text = (devName.ifBlank { userName }).take(1).uppercase(),
+                                                color = Color(0xFF3B82F6),
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 28.sp
                                             )
                                         }
                                     }
-
-                                    // Camera badge indicating the avatar is tappable/editable.
-                                    Box(
-                                        modifier = Modifier
-                                            .align(Alignment.TopEnd)
-                                            .offset(x = 4.dp, y = 4.dp)
-                                            .size(28.dp)
-                                            .clip(CircleShape)
-                                            .background(Color(0xFF3B82F6))
-                                            .clickable(enabled = !isUploadingPhoto) {
-                                                photoPickerLauncher.launch("image/*")
-                                            },
-                                        contentAlignment = Alignment.Center
-                                    ) {
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f).padding(bottom = 4.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = devName.ifBlank { userName },
+                                            color = textPrimaryCol,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            fontSize = 18.sp,
+                                            maxLines = 1
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
                                         Icon(
-                                            imageVector = Icons.Default.Add,
-                                            contentDescription = "Change profile photo",
-                                            tint = Color.White,
+                                            Icons.Default.Verified,
+                                            contentDescription = "Verified",
+                                            tint = Color(0xFF3B82F6),
                                             modifier = Modifier.size(16.dp)
                                         )
                                     }
-                                    
-                                    Box(
-                                        modifier = Modifier
-                                            .align(Alignment.BottomEnd)
-                                            .offset(x = (-4).dp, y = (-4).dp)
-                                            .size(28.dp)
-                                            .clip(CircleShape)
-                                            .background(surfaceCol),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.CheckCircle,
-                                            contentDescription = "Verified",
-                                            tint = Color(0xFF3B82F6),
-                                            modifier = Modifier.size(32.dp) // Slightly larger to overlap the border nicely
-                                        )
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(10.dp))
-
-                                var isEditingName by remember { mutableStateOf(false) }
-                                var editedName by remember(userName) { mutableStateOf(userName) }
-
-                                if (isEditingName) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.Center
-                                    ) {
-                                        OutlinedTextField(
-                                            value = editedName,
-                                            onValueChange = { editedName = it },
-                                            label = { Text("Developer Display Name", fontSize = 11.sp) },
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .heightIn(max = 56.dp)
-                                                .testTag("profile_dev_name_input"),
-                                            singleLine = true,
-                                            shape = RoundedCornerShape(12.dp),
-                                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp)
-                                        )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        IconButton(
-                                            onClick = {
-                                                if (editedName.isNotBlank()) {
-                                                    val (success, msg) = onUpdateDeveloperName(editedName)
-                                                    if (success) {
-                                                        isEditingName = false
-                                                    }
-                                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                                }
-                                            },
-                                            modifier = Modifier
-                                                .size(36.dp)
-                                                .background(accentGreen.copy(alpha = 0.15f), CircleShape)
-                                                .testTag("profile_save_dev_name_button")
-                                        ) {
-                                            Icon(Icons.Default.Check, contentDescription = "Save", tint = accentGreen)
-                                        }
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        IconButton(
-                                            onClick = {
-                                                isEditingName = false
-                                                editedName = userName
-                                            },
-                                            modifier = Modifier
-                                                .size(36.dp)
-                                                .background(Color.Red.copy(alpha = 0.1f), CircleShape)
-                                        ) {
-                                            Icon(Icons.Default.Close, contentDescription = "Cancel", tint = Color.Red)
-                                        }
-                                    }
-                                } else {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.Center,
-                                        modifier = Modifier
-                                            .clickable { isEditingName = true }
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .padding(horizontal = 12.dp, vertical = 4.dp)
-                                    ) {
-                                        Text(
-                                            text = userName,
-                                            fontWeight = FontWeight.ExtraBold,
-                                            color = textPrimaryCol,
-                                            fontSize = 22.sp,
-                                            modifier = Modifier.testTag("profile_dev_name_text")
-                                        )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Icon(
-                                            imageVector = Icons.Default.CheckCircle,
-                                            contentDescription = "Verified Publisher",
-                                            tint = Color(0xFF3B82F6),
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                        val isPremiumMemberForBadge by viewModel.isPremiumMember.collectAsStateWithLifecycle()
-                                        if (isPremiumMemberForBadge) {
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Icon(
-                                                imageVector = Icons.Default.Star,
-                                                contentDescription = "Premium member",
-                                                tint = if (isDarkMode) Color(0xFFFBBF24) else Color(0xFFD97706),
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                        }
-                                    }
-                                }
-
-                                Text(
-                                    text = "@${devGithub.ifBlank { userName.lowercase().replace(" ", "") }}",
-                                    color = textSecondaryCol,
-                                    fontSize = 14.sp,
-                                    modifier = Modifier.padding(top = 2.dp)
-                                )
-
-                                Spacer(modifier = Modifier.height(16.dp))
-
-                                // Interactive Developer Tagline / Bio Section
-                                if (isEditingBio) {
-                                    Column(
-                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-                                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        OutlinedTextField(
-                                            value = editedBio,
-                                            onValueChange = { if (it.length <= 160) editedBio = it },
-                                            label = { Text("Developer Bio / Company Tagline", fontSize = 11.sp) },
-                                            placeholder = { Text("e.g. Building open source Android utilities") },
-                                            modifier = Modifier.fillMaxWidth(),
-                                            maxLines = 3,
-                                            shape = RoundedCornerShape(12.dp),
-                                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
-                                        )
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.End,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                text = "${160 - editedBio.length} chars left",
-                                                fontSize = 10.sp,
-                                                color = textSecondaryCol,
-                                                modifier = Modifier.weight(1f)
-                                            )
-                                            TextButton(onClick = { isEditingBio = false }) {
-                                                Text("Cancel", color = Color.Red, fontSize = 11.sp)
-                                            }
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Button(
-                                                onClick = {
-                                                    viewModel.updateDeveloperBio(editedBio)
-                                                    isEditingBio = false
-                                                    Toast.makeText(context, "Developer bio saved successfully!", Toast.LENGTH_SHORT).show()
-                                                },
-                                                shape = RoundedCornerShape(8.dp),
-                                                colors = ButtonDefaults.buttonColors(containerColor = accentGreen),
-                                                modifier = Modifier.height(28.dp),
-                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
-                                            ) {
-                                                Text("Save", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                            }
-                                        }
-                                    }
-                                } else {
                                     Text(
-                                        text = devBio.ifBlank { "We build secure, fast and powerful apps that make your digital experience better." },
-                                        color = if (devBio.isBlank()) textSecondaryCol.copy(alpha = 0.7f) else textSecondaryCol,
-                                        fontSize = 13.sp,
-                                        textAlign = TextAlign.Center,
-                                        lineHeight = 18.sp,
-                                        modifier = Modifier.clickable { isEditingBio = true }
+                                        text = if (devGithub.isNotBlank()) "@${devGithub.trim().removePrefix("@")}" else userEmail.substringBefore("@").let { "@$it" },
+                                        color = textSecondaryCol,
+                                        fontSize = 12.sp
                                     )
                                 }
+                            }
 
-                                Spacer(modifier = Modifier.height(14.dp))
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        Icon(Icons.Default.LocationOn, contentDescription = "Location", tint = textSecondaryCol, modifier = Modifier.size(14.dp))
-                                        val locState by viewModel.devLocation.collectAsStateWithLifecycle()
-                                        Text(locState.ifBlank { "Add location" }, fontSize = 12.sp, color = textSecondaryCol)
-                                    }
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        Icon(Icons.Default.DateRange, contentDescription = "Joined", tint = textSecondaryCol, modifier = Modifier.size(14.dp))
-                                        Text("Joined Jan 2024", fontSize = 12.sp, color = textSecondaryCol)
-                                    }
+                            // Following / Followers under avatar row
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .offset(y = (-12).dp)
+                                    .padding(horizontal = 16.dp)
+                                    .clickable { showFollowersFollowingDialog = true },
+                                horizontalArrangement = Arrangement.spacedBy(20.dp)
+                            ) {
+                                Column {
+                                    Text(
+                                        text = "${followingIds.size}",
+                                        color = Color(0xFF3B82F6),
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp
+                                    )
+                                    Text("Following", color = textSecondaryCol, fontSize = 11.sp)
+                                }
+                                Column {
+                                    Text(
+                                        text = "${followerIds.size}",
+                                        color = Color(0xFF3B82F6),
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp
+                                    )
+                                    Text("Followers", color = textSecondaryCol, fontSize = 11.sp)
                                 }
                             }
+
+                            Spacer(modifier = Modifier.height(4.dp))
                         }
                     }
 
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Option 3 — Public profile fields (inline edit)
-                val devLocationVal by viewModel.devLocation.collectAsStateWithLifecycle()
-                val liveDevBio by viewModel.devBio.collectAsStateWithLifecycle()
-                var editField by remember { mutableStateOf<String?>(null) }
-                var editValue by remember { mutableStateOf("") }
-
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = surfaceCol),
-                    border = BorderStroke(1.dp, borderCol)
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)) {
-                        Text(
-                            text = "Public profile",
-                            color = textPrimaryCol,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
+                    if (showFollowersFollowingDialog) {
+                        FollowersFollowingDialog(
+                            viewModel = viewModel,
+                            isDarkMode = isDarkMode,
+                            developers = allKnownUsers,
+                            onDismiss = { showFollowersFollowingDialog = false }
                         )
-                        Spacer(modifier = Modifier.height(10.dp))
+                    }
 
-                        data class ProfileRow(val key: String, val label: String, val value: String, val icon: ImageVector)
-                        val rows = listOf(
-                            ProfileRow("name", "Display name", devName.ifBlank { userName }, Icons.Default.Person),
-                            ProfileRow("bio", "Bio", liveDevBio.ifBlank { "Tap to add a short bio" }, Icons.Default.Description),
-                            ProfileRow("location", "Location", devLocationVal.ifBlank { "Not set" }, Icons.Default.LocationOn),
-                            ProfileRow("website", "Website URL", devWebsite.ifBlank { "Not set" }, Icons.Default.Language),
-                            ProfileRow("github", "GitHub username", devGithub.ifBlank { "Not set" }, Icons.Default.Code)
-                        )
-                        rows.forEachIndexed { index, row ->
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Links card
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = surfaceCol),
+                        border = BorderStroke(1.dp, borderCol)
+                    ) {
+                        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Link, null, tint = Color(0xFF3B82F6), modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Links", color = textPrimaryCol, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            }
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            // Website
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(10.dp))
                                     .clickable {
-                                        editField = row.key
-                                        editValue = when (row.key) {
-                                            "name" -> devName.ifBlank { userName }
-                                            "bio" -> liveDevBio
-                                            "location" -> devLocationVal
-                                            "website" -> devWebsite
-                                            "github" -> devGithub
-                                            else -> ""
+                                        val url = devWebsite.trim()
+                                        if (url.isNotBlank()) {
+                                            try {
+                                                val full = if (url.startsWith("http")) url else "https://$url"
+                                                context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(full)))
+                                            } catch (_: Exception) {
+                                                Toast.makeText(context, "Cannot open website", Toast.LENGTH_SHORT).show()
+                                            }
+                                        } else {
+                                            showEditProfile = true
                                         }
                                     }
-                                    .padding(vertical = 12.dp),
+                                    .padding(vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(
-                                    row.icon,
-                                    contentDescription = null,
-                                    tint = textSecondaryCol,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
+                                Icon(Icons.Default.Language, null, tint = Color(0xFF3B82F6), modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(10.dp))
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(row.label, color = textSecondaryCol, fontSize = 11.sp)
+                                    Text("Website", color = textPrimaryCol, fontSize = 13.sp, fontWeight = FontWeight.Medium)
                                     Text(
-                                        row.value,
-                                        color = textPrimaryCol,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        maxLines = if (row.key == "bio") 2 else 1
+                                        text = devWebsite.ifBlank { "Not set — tap Edit" },
+                                        color = textSecondaryCol,
+                                        fontSize = 11.sp,
+                                        maxLines = 1
                                     )
                                 }
-                                Icon(
-                                    Icons.Default.Edit,
-                                    contentDescription = "Edit",
-                                    tint = textSecondaryCol.copy(alpha = 0.7f),
-                                    modifier = Modifier.size(16.dp)
-                                )
+                                Icon(Icons.Default.OpenInNew, null, tint = textSecondaryCol, modifier = Modifier.size(14.dp))
                             }
-                            if (index < rows.lastIndex) {
-                                HorizontalDivider(color = borderCol.copy(alpha = 0.7f))
+
+                            HorizontalDivider(color = borderCol.copy(alpha = 0.7f))
+
+                            // GitHub
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable {
+                                        val gh = devGithub.trim().removePrefix("@")
+                                        if (gh.isNotBlank()) {
+                                            try {
+                                                val full = if (gh.startsWith("http")) gh else "https://github.com/$gh"
+                                                context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(full)))
+                                            } catch (_: Exception) {
+                                                Toast.makeText(context, "Cannot open GitHub", Toast.LENGTH_SHORT).show()
+                                            }
+                                        } else {
+                                            showEditProfile = true
+                                        }
+                                    }
+                                    .padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Code, null, tint = Color(0xFF3B82F6), modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("GitHub", color = textPrimaryCol, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                    Text(
+                                        text = if (devGithub.isNotBlank()) {
+                                            val g = devGithub.trim().removePrefix("@")
+                                            if (g.startsWith("http")) g else "github.com/$g"
+                                        } else "Not set — tap Edit",
+                                        color = textSecondaryCol,
+                                        fontSize = 11.sp,
+                                        maxLines = 1
+                                    )
+                                }
+                                Icon(Icons.Default.OpenInNew, null, tint = textSecondaryCol, modifier = Modifier.size(14.dp))
+                            }
+
+                            HorizontalDivider(color = borderCol.copy(alpha = 0.7f))
+
+                            // Email
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Email, null, tint = Color(0xFF3B82F6), modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Email", color = textPrimaryCol, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                    Text(userEmail, color = textSecondaryCol, fontSize = 11.sp, maxLines = 1)
+                                }
                             }
                         }
                     }
-                }
 
-                if (editField != null) {
-                    val title = when (editField) {
-                        "name" -> "Display name"
-                        "bio" -> "Bio"
-                        "location" -> "Location"
-                        "website" -> "Website URL"
-                        "github" -> "GitHub username"
-                        else -> "Edit"
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // About card
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = surfaceCol),
+                        border = BorderStroke(1.dp, borderCol)
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Info, null, tint = Color(0xFF3B82F6), modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("About", color = textPrimaryCol, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = liveDevBio.ifBlank { "Add a short bio so users know who you are." },
+                                color = if (liveDevBio.isBlank()) textSecondaryCol.copy(alpha = 0.7f) else textSecondaryCol,
+                                fontSize = 13.sp,
+                                lineHeight = 18.sp
+                            )
+                            if (devLocationVal.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.LocationOn, null, tint = textSecondaryCol, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(devLocationVal, color = textSecondaryCol, fontSize = 12.sp)
+                                }
+                            }
+                        }
                     }
-                    Dialog(onDismissRequest = { editField = null }) {
-                        Card(
-                            shape = RoundedCornerShape(20.dp),
-                            colors = CardDefaults.cardColors(containerColor = surfaceCol),
-                            border = BorderStroke(1.dp, borderCol),
-                            modifier = Modifier.fillMaxWidth(0.92f)
+
+                    // Full Edit Profile dialog
+                    if (showEditProfile) {
+                        var editName by remember { mutableStateOf(devName.ifBlank { userName }) }
+                        var editBio by remember { mutableStateOf(liveDevBio) }
+                        var editWebsite by remember { mutableStateOf(devWebsite) }
+                        var editGithub by remember { mutableStateOf(devGithub) }
+                        var editLocation by remember { mutableStateOf(devLocationVal) }
+                        var isSaving by remember { mutableStateOf(false) }
+
+                        Dialog(
+                            onDismissRequest = { if (!isSaving) showEditProfile = false },
+                            properties = DialogProperties(usePlatformDefaultWidth = false)
                         ) {
-                            Column(modifier = Modifier.padding(20.dp)) {
-                                Text(title, color = textPrimaryCol, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                                Spacer(modifier = Modifier.height(12.dp))
-                                OutlinedTextField(
-                                    value = editValue,
-                                    onValueChange = { editValue = it },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    singleLine = editField != "bio",
-                                    minLines = if (editField == "bio") 3 else 1,
-                                    maxLines = if (editField == "bio") 5 else 1,
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        focusedBorderColor = Color(0xFF3B82F6),
-                                        unfocusedBorderColor = borderCol,
-                                        focusedTextColor = textPrimaryCol,
-                                        unfocusedTextColor = textPrimaryCol,
-                                        cursorColor = Color(0xFF3B82F6)
-                                    ),
-                                    shape = RoundedCornerShape(12.dp)
-                                )
-                                Spacer(modifier = Modifier.height(16.dp))
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.End
-                                ) {
-                                    TextButton(onClick = { editField = null }) {
-                                        Text("Cancel", color = textSecondaryCol)
+                            Card(
+                                modifier = Modifier.fillMaxWidth(0.92f).heightIn(max = 620.dp),
+                                shape = RoundedCornerShape(24.dp),
+                                colors = CardDefaults.cardColors(containerColor = surfaceCol),
+                                border = BorderStroke(1.dp, borderCol)
+                            ) {
+                                Column(modifier = Modifier.padding(20.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("Edit profile", color = textPrimaryCol, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                                        IconButton(onClick = { showEditProfile = false }, enabled = !isSaving) {
+                                            Icon(Icons.Default.Close, null, tint = textSecondaryCol)
+                                        }
                                     }
-                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Column(
+                                        modifier = Modifier
+                                            .weight(1f, fill = false)
+                                            .verticalScroll(rememberScrollState()),
+                                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        val fieldColors = OutlinedTextFieldDefaults.colors(
+                                            focusedBorderColor = Color(0xFF3B82F6),
+                                            unfocusedBorderColor = borderCol,
+                                            focusedTextColor = textPrimaryCol,
+                                            unfocusedTextColor = textPrimaryCol,
+                                            cursorColor = Color(0xFF3B82F6),
+                                            focusedLabelColor = Color(0xFF3B82F6),
+                                            unfocusedLabelColor = textSecondaryCol
+                                        )
+                                        OutlinedTextField(
+                                            value = editName,
+                                            onValueChange = { editName = it },
+                                            label = { Text("Display name") },
+                                            singleLine = true,
+                                            modifier = Modifier.fillMaxWidth(),
+                                            shape = RoundedCornerShape(12.dp),
+                                            colors = fieldColors
+                                        )
+                                        OutlinedTextField(
+                                            value = editBio,
+                                            onValueChange = { if (it.length <= 200) editBio = it },
+                                            label = { Text("Bio") },
+                                            minLines = 3,
+                                            maxLines = 4,
+                                            modifier = Modifier.fillMaxWidth(),
+                                            shape = RoundedCornerShape(12.dp),
+                                            colors = fieldColors,
+                                            supportingText = { Text("${editBio.length}/200", color = textSecondaryCol, fontSize = 11.sp) }
+                                        )
+                                        OutlinedTextField(
+                                            value = editLocation,
+                                            onValueChange = { editLocation = it },
+                                            label = { Text("Location") },
+                                            singleLine = true,
+                                            placeholder = { Text("e.g. Kathmandu, Nepal") },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            shape = RoundedCornerShape(12.dp),
+                                            colors = fieldColors
+                                        )
+                                        OutlinedTextField(
+                                            value = editWebsite,
+                                            onValueChange = { editWebsite = it },
+                                            label = { Text("Website URL") },
+                                            singleLine = true,
+                                            placeholder = { Text("https://yoursite.com") },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            shape = RoundedCornerShape(12.dp),
+                                            colors = fieldColors
+                                        )
+                                        OutlinedTextField(
+                                            value = editGithub,
+                                            onValueChange = { editGithub = it },
+                                            label = { Text("GitHub username or URL") },
+                                            singleLine = true,
+                                            placeholder = { Text("username") },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            shape = RoundedCornerShape(12.dp),
+                                            colors = fieldColors
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(16.dp))
                                     Button(
                                         onClick = {
-                                            val field = editField ?: return@Button
-                                            viewModel.updateDeveloperField(field, editValue) { ok, msg ->
-                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                            isSaving = true
+                                            viewModel.updateDeveloperField("name", editName) { okName, msgName ->
+                                                viewModel.updateDeveloperField("bio", editBio) { _, _ ->
+                                                    viewModel.updateDeveloperField("website", editWebsite) { _, _ ->
+                                                        viewModel.updateDeveloperField("github", editGithub) { _, _ ->
+                                                            viewModel.updateDeveloperField("location", editLocation) { ok, msg ->
+                                                                isSaving = false
+                                                                showEditProfile = false
+                                                                Toast.makeText(
+                                                                    context,
+                                                                    if (ok || okName) "Profile updated" else (msg.ifBlank { msgName }),
+                                                                    Toast.LENGTH_SHORT
+                                                                ).show()
+                                                            }
+                                                        }
+                                                    }
+                                                }
                                             }
-                                            editField = null
                                         },
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B82F6)),
-                                        shape = RoundedCornerShape(10.dp)
+                                        enabled = !isSaving,
+                                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                                        shape = RoundedCornerShape(14.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B82F6))
                                     ) {
-                                        Text("Save", color = Color.White, fontWeight = FontWeight.Bold)
+                                        Text(if (isSaving) "Saving…" else "Save changes", color = Color.White, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
                         }
                     }
-                }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                // Beautiful Dashboard Quick Stat Counters Replicated from Pro developer panel
-
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    val liveCount = submissions.count { it.status.equals("approved", ignoreCase = true) || it.status.equals("live", ignoreCase = true) }
-                    val pendingCount = submissions.count { !it.status.equals("approved", ignoreCase = true) && !it.status.equals("live", ignoreCase = true) && !it.status.equals("rejected", ignoreCase = true) }
-                    val rejectedCount = submissions.count { it.status.equals("rejected", ignoreCase = true) }
-                    
-                    class StatData(val countStr: String, val label: String)
-                    listOf(
-                        StatData(liveCount.toString(), "Approved"),
-                        StatData(pendingCount.toString(), "Pending"),
-                        StatData(rejectedCount.toString(), "Rejected")
-                    ).forEach { item ->
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                text = item.countStr,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = textPrimaryCol
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = item.label,
-                                fontSize = 10.sp,
-                                color = textSecondaryCol
-                            )
-                        }
+                    // Add New App
+                    Button(
+                        onClick = { onTriggerSubmitForm() },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("profile_trigger_user_submission_form"),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B82F6))
+                    ) {
+                        Icon(Icons.Default.Add, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Add New App", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                     }
-                }
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                // Prominent "Publish New Application" Hero Button
-                Button(
-                    onClick = { onTriggerSubmitForm() },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp)
-                        .testTag("profile_trigger_user_submission_form"),
-                    shape = RoundedCornerShape(24.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B82F6))
-                ) {
-                    Icon(imageVector = Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Add New App", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                }
 
                 Spacer(modifier = Modifier.height(24.dp))
                 var selectedSubTab by remember { mutableStateOf("Approved") }
