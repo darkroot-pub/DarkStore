@@ -7306,7 +7306,7 @@ fun MySubmissionsStatusDialog(
                                     ) {
                                         // AppLogo matching professional guidelines
                                         AppLogo(
-                                            logoUrl = if (sub.screenshots.contains(",")) sub.screenshots.substringBefore(",") else sub.screenshots,
+                                            logoUrl = sub.logo.ifBlank { if (sub.screenshots.contains(",")) sub.screenshots.substringBefore(",") else sub.screenshots },
                                             appName = sub.name,
                                             packageName = sub.packageName,
                                             modifier = Modifier
@@ -13010,38 +13010,42 @@ fun AddNewAppForm(
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        if (uri != null) {
-            val idx = activePickingSlotIndex
-            if (idx == 99) {
-                isUploadingLogo = true
-                uploadFileFromUri(uri, isLogo = true) { url ->
-                    isUploadingLogo = false
-                    if (url != null) {
-                        logoUrl = url
-                        Toast.makeText(context, "App logo updated successfully!", Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(context, "Failed to upload app logo.", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            } else if (idx in 0..5) {
-                uploadingStates[idx] = true
-                uploadFileFromUri(uri, isLogo = false) { url ->
-                    uploadingStates[idx] = false
-                    if (url != null) {
-                        Toast.makeText(context, "Screenshot ${idx + 1} uploaded successfully!", Toast.LENGTH_SHORT).show()
-                        when (idx) {
-                            0 -> ss1 = url
-                            1 -> ss2 = url
-                            2 -> ss3 = url
-                            3 -> ss4 = url
-                            4 -> ss5 = url
-                            5 -> ss6 = url
-                        }
-                    } else {
-                        Toast.makeText(context, "Failed to upload screenshot ${idx + 1}.", Toast.LENGTH_SHORT).show()
-                    }
+        // Snapshot the target slot immediately so a second Pick tap cannot
+        // redirect this upload into the wrong field (logo vs screenshot).
+        val idx = activePickingSlotIndex
+        activePickingSlotIndex = -1
+        if (uri == null) return@rememberLauncherForActivityResult
+        if (idx == 99) {
+            isUploadingLogo = true
+            uploadFileFromUri(uri, isLogo = true) { url ->
+                isUploadingLogo = false
+                if (url != null) {
+                    logoUrl = url
+                    Toast.makeText(context, "App logo updated successfully!", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "Failed to upload app logo.", Toast.LENGTH_SHORT).show()
                 }
             }
+        } else if (idx in 0..5) {
+            uploadingStates[idx] = true
+            uploadFileFromUri(uri, isLogo = false) { url ->
+                uploadingStates[idx] = false
+                if (url != null) {
+                    Toast.makeText(context, "Screenshot ${idx + 1} uploaded successfully!", Toast.LENGTH_SHORT).show()
+                    when (idx) {
+                        0 -> ss1 = url
+                        1 -> ss2 = url
+                        2 -> ss3 = url
+                        3 -> ss4 = url
+                        4 -> ss5 = url
+                        5 -> ss6 = url
+                    }
+                } else {
+                    Toast.makeText(context, "Failed to upload screenshot ${idx + 1}.", Toast.LENGTH_SHORT).show()
+                }
+            }
+        } else {
+            Toast.makeText(context, "No upload target selected. Tap Logo or Pick again.", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -13306,210 +13310,223 @@ fun AddNewAppForm(
                                 Icon(Icons.Default.AddCircle, contentDescription = null, tint = Color(0xFF01875F), modifier = Modifier.size(20.dp))
                                 Text("Creative Assets & Screenshots", fontWeight = FontWeight.Bold, color = Color(0xFF01875F), fontSize = 14.sp)
                             }
-                            Spacer(modifier = Modifier.height(2.dp))
-                            
+
+                            // ——— App icon / logo ———
+                            Text("App icon *", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF01875F))
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                OutlinedTextField(
-                                    value = logoUrl,
-                                    onValueChange = { logoUrl = it },
-                                    label = { Text("Custom Logo URL *") },
-                                    placeholder = { Text("https://example.com/logo.png") },
-                                    leadingIcon = { Icon(Icons.Default.Face, contentDescription = null, tint = Color(0xFF01875F)) },
-                                    shape = RoundedCornerShape(12.dp),
-                                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp),
-                                    modifier = Modifier.weight(1f)
-                                )
-
-                                Button(
-                                    onClick = {
-                                        activePickingSlotIndex = 99
-                                        val permissionToRequest = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                                            android.Manifest.permission.READ_MEDIA_IMAGES
-                                        } else {
-                                            android.Manifest.permission.READ_EXTERNAL_STORAGE
-                                        }
-                                        val hasPermission = androidx.core.content.ContextCompat.checkSelfPermission(
-                                            context,
-                                            permissionToRequest
-                                        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-
-                                        if (hasPermission) {
-                                            imagePickerLauncher.launch("image/*")
-                                        } else {
-                                            permissionLauncher.launch(permissionToRequest)
-                                        }
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF01875F).copy(alpha = 0.12f), contentColor = Color(0xFF01875F)),
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                                    shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.height(56.dp).padding(top = 4.dp)
+                                // Live logo preview
+                                Box(
+                                    modifier = Modifier
+                                        .size(72.dp)
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(Color(0xFF01875F).copy(alpha = 0.08f))
+                                        .border(1.dp, Color(0xFF01875F).copy(alpha = 0.25f), RoundedCornerShape(16.dp)),
+                                    contentAlignment = Alignment.Center
                                 ) {
-                                    if (isUploadingLogo) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(16.dp),
-                                            strokeWidth = 2.dp,
-                                            color = Color(0xFF01875F)
-                                        )
-                                    } else {
+                                    when {
+                                        isUploadingLogo -> {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(24.dp),
+                                                strokeWidth = 2.dp,
+                                                color = Color(0xFF01875F)
+                                            )
+                                        }
+                                        logoUrl.isNotBlank() -> {
+                                            AsyncImage(
+                                                model = logoUrl.trim(),
+                                                contentDescription = "Logo preview",
+                                                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                        }
+                                        else -> {
+                                            Icon(
+                                                Icons.Default.Image,
+                                                contentDescription = null,
+                                                tint = Color(0xFF01875F).copy(alpha = 0.45f),
+                                                modifier = Modifier.size(28.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedTextField(
+                                        value = logoUrl,
+                                        onValueChange = { logoUrl = it },
+                                        label = { Text("Logo URL") },
+                                        placeholder = { Text("https://…/icon.png") },
+                                        shape = RoundedCornerShape(12.dp),
+                                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp),
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    Button(
+                                        onClick = {
+                                            activePickingSlotIndex = 99
+                                            val permissionToRequest = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                                                android.Manifest.permission.READ_MEDIA_IMAGES
+                                            } else {
+                                                android.Manifest.permission.READ_EXTERNAL_STORAGE
+                                            }
+                                            val hasPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+                                                context, permissionToRequest
+                                            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                                            if (hasPermission) {
+                                                imagePickerLauncher.launch("image/*")
+                                            } else {
+                                                permissionLauncher.launch(permissionToRequest)
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = Color(0xFF01875F).copy(alpha = 0.12f),
+                                            contentColor = Color(0xFF01875F)
+                                        ),
+                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.height(40.dp)
+                                    ) {
                                         Icon(
                                             painter = painterResource(id = android.R.drawable.ic_menu_upload),
-                                            contentDescription = "Upload Logo",
+                                            contentDescription = null,
                                             modifier = Modifier.size(16.dp)
                                         )
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Logo", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(if (isUploadingLogo) "Uploading…" else "Upload logo", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
 
-                            // Ratings always come from real user reviews — no one (including
-                            // admins) can hand-set a starting rating for an app anymore. Every
-                            // new/edited submission starts at 0.0 until it earns real reviews.
                             LaunchedEffect(Unit) {
-                                if (rating.isBlank()) {
-                                    rating = "0.0"
-                                }
+                                if (rating.isBlank()) rating = "0.0"
                             }
 
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Column {
-                                Text("App Screenshot Previews", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF01875F))
-                                Text("Provide between 3 and 6 screenshots for the optimal store photo layout.", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
+
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text("App screenshots *", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF01875F))
+                                Text("3–6 screenshots. Paste a URL or upload — preview appears automatically.", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            
-                            Column(
-                                verticalArrangement = Arrangement.spacedBy(12.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                val slots = remember(ss1, ss2, ss3, ss4, ss5, ss6) {
-                                    listOf(
-                                        Triple("Slot 1 (Primary screenshot) *", ss1, { v: String -> ss1 = v }),
-                                        Triple("Slot 2 (Screenshot 2) *", ss2, { v: String -> ss2 = v }),
-                                        Triple("Slot 3 (Screenshot 3) *", ss3, { v: String -> ss3 = v }),
-                                        Triple("Slot 4 (Screenshot 4 - optional)", ss4, { v: String -> ss4 = v }),
-                                        Triple("Slot 5 (Screenshot 5 - optional)", ss5, { v: String -> ss5 = v }),
-                                        Triple("Slot 6 (Screenshot 6 - optional)", ss6, { v: String -> ss6 = v })
-                                    )
-                                }
-                                
-                                slots.forEachIndexed { idx, (label, ssValue, onSsChange) ->
-                                    Column(
+
+                            val slots = listOf(
+                                Triple("Primary *", ss1, 0),
+                                Triple("Screenshot 2 *", ss2, 1),
+                                Triple("Screenshot 3 *", ss3, 2),
+                                Triple("Screenshot 4", ss4, 3),
+                                Triple("Screenshot 5", ss5, 4),
+                                Triple("Screenshot 6", ss6, 5)
+                            )
+
+                            slots.forEach { (label, ssValue, idx) ->
+                                val isRequired = idx < 3
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(14.dp))
+                                        .border(
+                                            1.dp,
+                                            if (isRequired && ssValue.isBlank()) Color(0xFF01875F).copy(alpha = 0.35f)
+                                            else MaterialTheme.colorScheme.outline.copy(alpha = 0.12f),
+                                            RoundedCornerShape(14.dp)
+                                        )
+                                        .padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    // Screenshot preview thumbnail
+                                    Box(
                                         modifier = Modifier
-                                            .fillMaxWidth()
-                                            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp))
-                                            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f), RoundedCornerShape(12.dp))
-                                            .padding(12.dp),
-                                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                                            .width(56.dp)
+                                            .height(96.dp)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(Color(0xFF01875F).copy(alpha = 0.06f))
+                                            .border(1.dp, Color(0xFF01875F).copy(alpha = 0.15f), RoundedCornerShape(10.dp)),
+                                        contentAlignment = Alignment.Center
                                     ) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                text = label,
-                                                fontSize = 11.sp,
-                                                color = Color(0xFF01875F),
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                            if (uploadingStates[idx]) {
+                                        when {
+                                            idx < uploadingStates.size && uploadingStates[idx] -> {
                                                 CircularProgressIndicator(
-                                                    modifier = Modifier.size(16.dp),
+                                                    modifier = Modifier.size(20.dp),
                                                     strokeWidth = 2.dp,
                                                     color = Color(0xFF01875F)
                                                 )
                                             }
-                                        }
-                                        
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                        ) {
-                                            OutlinedTextField(
-                                                value = ssValue,
-                                                onValueChange = onSsChange,
-                                                placeholder = { Text("Paste URL or Upload photo") },
-                                                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp),
-                                                modifier = Modifier.weight(1f),
-                                                singleLine = true,
-                                                shape = RoundedCornerShape(10.dp),
-                                                colors = OutlinedTextFieldDefaults.colors(
-                                                    focusedBorderColor = Color(0xFF01875F),
-                                                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                                            ssValue.isNotBlank() -> {
+                                                AsyncImage(
+                                                    model = ssValue.trim(),
+                                                    contentDescription = "Screenshot $idx preview",
+                                                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp)),
+                                                    contentScale = ContentScale.Crop
                                                 )
-                                            )
-                                            
-                                            Button(
-                                                onClick = {
-                                                    activePickingSlotIndex = idx
-                                                    val permissionToRequest = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                                                        android.Manifest.permission.READ_MEDIA_IMAGES
-                                                    } else {
-                                                        android.Manifest.permission.READ_EXTERNAL_STORAGE
-                                                    }
-                                                    val hasPermission = androidx.core.content.ContextCompat.checkSelfPermission(
-                                                        context,
-                                                        permissionToRequest
-                                                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                                                    
-                                                    if (hasPermission) {
-                                                        imagePickerLauncher.launch("image/*")
-                                                    } else {
-                                                        permissionLauncher.launch(permissionToRequest)
-                                                    }
-                                                },
-                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF01875F).copy(alpha = 0.12f), contentColor = Color(0xFF01875F)),
-                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                                                shape = RoundedCornerShape(10.dp),
-                                                modifier = Modifier.height(42.dp)
-                                            ) {
+                                            }
+                                            else -> {
+                                                Text(
+                                                    text = "${idx + 1}",
+                                                    color = Color(0xFF01875F).copy(alpha = 0.4f),
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 16.sp
+                                                )
+                                            }
+                                        }
+                                    }
+                                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Text(label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF01875F))
+                                        OutlinedTextField(
+                                            value = ssValue,
+                                            onValueChange = { v ->
+                                                when (idx) {
+                                                    0 -> ss1 = v
+                                                    1 -> ss2 = v
+                                                    2 -> ss3 = v
+                                                    3 -> ss4 = v
+                                                    4 -> ss5 = v
+                                                    5 -> ss6 = v
+                                                }
+                                            },
+                                            placeholder = { Text("Paste URL or upload", fontSize = 11.sp) },
+                                            singleLine = true,
+                                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 11.sp),
+                                            shape = RoundedCornerShape(10.dp),
+                                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                                        )
+                                        Button(
+                                            onClick = {
+                                                activePickingSlotIndex = idx
+                                                val permissionToRequest = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                                                    android.Manifest.permission.READ_MEDIA_IMAGES
+                                                } else {
+                                                    android.Manifest.permission.READ_EXTERNAL_STORAGE
+                                                }
+                                                val hasPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+                                                    context, permissionToRequest
+                                                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                                                if (hasPermission) {
+                                                    imagePickerLauncher.launch("image/*")
+                                                } else {
+                                                    permissionLauncher.launch(permissionToRequest)
+                                                }
+                                            },
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = Color(0xFF01875F).copy(alpha = 0.12f),
+                                                contentColor = Color(0xFF01875F)
+                                            ),
+                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                            shape = RoundedCornerShape(10.dp),
+                                            modifier = Modifier.height(36.dp)
+                                        ) {
+                                            if (idx < uploadingStates.size && uploadingStates[idx]) {
+                                                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = Color(0xFF01875F))
+                                            } else {
                                                 Icon(
                                                     painter = painterResource(id = android.R.drawable.ic_menu_upload),
-                                                    contentDescription = "Upload Photo",
-                                                    modifier = Modifier.size(16.dp)
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(14.dp)
                                                 )
                                                 Spacer(modifier = Modifier.width(4.dp))
                                                 Text("Pick", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                            }
-                                        }
-                                        
-                                        if (ssValue.isNotBlank()) {
-                                            Row(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(top = 4.dp),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                            ) {
-                                                AsyncImage(
-                                                    model = ssValue,
-                                                    contentDescription = "Thumbnail draft",
-                                                    modifier = Modifier
-                                                        .width(60.dp)
-                                                        .height(106.dp)
-                                                        .clip(RoundedCornerShape(6.dp))
-                                                        .background(Color.LightGray.copy(alpha = 0.2f)),
-                                                    contentScale = ContentScale.Crop,
-                                                    error = painterResource(id = R.drawable.img_app_logo_new)
-                                                )
-                                                Column {
-                                                    Text("Loaded thumbnail draft (9:16)", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                                    Text(ssValue, fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                                    Text(
-                                                        text = "Clear URL",
-                                                        color = MaterialTheme.colorScheme.error,
-                                                        fontSize = 11.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        modifier = Modifier
-                                                            .clickable { onSsChange("") }
-                                                            .padding(vertical = 2.dp)
-                                                    )
-                                                }
                                             }
                                         }
                                     }
@@ -13707,9 +13724,18 @@ fun AddNewAppForm(
                                 Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                                 return@Button
                             }
+                            if (logoUrl.trim().isBlank()) {
+                                Toast.makeText(context, "App icon / logo URL is required.", Toast.LENGTH_LONG).show()
+                                return@Button
+                            }
                             val screenshotUrls = listOf(ss1, ss2, ss3, ss4, ss5, ss6).map { it.trim() }.filter { it.isNotEmpty() }
+                            // Guard: logo must not accidentally be the only value used as every screenshot
+                            if (screenshotUrls.any { it.equals(logoUrl.trim(), ignoreCase = true) } && screenshotUrls.size < 3) {
+                                Toast.makeText(context, "Screenshots look incomplete — make sure each slot has its own image, not only the logo.", Toast.LENGTH_LONG).show()
+                                return@Button
+                            }
                             if (screenshotUrls.size < 3 || screenshotUrls.size > 6) {
-                                Toast.makeText(context, "Please provide between 3 and 6 screenshots for the optimal app store photo ratio layout. You currently have ${screenshotUrls.size} screenshot(s).", Toast.LENGTH_LONG).show()
+                                Toast.makeText(context, "Please provide between 3 and 6 screenshots. You currently have ${screenshotUrls.size}.", Toast.LENGTH_LONG).show()
                                 return@Button
                             }
                             val finalScreenshotsStr = screenshotUrls.joinToString(",")
