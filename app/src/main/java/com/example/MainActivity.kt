@@ -1984,7 +1984,7 @@ fun DiscoveryTabContent(
     // loading skeleton was gone, permanently competing with scroll for the frame
     // budget. Only create/read the animation while a skeleton is actually on
     // screen; the rest of the time no infinite transition exists at all.
-    val showSkeleton = isLoadingDiscovery || (isRefreshing && appsToRender.isEmpty())
+    val showSkeleton = isLoadingDiscovery && appsToRender.isEmpty() && loadedApps.isEmpty()
     val activeShimmerTranslate = if (showSkeleton) {
         val shimmerTransition = rememberInfiniteTransition(label = "shimmer")
         val shimmerTranslate by shimmerTransition.animateFloat(
@@ -2016,51 +2016,77 @@ fun DiscoveryTabContent(
         }
     }
 
-    // Load initial page or restore from cache
+    // Always sync the visible list from live standardApps (RTDB).
+    // Old behavior restored PaginationCache first — so when a NEW app was
+    // approved online, the UI kept showing the stale cached page and
+    // isPageLoading / hasMore looked like "forever loading" until the user
+    // scrolled enough to page in the rest. Live data wins; cache is only a
+    // cold-start hint when standardApps is still empty.
     LaunchedEffect(cacheKey, standardApps) {
-        // PERF/BUG: this used to run on the composition's default (Main) dispatcher.
-        // PaginationCache's disk read/write is real synchronous file I/O (plus, until
-        // just now, a from-scratch Moshi/reflection setup on every call) — running it
-        // on the main thread caused a real stall right when reached, not just here on
-        // initial load but far more importantly in the auto-pagination effect below,
-        // which fires repeatedly *during* active scrolling. Dispatch to IO.
-        val cached = if (searchQuery.isNotEmpty()) null else withContext(Dispatchers.IO) {
-            com.example.data.PaginationCache.getApps(context, cacheKey)
-        }
-        if (cached != null && cached.isNotEmpty()) {
-            loadedApps.clear()
-            loadedApps.addAll(cached)
-            isPageLoading = false
-            isLoadingDiscovery = false
-            
-            // Restore scroll position
-            val scrollPos = com.example.data.PaginationCache.getScrollPosition(cacheKey)
-            if (scrollPos != null) {
-                try {
-                    listState.scrollToItem(scrollPos.first, scrollPos.second)
-                } catch (e: Exception) {
-                    // Ignore scroll exceptions during initial layout
-                }
-            }
-        } else {
-            isLoadingDiscovery = true
-            loadedApps.clear()
-            
-            // Minimal layout stabilizer delay
-            kotlinx.coroutines.delay(120)
-            
-            val initialSize = minOf(20, standardApps.size)
-            if (initialSize > 0) {
-                val initialChunk = standardApps.take(initialSize)
-                loadedApps.addAll(initialChunk)
+        if (standardApps.isEmpty()) {
+            // Still waiting for first network (or truly empty store).
+            // Keep skeleton only if we have nothing to show yet.
+            if (loadedApps.isEmpty()) {
+                isLoadingDiscovery = true
+                // Optional cold-start: show disk cache while network loads
                 if (searchQuery.isEmpty()) {
-                    withContext(Dispatchers.IO) {
-                        com.example.data.PaginationCache.saveApps(context, cacheKey, initialChunk)
+                    val cached = withContext(Dispatchers.IO) {
+                        com.example.data.PaginationCache.getApps(context, cacheKey)
+                    }
+                    if (!cached.isNullOrEmpty()) {
+                        loadedApps.clear()
+                        loadedApps.addAll(cached)
+                        isLoadingDiscovery = false
+                        isPageLoading = false
                     }
                 }
             }
-            isLoadingDiscovery = false
-            isPageLoading = false
+            return@LaunchedEffect
+        }
+
+        // We have live apps — never leave discovery in a loading state.
+        isLoadingDiscovery = false
+        isPageLoading = false
+
+        val liveById = standardApps.associateBy { it.id }
+        val previousIds = loadedApps.mapNotNull { it?.id }
+
+        if (loadedApps.isEmpty()) {
+            // First paint from live data (show more on first page so new apps
+            // near the top are visible without scrolling).
+            val initialSize = minOf(40, standardApps.size)
+            loadedApps.addAll(standardApps.take(initialSize))
+        } else {
+            // 1) Update rows that already exist
+            for (i in loadedApps.indices) {
+                val cur = loadedApps[i] ?: continue
+                val fresh = liveById[cur.id]
+                if (fresh != null && fresh != cur) {
+                    loadedApps[i] = fresh
+                }
+            }
+            // 2) Drop rows removed from the catalog
+            loadedApps.removeAll { it == null || it.id !in liveById }
+            // 3) Prepend brand-new apps so they appear immediately at the top
+            val existing = loadedApps.mapNotNull { it?.id }.toSet()
+            val brandNew = standardApps.filter { it.id !in existing }
+            if (brandNew.isNotEmpty()) {
+                // Insert at front of the paged window
+                brandNew.asReversed().forEach { loadedApps.add(0, it) }
+            }
+            // Cap memory: keep a reasonable window (scroll loads more via hasMore)
+            val maxWindow = maxOf(40, previousIds.size + brandNew.size).coerceAtMost(standardApps.size)
+            while (loadedApps.size > maxWindow && loadedApps.size > 40) {
+                // Prefer trimming from the end (older page) not the new head
+                loadedApps.removeAt(loadedApps.lastIndex)
+            }
+        }
+
+        if (searchQuery.isEmpty()) {
+            val snapshot = loadedApps.filterNotNull()
+            withContext(Dispatchers.IO) {
+                com.example.data.PaginationCache.saveApps(context, cacheKey, snapshot)
+            }
         }
     }
 
@@ -2146,9 +2172,11 @@ fun DiscoveryTabContent(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-        if (isLoadingDiscovery || isRefreshing) {
+        if (isLoadingDiscovery && loadedApps.isEmpty() && appsToRender.isEmpty()) {
             // ========================================================
             // ZERO-SPINNER ANIMATED SHIMMER SKELETON LOADERS
+            // (only when the catalog is empty — never replace a live list
+            // with skeletons on background/tab refresh)
             // ========================================================
             
             // 1. Shimmering Promo Banner Skeleton

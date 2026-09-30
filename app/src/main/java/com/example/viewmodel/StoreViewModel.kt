@@ -1390,7 +1390,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = AppRepository(appDao)
     private val downloader = CustomDownloadManager(application, repository)
 
-    private val _isRefreshing = MutableStateFlow(appDao.getAppsList().isEmpty())
+    private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
     private val _searchQuery = MutableStateFlow("")
@@ -1413,10 +1413,13 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         _realtimeApps,
         repository.allApps
     ) { online, remote, local ->
-        if (online) {
-            remote
-        } else {
-            local
+        // Online: prefer live RTDB list, but keep local Room data visible until
+        // the first successful fetch fills _realtimeApps (avoids empty/loading flash).
+        when {
+            online && remote.isNotEmpty() -> remote
+            online && local.isNotEmpty() -> local
+            online -> remote
+            else -> local
         }
     }
 
@@ -1691,7 +1694,11 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 Log.d("StoreViewModel", "Background throttle: last refresh ${(now - lastAppsRefreshTime) / 1000}s ago.")
                 return@launch
             }
-            if (!isBackground) _isRefreshing.value = true
+            // Only flip the global "refreshing" flag when the user would otherwise
+            // see an empty catalog — avoids replacing a full list with skeletons
+            // every time a tab is opened or a new app is approved.
+            val showRefreshChrome = !isBackground && _realtimeApps.value.isEmpty()
+            if (showRefreshChrome) _isRefreshing.value = true
             try {
                 val remoteApps = FirebaseService.fetchApps()
 
@@ -1714,9 +1721,12 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                     remoteApps
                 } else {
                     val byId = remoteApps.associateBy { it.id }
+                    val previousSet = previousOrder.toSet()
+                    // Brand-new apps first so they show at the top of the feed immediately
+                    val newOnes = remoteApps.filter { it.id !in previousSet }
                     val ordered = previousOrder.mapNotNull { byId[it] }.toMutableList()
-                    val newOnes = remoteApps.filter { it.id !in previousOrder }
-                    ordered.apply { addAll(newOnes) }
+                    ordered.addAll(0, newOnes)
+                    ordered
                 }
                 _realtimeApps.value = orderedRemoteApps
                 
