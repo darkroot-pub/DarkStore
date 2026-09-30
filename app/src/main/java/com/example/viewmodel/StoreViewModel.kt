@@ -1182,16 +1182,21 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
             viewModelScope.launch {
                 val user = FirebaseAuthService.getUserProfile(uid)
                 if (user != null) {
+                    // Role must come from RTDB so promoting someone to admin
+                    // (users/{uid}/role = "admin") shows the Admin panel without
+                    // requiring a full reinstall or hardcoded email.
+                    _userRole.value = user.role.ifBlank { "user" }
                     _isDeveloper.value = user.isDeveloper
                     _devWebsite.value = user.devWebsite
                     _devGithub.value = user.devGithub
                     _devName.value = user.devName
                     _devBio.value = user.devBio
-                _devLocation.value = user.devLocation
+                    _devLocation.value = user.devLocation
                     _userName.value = user.displayName
                     _profilePhotoUrl.value = user.profilePhotoUrl
 
                     sharedPrefs.edit().apply {
+                        putString("user_role", user.role.ifBlank { "user" })
                         putBoolean("is_developer", user.isDeveloper)
                         putString("dev_name", user.devName)
                         putString("dev_website", user.devWebsite)
@@ -1955,7 +1960,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
             val role = userRole.value.trim().lowercase()
             val email = userEmail.value.trim().lowercase()
             val uid = userUid.value.trim()
-            val filtered = if (role == "admin" || email == "davidstha900@gmail.com" || uid == "JN4BPhEKBBRUb5hpMdQJQmRrjiq1") {
+            val filtered = if (role == "admin") {
                 list
             } else {
                 list.filter { it.submittedBy.trim().lowercase() == email }
