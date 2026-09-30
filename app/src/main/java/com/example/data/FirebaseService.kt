@@ -964,4 +964,205 @@ object FirebaseService {
             emptyList()
         }
     }
+
+    // ----------------------------------------------------
+    // CHAT (1:1 messaging between users / developers)
+    // ----------------------------------------------------
+
+    suspend fun fetchUserChatThreads(uid: String): List<ChatThreadEntity> = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        if (uid.isBlank()) return@withContext emptyList()
+        try {
+            val tokenParam = getTokenParam()
+            val request = Request.Builder()
+                .url("${RTDB_URL}userChats/$uid.json$tokenParam")
+                .get()
+                .build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@withContext emptyList()
+                val body = response.body?.string() ?: return@withContext emptyList()
+                if (body.isBlank() || body == "null") return@withContext emptyList()
+                val root = org.json.JSONObject(body)
+                val list = mutableListOf<ChatThreadEntity>()
+                val keys = root.keys()
+                while (keys.hasNext()) {
+                    val chatId = keys.next()
+                    val o = root.optJSONObject(chatId) ?: continue
+                    list.add(
+                        ChatThreadEntity(
+                            chatId = chatId,
+                            otherUid = o.optString("otherUid", ""),
+                            otherName = o.optString("otherName", ""),
+                            otherPhoto = o.optString("otherPhoto", ""),
+                            lastMessage = o.optString("lastMessage", ""),
+                            updatedAt = o.optLong("updatedAt", 0L),
+                            unread = o.optInt("unread", 0)
+                        )
+                    )
+                }
+                list.sortedByDescending { it.updatedAt }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "fetchUserChatThreads: ${e.message}", e)
+            emptyList()
+        }
+    }
+
+    suspend fun fetchChatMessages(chatId: String, limit: Int = 80): List<ChatMessageEntity> = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        if (chatId.isBlank()) return@withContext emptyList()
+        try {
+            val tokenParam = getTokenParam()
+            val request = Request.Builder()
+                .url("${RTDB_URL}chats/$chatId/messages.json$tokenParam")
+                .get()
+                .build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@withContext emptyList()
+                val body = response.body?.string() ?: return@withContext emptyList()
+                if (body.isBlank() || body == "null") return@withContext emptyList()
+                val root = org.json.JSONObject(body)
+                val list = mutableListOf<ChatMessageEntity>()
+                val keys = root.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    val o = root.optJSONObject(key) ?: continue
+                    list.add(
+                        ChatMessageEntity(
+                            id = o.optString("id", key),
+                            senderId = o.optString("senderId", ""),
+                            text = o.optString("text", ""),
+                            imageUrl = o.optString("imageUrl", ""),
+                            timestamp = o.optLong("timestamp", 0L)
+                        )
+                    )
+                }
+                list.sortedBy { it.timestamp }.takeLast(limit)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "fetchChatMessages: ${e.message}", e)
+            emptyList()
+        }
+    }
+
+    /**
+     * Sends a message and updates both participants' inbox rows.
+     */
+    suspend fun sendChatMessage(
+        myUid: String,
+        myName: String,
+        myPhoto: String,
+        otherUid: String,
+        otherName: String,
+        otherPhoto: String,
+        text: String,
+        imageUrl: String = ""
+    ): Boolean = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        if (myUid.isBlank() || otherUid.isBlank()) return@withContext false
+        if (text.isBlank() && imageUrl.isBlank()) return@withContext false
+        try {
+            val chatId = chatIdFor(myUid, otherUid)
+            val msgId = "m_${System.currentTimeMillis()}_${(1000..9999).random()}"
+            val now = System.currentTimeMillis()
+            val preview = when {
+                text.isNotBlank() -> text.take(120)
+                imageUrl.isNotBlank() -> "📷 Photo"
+                else -> ""
+            }
+            val tokenParam = getTokenParam()
+
+            val msgPayload = org.json.JSONObject().apply {
+                put("id", msgId)
+                put("senderId", myUid)
+                put("text", text)
+                put("imageUrl", imageUrl)
+                put("timestamp", now)
+            }
+            val msgBody = msgPayload.toString().toRequestBody(jsonMediaType)
+            val msgReq = Request.Builder()
+                .url("${RTDB_URL}chats/$chatId/messages/$msgId.json$tokenParam")
+                .put(msgBody)
+                .build()
+            client.newCall(msgReq).execute().use { if (!it.isSuccessful) return@withContext false }
+
+            val metaPayload = org.json.JSONObject().apply {
+                put("updatedAt", now)
+                put("lastMessage", preview)
+                put("lastSenderId", myUid)
+                put("participantA", listOf(myUid, otherUid).minOrNull())
+                put("participantB", listOf(myUid, otherUid).maxOrNull())
+            }
+            val metaBody = metaPayload.toString().toRequestBody(jsonMediaType)
+            val metaReq = Request.Builder()
+                .url("${RTDB_URL}chats/$chatId/meta.json$tokenParam")
+                .patch(metaBody)
+                .build()
+            client.newCall(metaReq).execute().close()
+
+            // My inbox row
+            val mine = org.json.JSONObject().apply {
+                put("otherUid", otherUid)
+                put("otherName", otherName)
+                put("otherPhoto", otherPhoto)
+                put("lastMessage", preview)
+                put("updatedAt", now)
+                put("unread", 0)
+            }.toString().toRequestBody(jsonMediaType)
+            client.newCall(
+                Request.Builder()
+                    .url("${RTDB_URL}userChats/$myUid/$chatId.json$tokenParam")
+                    .put(mine)
+                    .build()
+            ).execute().close()
+
+            // Their inbox row — bump unread
+            var theirUnread = 1
+            try {
+                val getReq = Request.Builder()
+                    .url("${RTDB_URL}userChats/$otherUid/$chatId/unread.json$tokenParam")
+                    .get()
+                    .build()
+                client.newCall(getReq).execute().use { r ->
+                    val b = r.body?.string()
+                    if (!b.isNullOrBlank() && b != "null") {
+                        theirUnread = (b.trim().toIntOrNull() ?: 0) + 1
+                    }
+                }
+            } catch (_: Exception) {}
+
+            val theirs = org.json.JSONObject().apply {
+                put("otherUid", myUid)
+                put("otherName", myName)
+                put("otherPhoto", myPhoto)
+                put("lastMessage", preview)
+                put("updatedAt", now)
+                put("unread", theirUnread)
+            }.toString().toRequestBody(jsonMediaType)
+            client.newCall(
+                Request.Builder()
+                    .url("${RTDB_URL}userChats/$otherUid/$chatId.json$tokenParam")
+                    .put(theirs)
+                    .build()
+            ).execute().close()
+
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "sendChatMessage: ${e.message}", e)
+            false
+        }
+    }
+
+    suspend fun markChatRead(uid: String, chatId: String): Boolean = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        if (uid.isBlank() || chatId.isBlank()) return@withContext false
+        try {
+            val tokenParam = getTokenParam()
+            val body = "0".toRequestBody(jsonMediaType)
+            val req = Request.Builder()
+                .url("${RTDB_URL}userChats/$uid/$chatId/unread.json$tokenParam")
+                .put(body)
+                .build()
+            client.newCall(req).execute().use { it.isSuccessful }
+        } catch (e: Exception) {
+            Log.e(TAG, "markChatRead: ${e.message}", e)
+            false
+        }
+    }
 }

@@ -852,7 +852,7 @@ fun PlayStoreMainDashboard(
     val developers by viewModel.developers.collectAsStateWithLifecycle()
     val appReviews by viewModel.appReviews.collectAsStateWithLifecycle()
     val isReviewsLoading by viewModel.isReviewsLoading.collectAsStateWithLifecycle()
-    val isAdmin = userRole == "admin" || userEmail.equals("davidstha900@gmail.com", ignoreCase = true) || userUid == "JN4BPhEKBBRUb5hpMdQJQmRrjiq1"
+    val isAdmin = userRole.equals("admin", ignoreCase = true)
     val context = LocalContext.current
     val maintenanceConfig by viewModel.maintenanceConfig.collectAsStateWithLifecycle()
 
@@ -982,6 +982,9 @@ fun PlayStoreMainDashboard(
 
     // Automatically switch target if logged out of console session or not an admin
     LaunchedEffect(isLoggedIn, isAdmin) {
+        if (!isLoggedIn && activeTab == "Chat") {
+            activeTab = "Apps"
+        }
         if ((!isLoggedIn || !isAdmin) && activeTab == "Console") {
             activeTab = "Apps"
         }
@@ -1089,8 +1092,11 @@ fun PlayStoreMainDashboard(
             Triple("Apps", "Apps", Icons.Default.Home),
             Triple("Library", "My Library", Icons.Default.List)
         ).apply {
+            if (isLoggedIn) {
+                add(Triple("Chat", "Chat", Icons.Default.Chat))
+            }
             if (isLoggedIn && isAdmin) {
-                add(Triple("Console", "Dev Portal", Icons.Default.Build))
+                add(Triple("Console", "Admin", Icons.Default.Build))
             }
             add(Triple("Profile", "Profile", Icons.Default.AccountCircle))
             add(Triple("Settings", "Settings", Icons.Default.Settings))
@@ -1597,6 +1603,18 @@ fun PlayStoreMainDashboard(
                                 onShowAppDetails = { app -> showDetailsApp = app }
                             )
                         }
+                    }
+                    "Chat" -> {
+                        com.example.view.ChatTabContent(
+                            viewModel = viewModel,
+                            isLoggedIn = isLoggedIn,
+                            isDarkMode = isDarkMode,
+                            accentGreen = accentGreen,
+                            textPrimary = textPrimary,
+                            textSecondary = textSecondary,
+                            cardBgColor = cardBgColor,
+                            cardBorderColor = cardBorderColor
+                        )
                     }
                     "Profile" -> {
                         ProfileTabContent(
@@ -8729,7 +8747,7 @@ fun ConsoleTabContent(
     val maintenanceCfg by viewModel.maintenanceConfig.collectAsStateWithLifecycle()
     val isPremiumFreeModeAdmin by viewModel.isPremiumFreeMode.collectAsStateWithLifecycle()
     
-    val isAdmin = userRole == "admin" || userEmail.equals("davidstha900@gmail.com", ignoreCase = true) || userUid == "JN4BPhEKBBRUb5hpMdQJQmRrjiq1"
+    val isAdmin = userRole.equals("admin", ignoreCase = true)
     
     if (!isAdmin) {
         Box(

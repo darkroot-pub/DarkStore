@@ -303,6 +303,15 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     private val _developers = MutableStateFlow<List<UserEntity>>(emptyList())
     val developers: StateFlow<List<UserEntity>> = _developers.asStateFlow()
 
+    private val _chatThreads = MutableStateFlow<List<com.example.data.ChatThreadEntity>>(emptyList())
+    val chatThreads: StateFlow<List<com.example.data.ChatThreadEntity>> = _chatThreads.asStateFlow()
+
+    private val _chatMessages = MutableStateFlow<List<com.example.data.ChatMessageEntity>>(emptyList())
+    val chatMessages: StateFlow<List<com.example.data.ChatMessageEntity>> = _chatMessages.asStateFlow()
+
+    private val _activeChatPeer = MutableStateFlow<UserEntity?>(null)
+    val activeChatPeer: StateFlow<UserEntity?> = _activeChatPeer.asStateFlow()
+
     // Submissions List State
     private val _submissions = MutableStateFlow<List<SubmissionEntity>>(emptyList())
     val submissions: StateFlow<List<SubmissionEntity>> = _submissions.asStateFlow()
@@ -2699,6 +2708,76 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         // Refresh apps list to reflect new rating globally
         // This is a simplistic approach
         refreshMarketplace(true)
+    }
+
+    fun refreshChatThreads() {
+        val uid = _userUid.value
+        if (uid.isBlank()) {
+            _chatThreads.value = emptyList()
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            _chatThreads.value = FirebaseService.fetchUserChatThreads(uid)
+        }
+    }
+
+    fun openChatWith(peer: UserEntity) {
+        _activeChatPeer.value = peer
+        _chatMessages.value = emptyList()
+        val me = _userUid.value
+        if (me.isBlank()) return
+        val chatId = com.example.data.chatIdFor(me, peer.uid)
+        viewModelScope.launch(Dispatchers.IO) {
+            FirebaseService.markChatRead(me, chatId)
+            _chatMessages.value = FirebaseService.fetchChatMessages(chatId)
+            // refresh threads so unread clears
+            _chatThreads.value = FirebaseService.fetchUserChatThreads(me)
+        }
+    }
+
+    fun closeChat() {
+        _activeChatPeer.value = null
+        _chatMessages.value = emptyList()
+    }
+
+    fun sendChatMessage(text: String, imageUrl: String = "", onDone: (Boolean) -> Unit = {}) {
+        val me = _userUid.value
+        val peer = _activeChatPeer.value
+        if (me.isBlank() || peer == null) {
+            onDone(false)
+            return
+        }
+        val myName = _devName.value.ifBlank { _userName.value }.ifBlank { _userEmail.value }
+        val myPhoto = _profilePhotoUrl.value
+        val otherName = peer.devName.ifBlank { peer.displayName }.ifBlank { peer.email }
+        viewModelScope.launch(Dispatchers.IO) {
+            val ok = FirebaseService.sendChatMessage(
+                myUid = me,
+                myName = myName,
+                myPhoto = myPhoto,
+                otherUid = peer.uid,
+                otherName = otherName,
+                otherPhoto = peer.profilePhotoUrl,
+                text = text.trim(),
+                imageUrl = imageUrl.trim()
+            )
+            if (ok) {
+                val chatId = com.example.data.chatIdFor(me, peer.uid)
+                _chatMessages.value = FirebaseService.fetchChatMessages(chatId)
+                _chatThreads.value = FirebaseService.fetchUserChatThreads(me)
+            }
+            kotlinx.coroutines.withContext(Dispatchers.Main) { onDone(ok) }
+        }
+    }
+
+    fun refreshOpenChat() {
+        val me = _userUid.value
+        val peer = _activeChatPeer.value ?: return
+        if (me.isBlank()) return
+        val chatId = com.example.data.chatIdFor(me, peer.uid)
+        viewModelScope.launch(Dispatchers.IO) {
+            _chatMessages.value = FirebaseService.fetchChatMessages(chatId)
+        }
     }
 
 }
