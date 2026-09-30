@@ -820,16 +820,15 @@ fun PlayStoreMainDashboard(
     isDarkMode: Boolean,
     onThemeToggle: () -> Unit
 ) {
-    // NOTE: this used to remap every app's hasAds to false for Premium
-    // members — but hasAds is real, developer-declared metadata about
-    // whether THAT SPECIFIC APP shows its own third-party ads (unrelated to
-    // DarkStore's own — already fully removed — ad integration). Overriding
-    // it hid genuinely useful, true information ("this app you're about to
-    // install shows ads") from Premium members for no real reason. Apps are
-    // now passed through unchanged regardless of Premium status.
-    val apps by viewModel.apps.collectAsStateWithLifecycle()
+    // Premium "ad-light catalog": hide the in-store AD badge chrome for
+    // members. Details dialog still shows honest "Contains ads" safety text
+    // when opening an app so users aren't misled about the APK itself.
+    val appsRaw by viewModel.apps.collectAsStateWithLifecycle()
     val unfilteredApps by viewModel.unfilteredApps.collectAsStateWithLifecycle()
     val isPremiumMember by viewModel.isPremiumMember.collectAsStateWithLifecycle()
+    val apps = remember(appsRaw, isPremiumMember) {
+        if (isPremiumMember) appsRaw.map { a -> if (a.hasAds) a.copy(hasAds = false) else a } else appsRaw
+    }
     
     val downloads by viewModel.downloads.collectAsStateWithLifecycle()
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
@@ -1146,6 +1145,10 @@ fun PlayStoreMainDashboard(
                             } else if (tabId == "Apps" && selectedCategory == "Games") {
                                 viewModel.selectCategory("All")
                             }
+                            // Always re-fetch live data when switching tabs while online
+                            viewModel.refreshMarketplace(force = true)
+                            if (tabId == "Chat") viewModel.refreshChatThreads()
+                            if (tabId == "Profile" || tabId == "Console") viewModel.refreshSubmissions()
                         },
                         icon = { 
                             Icon(
@@ -1781,6 +1784,11 @@ fun PlayStoreMainDashboard(
             onRegisterClick = {
                 viewModel.preRegisterApp(app.id)
                 Toast.makeText(context, "Successfully Pre-registered for ${app.name}! You will be notified when this software goes live.", Toast.LENGTH_LONG).show()
+            },
+            onMessageDeveloper = { peer ->
+                showDetailsApp = null
+                viewModel.openChatWith(peer)
+                activeTab = "Chat"
             },
             onDismiss = { showDetailsApp = null },
             onAction = {
@@ -7639,6 +7647,10 @@ fun SettingsTabContent(
                         PremiumBenefitItem("Custom Accent Theme", "Transforms your catalog interface with one of five signature color looks.", isPremiumMember, premiumGold, textSecondary)
                         PremiumBenefitItem("Premium Badge", "A gold badge next to your name on your reviews and profile, visible to everyone.", isPremiumMember, premiumGold, textSecondary)
                         PremiumBenefitItem("Highlighted Reviews", "Your reviews stand out with a subtle gold accent in every app's review list.", isPremiumMember, premiumGold, textSecondary)
+                        PremiumBenefitItem("Ad-light catalog", "Hide promotional ad badges on app cards while browsing the store.", isPremiumMember, premiumGold, textSecondary)
+                        PremiumBenefitItem("Priority support chat", "Message developers with a premium indicator so they can prioritize replies.", isPremiumMember, premiumGold, textSecondary)
+                        PremiumBenefitItem("Early feature access", "Try new DarkStore tools (collections, update center) as they roll out.", isPremiumMember, premiumGold, textSecondary)
+                        PremiumBenefitItem("Custom accent themes", "Unlock extra theme accents for your store appearance.", isPremiumMember, premiumGold, textSecondary)
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
@@ -11481,6 +11493,7 @@ fun AppDetailsDialog(
     onAppClick: (AppEntity) -> Unit = {},
     onBuyClick: () -> Unit = {},
     onRegisterClick: () -> Unit = {},
+    onMessageDeveloper: (UserEntity) -> Unit = {},
     onDismiss: () -> Unit,
     onAction: () -> Unit,
     onDeleteDl: () -> Unit,
@@ -12586,6 +12599,33 @@ fun AppDetailsDialog(
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 12.sp
                                         )
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    OutlinedButton(
+                                        onClick = {
+                                            if (devProfile.uid != "fallback_uid") {
+                                                showDevProfileDialog = false
+                                                onMessageDeveloper(devProfile)
+                                            } else {
+                                                android.widget.Toast.makeText(
+                                                    context,
+                                                    "This developer is not linked to a chat account yet.",
+                                                    android.widget.Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+                                        },
+                                        shape = RoundedCornerShape(20.dp),
+                                        border = BorderStroke(1.dp, accentGreen.copy(alpha = 0.55f)),
+                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Chat,
+                                            contentDescription = "Message",
+                                            tint = accentGreen,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Message", color = accentGreen, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                     }
                                 }
                             }

@@ -477,6 +477,9 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     private val _premiumTheme = MutableStateFlow(sharedPrefs.getString("premium_theme_color", "gold") ?: "gold")
     val premiumTheme: StateFlow<String> = _premiumTheme.asStateFlow()
 
+    /** Premium members never see in-catalog ad badges / promo noise. */
+    fun shouldShowAds(): Boolean = !_isPremiumMember.value
+
     fun setPremiumTheme(theme: String) {
         sharedPrefs.edit().putString("premium_theme_color", theme).apply()
         _premiumTheme.value = theme
@@ -1186,6 +1189,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                     // (users/{uid}/role = "admin") shows the Admin panel without
                     // requiring a full reinstall or hardcoded email.
                     _userRole.value = user.role.ifBlank { "user" }
+                    _isPremiumMember.value = user.isPremiumMember
                     _isDeveloper.value = user.isDeveloper
                     _devWebsite.value = user.devWebsite
                     _devGithub.value = user.devGithub
@@ -1197,6 +1201,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
 
                     sharedPrefs.edit().apply {
                         putString("user_role", user.role.ifBlank { "user" })
+                        putBoolean("is_premium_member", user.isPremiumMember)
                         putBoolean("is_developer", user.isDeveloper)
                         putString("dev_name", user.devName)
                         putString("dev_website", user.devWebsite)
@@ -1671,14 +1676,19 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     fun refreshMarketplace(force: Boolean = false, isBackground: Boolean = false) {
         viewModelScope.launch {
             val now = System.currentTimeMillis()
-            if (!force && !isBackground && now - lastAppsRefreshTime < 5 * 60 * 1000) {
-                Log.d("StoreViewModel", "Skipping network refreshMarketplace; last refresh was ${(now - lastAppsRefreshTime) / 1000}s ago.")
+            // When online, always pull live RTDB data — never serve a stale
+            // in-memory snapshot just because a refresh ran recently.
+            // Offline still uses the local Room/cache path and skips network.
+            val online = isInternetAvailable.value
+            if (!online) {
+                Log.d("StoreViewModel", "Offline mode: skipping remote marketplace refresh.")
                 if (!isBackground) _isRefreshing.value = false
                 return@launch
             }
-            if (!isInternetAvailable.value) {
-                Log.d("StoreViewModel", "Offline mode: skipping remote marketplace refresh.")
-                if (!isBackground) _isRefreshing.value = false
+            // Background polls can still throttle slightly to save battery;
+            // foreground / force always hits the network.
+            if (!force && isBackground && now - lastAppsRefreshTime < 30 * 1000) {
+                Log.d("StoreViewModel", "Background throttle: last refresh ${(now - lastAppsRefreshTime) / 1000}s ago.")
                 return@launch
             }
             if (!isBackground) _isRefreshing.value = true
@@ -1727,7 +1737,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     fun refreshNotices(force: Boolean = false) {
         viewModelScope.launch(Dispatchers.IO) {
             val now = System.currentTimeMillis()
-            if (!force && now - lastNoticesRefreshTime < 5 * 60 * 1000) {
+            if (!force && now - lastNoticesRefreshTime < 10 * 1000) {
                 Log.d("StoreViewModel", "Skipping news/notices refresh; last active scan was ${(now - lastNoticesRefreshTime) / 1000}s ago.")
                 return@launch
             }
