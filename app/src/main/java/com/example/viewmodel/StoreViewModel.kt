@@ -40,10 +40,6 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
 
     private val sharedPrefs = application.getSharedPreferences("dark_store_pref", Context.MODE_PRIVATE)
 
-    private val _maintenanceConfig = MutableStateFlow(FirebaseService.MaintenanceConfig())
-    val maintenanceConfig: StateFlow<FirebaseService.MaintenanceConfig> = _maintenanceConfig.asStateFlow()
-
-
     init {
         val apiKey = sharedPrefs.getString("custom_firebase_api_key", "AIzaSyDWAQ3MmbZwzIQ9zNZvN9lep-_W6dIbv9o") ?: "AIzaSyDWAQ3MmbZwzIQ9zNZvN9lep-_W6dIbv9o"
         val projectId = sharedPrefs.getString("custom_firebase_project_id", "dark-store-6836d") ?: "dark-store-6836d"
@@ -58,10 +54,6 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         FirebaseAuthService.activeRefreshToken = refreshToken
         FirebaseService.activeToken = idToken
         
-        // SYNC CONFIG ONLY in this early init. Do NOT touch MutableStateFlows here —
-        // most of them are declared later in this class. A fast Dispatchers.IO
-        // resume can run before those fields are constructed → NPE on setValue
-        // (see loadMaintenanceConfig crash). Deferred work is in the late init.
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 FirebaseAuthService.refreshIdTokenIfNeeded(application)
@@ -69,8 +61,28 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 if (updatedIdToken.isNotBlank()) {
                     FirebaseService.activeToken = updatedIdToken
                 }
+                refreshAppPolicy()
+                refreshDevelopers()
+                loadFollowingIds()
+                loadFollowerIds()
+                loadPremiumFreeMode()
+                loadMaintenanceConfig()
+                val savedEmail = sharedPrefs.getString("user_email", "") ?: ""
+                if (savedEmail.isNotBlank() && savedEmail != "guest@darkroot.io") {
+                    updateEcosystemPolicyAcceptedForCurrentUser(savedEmail)
+                    updateTermsAcceptedForCurrentUser(savedEmail)
+                    val list = FirebaseService.fetchTermsAgreements()
+                    _termsAgreements.value = list.sortedByDescending { it.timestamp }
+                    val cleanEmail = savedEmail.lowercase().trim()
+                    if (list.any { it.userEmail.lowercase().trim() == cleanEmail }) {
+                        sharedPrefs.edit().putBoolean("is_terms_accepted", true).apply()
+                        sharedPrefs.edit().putBoolean("terms_accepted_${cleanEmail}", true).apply()
+                        sharedPrefs.edit().putBoolean("terms_accepted_v1", true).apply()
+                        _isTermsAccepted.value = true
+                    }
+                }
             } catch (e: Exception) {
-                Log.e("StoreViewModel", "Token refresh failed on startup", e)
+                Log.e("StoreViewModel", "Auto-refresh failed on startup", e)
             }
         }
     }
@@ -294,15 +306,20 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     private val _chatThreads = MutableStateFlow<List<com.example.data.ChatThreadEntity>>(emptyList())
     val chatThreads: StateFlow<List<com.example.data.ChatThreadEntity>> = _chatThreads.asStateFlow()
 
-    val totalChatUnread: StateFlow<Int> = _chatThreads.map { list ->
-        list.sumOf { it.unread.coerceAtLeast(0) }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
-
     private val _chatMessages = MutableStateFlow<List<com.example.data.ChatMessageEntity>>(emptyList())
     val chatMessages: StateFlow<List<com.example.data.ChatMessageEntity>> = _chatMessages.asStateFlow()
 
     private val _activeChatPeer = MutableStateFlow<UserEntity?>(null)
     val activeChatPeer: StateFlow<UserEntity?> = _activeChatPeer.asStateFlow()
+
+    /**
+     * Sum of unread messages across all conversations, excluding the one that is
+     * open right now (it is being read). Drives the numeric badge on the Chat tab.
+     */
+    val totalUnread: StateFlow<Int> = combine(_chatThreads, _activeChatPeer, _userUid) { threads, peer, me ->
+        val openId = if (peer != null && me.isNotBlank()) com.example.data.chatIdFor(me, peer.uid) else ""
+        threads.filter { it.chatId != openId }.sumOf { it.unread.coerceAtLeast(0) }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, 0)
 
     // Submissions List State
     private val _submissions = MutableStateFlow<List<SubmissionEntity>>(emptyList())
@@ -334,6 +351,13 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     private val _notifyAnnouncements = MutableStateFlow(sharedPrefs.getBoolean("notify_announcements", true))
     val notifyAnnouncements: StateFlow<Boolean> = _notifyAnnouncements.asStateFlow()
 
+    private val _notifyMessages = MutableStateFlow(sharedPrefs.getBoolean("notify_messages", true))
+    val notifyMessages: StateFlow<Boolean> = _notifyMessages.asStateFlow()
+    fun setNotifyMessages(enabled: Boolean) {
+        _notifyMessages.value = enabled
+        sharedPrefs.edit().putBoolean("notify_messages", enabled).apply()
+    }
+
     private val _notifySubmissions = MutableStateFlow(sharedPrefs.getBoolean("notify_submissions", true))
     val notifySubmissions: StateFlow<Boolean> = _notifySubmissions.asStateFlow()
 
@@ -347,29 +371,22 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     private val _isPremiumFreeMode = MutableStateFlow(true)
     val isPremiumFreeMode: StateFlow<Boolean> = _isPremiumFreeMode.asStateFlow()
 
+    private val _maintenanceConfig = MutableStateFlow(FirebaseService.MaintenanceConfig())
+    val maintenanceConfig: StateFlow<FirebaseService.MaintenanceConfig> = _maintenanceConfig.asStateFlow()
 
     private val _auditLog = MutableStateFlow<List<FirebaseService.AuditLogEntry>>(emptyList())
     val auditLog: StateFlow<List<FirebaseService.AuditLogEntry>> = _auditLog.asStateFlow()
 
     fun loadPremiumFreeMode() {
         viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val isFree = FirebaseService.fetchPremiumIsFree()
-                _isPremiumFreeMode.value = isFree
-            } catch (e: Exception) {
-                Log.e("StoreViewModel", "loadPremiumFreeMode failed: ${e.message}", e)
-            }
+            val isFree = FirebaseService.fetchPremiumIsFree()
+            _isPremiumFreeMode.value = isFree
         }
     }
 
     fun loadMaintenanceConfig() {
         viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val cfg = FirebaseService.fetchMaintenanceConfig()
-                _maintenanceConfig.value = cfg
-            } catch (e: Exception) {
-                Log.e("StoreViewModel", "loadMaintenanceConfig failed: ${e.message}", e)
-            }
+            _maintenanceConfig.value = FirebaseService.fetchMaintenanceConfig()
         }
     }
 
@@ -1197,6 +1214,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                     _devLocation.value = user.devLocation
                     _userName.value = user.displayName
                     _profilePhotoUrl.value = user.profilePhotoUrl
+                    syncFcmToken(user.fcmToken)
 
                     sharedPrefs.edit().apply {
                         putString("user_role", user.role.ifBlank { "user" })
@@ -1235,26 +1253,19 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
             .apply()
         _userName.value = newName
         _devName.value = newName
-        val email = _userEmail.value
-        val role = _userRole.value
-        val website = sharedPrefs.getString("dev_website", "") ?: ""
-        val github = sharedPrefs.getString("dev_github", "") ?: ""
-        val bio = sharedPrefs.getString("dev_bio", "") ?: ""
-        val photoUrl = sharedPrefs.getString("profile_photo_url", "") ?: ""
         if (uid.isNotBlank() && uid != "guest_uid") {
             viewModelScope.launch {
-                val user = UserEntity(
-                    uid = uid,
-                    email = email,
-                    displayName = newName,
-                    role = role,
-                    devWebsite = website,
-                    devGithub = github,
-                    devName = newName,
-                    devBio = bio,
-                    profilePhotoUrl = photoUrl
+                // PATCH only the name fields — never a full overwrite (see patchUserFields).
+                FirebaseAuthService.patchUserFields(
+                    uid,
+                    mapOf(
+                        "displayName" to newName,
+                        "userName" to newName,
+                        "developer" to newName,
+                        "developerName" to newName,
+                        "devName" to newName
+                    )
                 )
-                FirebaseAuthService.saveUserInRealtimeDatabase(user)
                 refreshDevelopers()
             }
         }
@@ -1330,53 +1341,58 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
             onDone(true, "Saved locally")
             return
         }
+        val remoteKey = when (field) {
+            "bio" -> "devBio"
+            "website" -> "devWebsite"
+            "github" -> "devGithub"
+            else -> "devLocation"
+        }
         viewModelScope.launch {
-            val user = UserEntity(
-                uid = uid,
-                email = _userEmail.value,
-                displayName = _userName.value,
-                role = _userRole.value,
-                isDeveloper = _isDeveloper.value,
-                devWebsite = _devWebsite.value,
-                devGithub = _devGithub.value,
-                devName = _devName.value.ifBlank { _userName.value },
-                devBio = _devBio.value,
-                profilePhotoUrl = _profilePhotoUrl.value,
-                devLocation = _devLocation.value
-            )
-            val ok = FirebaseAuthService.saveUserInRealtimeDatabase(user)
+            // PATCH just this field so fcmToken / premium / suspension flags survive.
+            val ok = FirebaseAuthService.patchUserFields(uid, mapOf(remoteKey to clean))
             if (ok) refreshDevelopers()
             onDone(ok, if (ok) "Profile updated" else "Saved offline — will sync later")
         }
     }
 
-    fun updateProfilePhoto(newUrl: String) {
+    fun updateProfilePhoto(newUrl: String, onDone: (Boolean) -> Unit = {}) {
         sharedPrefs.edit()
             .putString("profile_photo_url", newUrl)
             .apply()
         _profilePhotoUrl.value = newUrl
         val uid = _userUid.value
+        if (uid.isBlank() || uid == "guest_uid") {
+            onDone(true)
+            return
+        }
+        viewModelScope.launch {
+            val ok = FirebaseAuthService.patchUserFields(uid, mapOf("profilePhotoUrl" to newUrl))
+            if (ok) refreshDevelopers()
+            onDone(ok)
+        }
+    }
+
+    /** Display-name edit for regular (non-developer) accounts. */
+    fun updateUserDisplayName(newName: String): Pair<Boolean, String> {
+        val clean = newName.trim()
+        if (clean.isBlank()) return Pair(false, "Name can't be empty.")
+        if (clean.length > 40) return Pair(false, "Name is too long (max 40 characters).")
+        if (clean.lowercase().contains("darkroot")) {
+            return Pair(false, "The name cannot contain reserved terms like 'DarkRoot'.")
+        }
+        sharedPrefs.edit().putString("user_name", clean).apply()
+        _userName.value = clean
+        val uid = _userUid.value
         if (uid.isNotBlank() && uid != "guest_uid") {
             viewModelScope.launch {
-                val user = UserEntity(
-                    uid = uid,
-                    email = _userEmail.value,
-                    displayName = _userName.value,
-                    role = _userRole.value,
-                    isDeveloper = _isDeveloper.value,
-                    devWebsite = _devWebsite.value,
-                    devGithub = _devGithub.value,
-                    devName = _devName.value.ifBlank { _userName.value },
-                    devBio = _devBio.value,
-                    profilePhotoUrl = newUrl,
-                    devLocation = _devLocation.value,
-                    isPremiumMember = _isPremiumMember.value
+                FirebaseAuthService.patchUserFields(
+                    uid,
+                    mapOf("displayName" to clean, "userName" to clean)
                 )
-                FirebaseAuthService.saveUserInRealtimeDatabase(user)
-                refreshDevelopers()
                 refreshDevelopers()
             }
         }
+        return Pair(true, "Name updated")
     }
 
     // ----------------------------------------------------
@@ -1523,36 +1539,6 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         syncUserProfile()
         startInstalledAppMonitoring()
         clearOrphanedDownloadRecords()
-        // All MutableStateFlows are constructed by this late init — safe to load.
-        try { loadFollowingIds() } catch (e: Exception) { Log.e("StoreViewModel", "loadFollowingIds", e) }
-        try { loadFollowerIds() } catch (e: Exception) { Log.e("StoreViewModel", "loadFollowerIds", e) }
-        try { loadPremiumFreeMode() } catch (e: Exception) { Log.e("StoreViewModel", "loadPremiumFreeMode", e) }
-        try { loadMaintenanceConfig() } catch (e: Exception) { Log.e("StoreViewModel", "loadMaintenanceConfig", e) }
-        try { refreshDevelopers() } catch (e: Exception) { Log.e("StoreViewModel", "refreshDevelopers", e) }
-        try { refreshAppPolicy() } catch (e: Exception) { Log.e("StoreViewModel", "refreshAppPolicy", e) }
-        try { refreshChatThreads() } catch (e: Exception) { Log.e("StoreViewModel", "refreshChatThreads", e) }
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val savedEmail = sharedPrefs.getString("user_email", "") ?: ""
-                if (savedEmail.isNotBlank() && savedEmail != "guest@darkroot.io") {
-                    updateEcosystemPolicyAcceptedForCurrentUser(savedEmail)
-                    updateTermsAcceptedForCurrentUser(savedEmail)
-                    val list = FirebaseService.fetchTermsAgreements()
-                    _termsAgreements.value = list.sortedByDescending { it.timestamp }
-                    val cleanEmail = savedEmail.lowercase().trim()
-                    if (list.any { it.userEmail.lowercase().trim() == cleanEmail }) {
-                        sharedPrefs.edit()
-                            .putBoolean("is_terms_accepted", true)
-                            .putBoolean("terms_accepted_${cleanEmail}", true)
-                            .putBoolean("terms_accepted_v1", true)
-                            .apply()
-                        _isTermsAccepted.value = true
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e("StoreViewModel", "Terms restore failed: ${e.message}", e)
-            }
-        }
         // NOTE: startPeriodicSync() removed — it ran a 12s network-polling loop
         // forever (apps + notices) for as long as the process stayed alive, which
         // is exactly the "background work for notifications" that was asked to be
@@ -1757,6 +1743,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 _realtimeApps.value = orderedRemoteApps
                 
                 repository.refreshApps(remoteApps)
+                try { com.example.widget.DarkStoreWidget.notifyDataChanged(getApplication()) } catch (_: Exception) {}
                 lastAppsRefreshTime = System.currentTimeMillis()
                 refreshNotices(force = force || isBackground)
                 refreshAppPolicy()
@@ -2778,6 +2765,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         val me = _userUid.value
         if (me.isBlank()) return
         val chatId = com.example.data.chatIdFor(me, peer.uid)
+        com.example.utils.ChatPushState.activeChatId = chatId
         viewModelScope.launch(Dispatchers.IO) {
             FirebaseService.markChatRead(me, chatId)
             _chatMessages.value = FirebaseService.fetchChatMessages(chatId)
@@ -2789,6 +2777,50 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     fun closeChat() {
         _activeChatPeer.value = null
         _chatMessages.value = emptyList()
+        com.example.utils.ChatPushState.activeChatId = ""
+        refreshChatThreads()
+    }
+
+    /**
+     * Called every few seconds while the app is on screen (see MainActivity /
+     * ChatTabContent — foreground only, no background polling). Refreshes the
+     * inbox so the unread badge stays live, and the open conversation if any.
+     */
+    fun pollChats() {
+        val me = _userUid.value
+        if (me.isBlank() || me == "guest_uid") return
+        val peer = _activeChatPeer.value
+        viewModelScope.launch(Dispatchers.IO) {
+            _chatThreads.value = FirebaseService.fetchUserChatThreads(me)
+            if (peer != null) {
+                val chatId = com.example.data.chatIdFor(me, peer.uid)
+                val fresh = FirebaseService.fetchChatMessages(chatId)
+                if (fresh != _chatMessages.value) {
+                    _chatMessages.value = fresh
+                    // A new message arrived while the conversation is open — it's
+                    // being read right now, so keep unread at 0.
+                    if (fresh.lastOrNull()?.senderId != me) FirebaseService.markChatRead(me, chatId)
+                }
+            }
+        }
+    }
+
+    /** Keeps users/{uid}/fcmToken current so the chat-push server can reach this device. */
+    fun syncFcmToken(knownRemoteToken: String) {
+        val uid = _userUid.value
+        if (uid.isBlank() || uid == "guest_uid") return
+        try {
+            com.google.firebase.messaging.FirebaseMessaging.getInstance().token
+                .addOnSuccessListener { token ->
+                    if (!token.isNullOrBlank() && token != knownRemoteToken) {
+                        viewModelScope.launch {
+                            FirebaseAuthService.patchUserFields(uid, mapOf("fcmToken" to token))
+                        }
+                    }
+                }
+        } catch (e: Exception) {
+            Log.e("StoreViewModel", "syncFcmToken failed: ${e.message}")
+        }
     }
 
     fun sendChatMessage(text: String, imageUrl: String = "", onDone: (Boolean) -> Unit = {}) {
@@ -2816,23 +2848,6 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 val chatId = com.example.data.chatIdFor(me, peer.uid)
                 _chatMessages.value = FirebaseService.fetchChatMessages(chatId)
                 _chatThreads.value = FirebaseService.fetchUserChatThreads(me)
-                // Push notify recipient when possible
-                val preview = when {
-                    text.isNotBlank() -> text.trim().take(80)
-                    imageUrl.isNotBlank() -> "📷 Photo"
-                    else -> "New message"
-                }
-                val serverKey = sharedPrefs.getString("fcm_server_key", "").orEmpty().ifBlank {
-                    getApplication<Application>()
-                        .getSharedPreferences("dark_store_fcm_prefs", android.content.Context.MODE_PRIVATE)
-                        .getString("fcm_server_key", "") ?: ""
-                }
-                // Prefer token from latest peer profile in RTDB
-                val freshPeer = FirebaseAuthService.getUserProfile(peer.uid) ?: peer
-                val token = freshPeer.fcmToken
-                if (token.isNotBlank() && serverKey.isNotBlank()) {
-                    FirebaseService.sendChatPushNotification(token, myName, preview, serverKey)
-                }
             }
             kotlinx.coroutines.withContext(Dispatchers.Main) { onDone(ok) }
         }

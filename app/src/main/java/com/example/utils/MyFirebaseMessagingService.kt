@@ -32,23 +32,19 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         super.onMessageReceived(remoteMessage)
         Log.d(TAG, "Received message from FCM. Sender: ${remoteMessage.from}")
 
-        val dataType = remoteMessage.data["type"] ?: ""
+        // Chat messages ("someone messaged you") are data-only pushes sent by the
+        // chat-notifier worker — handled separately from notices/announcements.
+        if (remoteMessage.data["type"] == "chat") {
+            handleChatPush(remoteMessage.data)
+            return
+        }
+
         val notificationTitle = remoteMessage.notification?.title ?: remoteMessage.data["title"] ?: "Platform Alert"
         val notificationBody = remoteMessage.notification?.body ?: remoteMessage.data["message"] ?: remoteMessage.data["body"] ?: "New notice received"
         val imageUrl = remoteMessage.data["imageUrl"] ?: ""
         val targetAppId = remoteMessage.data["targetAppId"] ?: "all"
         val noticeId = remoteMessage.data["id"] ?: "ntc_${System.currentTimeMillis()}"
         val timestamp = remoteMessage.data["timestamp"]?.toLongOrNull() ?: System.currentTimeMillis()
-
-        // Chat messages — dedicated channel, open Chat tab
-        if (dataType == "chat" || notificationTitle.lowercase().contains("message")) {
-            val sharedPrefs = getSharedPreferences("dark_store_pref", Context.MODE_PRIVATE)
-            val notifyChat = sharedPrefs.getBoolean("notify_chat_messages", true)
-            if (notifyChat) {
-                sendChatNotification(notificationTitle, notificationBody)
-            }
-            return
-        }
 
         Log.d(TAG, "Received Notice via FCM. Title: $notificationTitle, Message: $notificationBody")
 
@@ -115,6 +111,60 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         sendNotification(noticeId, notificationTitle, notificationBody, targetAppId)
     }
 
+    private fun handleChatPush(data: Map<String, String>) {
+        try {
+            val prefs = getSharedPreferences("dark_store_pref", Context.MODE_PRIVATE)
+            if (!prefs.getBoolean("notify_messages", true)) return
+
+            val chatId = data["chatId"].orEmpty()
+            val senderUid = data["senderUid"].orEmpty()
+            val senderName = data["senderName"].orEmpty().ifBlank { "New message" }
+            val senderPhoto = data["senderPhoto"].orEmpty()
+            val body = data["body"].orEmpty().ifBlank { "Sent you a message" }
+            val unread = data["unread"]?.toIntOrNull() ?: 1
+
+            // Already looking at this exact conversation → no banner needed.
+            if (ChatPushState.appInForeground && chatId.isNotBlank() && chatId == ChatPushState.activeChatId) return
+
+            val channelId = "chat_messages_channel"
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val channel = NotificationChannel(
+                    channelId, "Chat messages", NotificationManager.IMPORTANCE_HIGH
+                ).apply { description = "Messages from other Dark Store users and developers" }
+                nm.createNotificationChannel(channel)
+            }
+
+            val intent = Intent().apply {
+                setClassName(packageName, "com.example.MainActivity")
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra("open_screen", "chat")
+                putExtra("chat_uid", senderUid)
+                putExtra("chat_name", senderName)
+                putExtra("chat_photo", senderPhoto)
+            }
+            val pi = PendingIntent.getActivity(
+                this, chatId.hashCode(), intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val builder = NotificationCompat.Builder(this, channelId)
+                .setSmallIcon(android.R.drawable.ic_dialog_email)
+                .setContentTitle(senderName)
+                .setContentText(body)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                .setNumber(unread)
+                .setContentIntent(pi)
+                .setAutoCancel(true)
+            // One notification per conversation — newer messages replace the old one.
+            nm.notify(("chat_" + chatId).hashCode(), builder.build())
+        } catch (e: Exception) {
+            Log.e(TAG, "Error showing chat push: ${e.message}", e)
+        }
+    }
+
     private fun sendNotification(noticeId: String, title: String, messageBody: String, targetAppId: String) {
         try {
             val channelId = "announcements_channel"
@@ -177,40 +227,4 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             Log.e(TAG, "Error displaying push alert banner: ${e.message}", e)
         }
     }
-    private fun sendChatNotification(title: String, body: String) {
-        try {
-            val channelId = "chat_messages_channel"
-            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val channel = NotificationChannel(
-                    channelId,
-                    "Chat messages",
-                    NotificationManager.IMPORTANCE_HIGH
-                ).apply {
-                    description = "Direct messages from developers and users"
-                }
-                notificationManager.createNotificationChannel(channel)
-            }
-            val intent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
-                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                putExtra("open_screen", "chat")
-            }
-            val pending = PendingIntent.getActivity(
-                this, 2002, intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            val notification = NotificationCompat.Builder(this, channelId)
-                .setSmallIcon(android.R.drawable.ic_dialog_email)
-                .setContentTitle(title)
-                .setContentText(body)
-                .setAutoCancel(true)
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .setContentIntent(pending)
-                .build()
-            notificationManager.notify((System.currentTimeMillis() % Int.MAX_VALUE).toInt(), notification)
-        } catch (e: Exception) {
-            Log.e(TAG, "sendChatNotification failed: ${e.message}", e)
-        }
-    }
-
 }
