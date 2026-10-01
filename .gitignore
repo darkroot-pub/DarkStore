@@ -1,6 +1,0 @@
-*.keystore
-google-services.json
-.gradle/
-build/
-captures/
-*.iml
