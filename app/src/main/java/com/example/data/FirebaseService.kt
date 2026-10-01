@@ -1113,35 +1113,24 @@ object FirebaseService {
                     .build()
             ).execute().close()
 
-            // Their inbox row — bump unread
-            var theirUnread = 1
-            try {
-                val getReq = Request.Builder()
-                    .url("${RTDB_URL}userChats/$otherUid/$chatId/unread.json$tokenParam")
-                    .get()
-                    .build()
-                client.newCall(getReq).execute().use { r ->
-                    val b = r.body?.string()
-                    if (!b.isNullOrBlank() && b != "null") {
-                        theirUnread = (b.trim().toIntOrNull() ?: 0) + 1
-                    }
-                }
-            } catch (_: Exception) {}
-
+            // Their inbox row — bump unread with a SERVER-SIDE increment.
+            // The old code read the recipient's current unread count first, but
+            // userChats/{otherUid} is only readable by that user (see rules), so
+            // the read was always denied and the count was stuck at 1 forever.
             val theirs = org.json.JSONObject().apply {
                 put("otherUid", myUid)
                 put("otherName", myName)
                 put("otherPhoto", myPhoto)
                 put("lastMessage", preview)
                 put("updatedAt", now)
-                put("unread", theirUnread)
+                put("unread", org.json.JSONObject().put(".sv", org.json.JSONObject().put("increment", 1)))
             }.toString().toRequestBody(jsonMediaType)
             client.newCall(
                 Request.Builder()
                     .url("${RTDB_URL}userChats/$otherUid/$chatId.json$tokenParam")
-                    .put(theirs)
+                    .patch(theirs)
                     .build()
-            ).execute().close()
+            ).execute().use { if (!it.isSuccessful) Log.e(TAG, "unread bump failed: ${it.code}") }
 
             true
         } catch (e: Exception) {
@@ -1165,50 +1154,4 @@ object FirebaseService {
             false
         }
     }
-    /**
-     * Best-effort FCM legacy HTTP push to a single device token.
-     * Uses the same server key style as admin notices (stored by the app).
-     */
-    suspend fun sendChatPushNotification(
-        recipientFcmToken: String,
-        senderName: String,
-        preview: String,
-        serverKey: String
-    ): Boolean = kotlinx.coroutines.withContext(Dispatchers.IO) {
-        if (recipientFcmToken.isBlank() || serverKey.isBlank()) return@withContext false
-        try {
-            val payload = org.json.JSONObject().apply {
-                put("to", recipientFcmToken)
-                put("priority", "high")
-                put("notification", org.json.JSONObject().apply {
-                    put("title", senderName.ifBlank { "New message" })
-                    put("body", preview.ifBlank { "Sent you a message" })
-                    put("sound", "default")
-                    put("android_channel_id", "chat_messages_channel")
-                })
-                put("data", org.json.JSONObject().apply {
-                    put("type", "chat")
-                    put("title", senderName.ifBlank { "New message" })
-                    put("message", preview.ifBlank { "Sent you a message" })
-                    put("open_screen", "chat")
-                })
-            }
-            val body = payload.toString().toRequestBody(jsonMediaType)
-            val request = Request.Builder()
-                .url("https://fcm.googleapis.com/fcm/send")
-                .addHeader("Authorization", "key=$serverKey")
-                .addHeader("Content-Type", "application/json")
-                .post(body)
-                .build()
-            client.newCall(request).execute().use { resp ->
-                val ok = resp.isSuccessful
-                if (!ok) Log.e(TAG, "Chat FCM failed: ${resp.code} ${resp.body?.string()}")
-                ok
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "sendChatPushNotification: ${e.message}", e)
-            false
-        }
-    }
-
 }

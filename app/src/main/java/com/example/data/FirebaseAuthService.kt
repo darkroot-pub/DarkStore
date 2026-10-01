@@ -630,6 +630,29 @@ object FirebaseAuthService {
         return false to ""
     }
 
+    /**
+     * Partial update of users/{uid} — only the given fields are written, everything
+     * else on the record (fcmToken, isPremiumMember, isSuspended, createdAt…) is
+     * left untouched. Profile edits used to go through saveUserInRealtimeDatabase()
+     * which is a full PUT built from a UserEntity with defaults, so every profile
+     * edit silently wiped the user's fcmToken (breaking push) and premium flag.
+     */
+    suspend fun patchUserFields(uid: String, fields: Map<String, Any>): Boolean = withContext(Dispatchers.IO) {
+        if (uid.isBlank() || uid == "guest_uid" || fields.isEmpty()) return@withContext false
+        val payload = JSONObject()
+        fields.forEach { (k, v) -> payload.put(k, v) }
+        val request = Request.Builder()
+            .url("${RTDB_URL}users/$uid.json${getTokenParam()}")
+            .patch(payload.toString().toRequestBody(mediaTypeJson))
+            .build()
+        try {
+            client.newCall(request).execute().use { it.isSuccessful }
+        } catch (e: Exception) {
+            Log.e(TAG, "patchUserFields failed: ${e.message}", e)
+            false
+        }
+    }
+
     suspend fun saveUserInRealtimeDatabase(user: UserEntity): Boolean = withContext(Dispatchers.IO) {
         val payload = JSONObject().apply {
             put("uid", user.uid)

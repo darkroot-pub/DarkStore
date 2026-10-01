@@ -54,6 +54,10 @@ class DarkStoreWidgetService : RemoteViewsService() {
 
         // Runs on a binder thread — blocking network/disk is allowed here.
         override fun onDataSetChanged() {
+            try { loadData() } catch (t: Throwable) { android.util.Log.e("DarkStoreWidget", "load failed", t) }
+        }
+
+        private fun loadData() {
             val remote = try {
                 runBlocking { withTimeoutOrNull(8_000) { FirebaseService.fetchApps() } }
             } catch (e: Exception) {
@@ -138,7 +142,13 @@ class DarkStoreWidgetService : RemoteViewsService() {
 
         override fun getCount(): Int = items.size
 
-        override fun getViewAt(position: Int): RemoteViews {
+        override fun getViewAt(position: Int): RemoteViews =
+            try { buildRow(position) } catch (t: Throwable) {
+                android.util.Log.e("DarkStoreWidget", "row failed", t)
+                RemoteViews(ctx.packageName, R.layout.widget_item)
+            }
+
+        private fun buildRow(position: Int): RemoteViews {
             val app = items.getOrNull(position)
                 ?: return RemoteViews(ctx.packageName, R.layout.widget_item)
             val row = RemoteViews(ctx.packageName, R.layout.widget_item)

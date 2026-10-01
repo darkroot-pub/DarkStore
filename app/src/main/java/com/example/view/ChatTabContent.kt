@@ -29,6 +29,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import coil.compose.AsyncImage
 import com.example.data.UserEntity
 import com.example.viewmodel.StoreViewModel
@@ -192,6 +193,10 @@ fun ChatTabContent(
                     }
                 } else {
                     items(threads, key = { it.chatId }) { thread ->
+                        val livePeer = developers.find { it.uid == thread.otherUid }
+                        val livePhoto = livePeer?.profilePhotoUrl?.takeIf { it.isNotBlank() } ?: thread.otherPhoto
+                        val liveName = livePeer?.let { it.devName.ifBlank { it.displayName } }?.takeIf { it.isNotBlank() }
+                            ?: thread.otherName
                         Row(
                             Modifier
                                 .fillMaxWidth()
@@ -214,12 +219,12 @@ fun ChatTabContent(
                                 .padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            AvatarBubble(thread.otherPhoto, thread.otherName, accentGreen)
+                            AvatarBubble(livePhoto, liveName, accentGreen)
                             Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        thread.otherName.ifBlank { "Developer" },
+                                        liveName.ifBlank { "Developer" },
                                         color = textPrimary,
                                         fontWeight = FontWeight.SemiBold,
                                         fontSize = 14.sp,
@@ -231,7 +236,8 @@ fun ChatTabContent(
                                 }
                                 Text(
                                     thread.lastMessage.ifBlank { "…" },
-                                    color = textSecondary,
+                                    color = if (thread.unread > 0) textPrimary else textSecondary,
+                                    fontWeight = if (thread.unread > 0) FontWeight.SemiBold else FontWeight.Normal,
                                     fontSize = 12.sp,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
@@ -239,12 +245,22 @@ fun ChatTabContent(
                             }
                             if (thread.unread > 0) {
                                 Spacer(Modifier.width(8.dp))
+                                // Numeric unread badge: 1, 2, 3 … 99+
                                 Box(
                                     Modifier
-                                        .size(10.dp)
+                                        .defaultMinSize(minWidth = 22.dp, minHeight = 22.dp)
                                         .clip(CircleShape)
                                         .background(accentGreen)
-                                )
+                                        .padding(horizontal = 6.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        if (thread.unread > 99) "99+" else thread.unread.toString(),
+                                        color = Color.White,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                             }
                         }
                     }
@@ -338,6 +354,23 @@ private fun ChatThreadScreen(
     var uploading by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val peerName = peer.devName.ifBlank { peer.displayName }.ifBlank { peer.email }
+    var showPeerPhoto by remember { mutableStateOf(false) }
+
+    // New messages while a conversation is open: poll every 3s, but only while
+    // the app is actually on screen (stops automatically when backgrounded).
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    LaunchedEffect(peer.uid, lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            while (true) {
+                kotlinx.coroutines.delay(3_000)
+                viewModel.pollChats()
+            }
+        }
+    }
+
+    if (showPeerPhoto && peer.profilePhotoUrl.isNotBlank()) {
+        FullScreenPhotoViewer(photoUrl = peer.profilePhotoUrl, title = peerName, onDismiss = { showPeerPhoto = false })
+    }
 
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
@@ -365,11 +398,7 @@ private fun ChatThreadScreen(
                 val client = okhttp3.OkHttpClient()
                 val resp = client.newCall(req).execute()
                 val body = resp.body?.string().orEmpty()
-                val url = try {
-                    val data = org.json.JSONObject(body).optJSONObject("data")
-                    data?.optString("url")?.takeIf { it.isNotBlank() }
-                        ?: data?.optString("display_url")?.takeIf { it.isNotBlank() }
-                } catch (_: Exception) { null }
+                val url = Regex("\"url\"\\s*:\\s*\"([^\"]+)\"").find(body)?.groupValues?.get(1)?.replace("\\/", "/")
                 kotlinx.coroutines.withContext(Dispatchers.Main) {
                     uploading = false
                     if (url != null) {
@@ -401,7 +430,9 @@ private fun ChatThreadScreen(
             IconButton(onClick = onBack) {
                 Icon(Icons.Default.ArrowBack, null, tint = textPrimary)
             }
-            AvatarBubble(peer.profilePhotoUrl, peerName, accentGreen)
+            Box(Modifier.clip(CircleShape).clickable(enabled = peer.profilePhotoUrl.isNotBlank()) { showPeerPhoto = true }) {
+                AvatarBubble(peer.profilePhotoUrl, peerName, accentGreen)
+            }
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Text(peerName, color = textPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1)

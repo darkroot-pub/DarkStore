@@ -57,6 +57,12 @@
                 android:resource="@xml/widget_info" />
         </receiver>
 
+        <!-- Feeds the widget's featured-apps list -->
+        <service
+            android:name="com.example.widget.DarkStoreWidgetService"
+            android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+
         <!-- Background / Notification Click Installation Handler -->
         <receiver
             android:name="com.example.utils.InstallReceiver"

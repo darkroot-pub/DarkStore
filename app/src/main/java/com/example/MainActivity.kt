@@ -4,6 +4,9 @@ package com.example
 
 import android.app.Application
 import android.os.Bundle
+import com.example.view.FullScreenPhotoViewer
+import com.example.view.ProfilePhotoEditor
+import com.example.view.UserIdentityCard
 import android.widget.Toast
 import android.net.Uri
 import androidx.activity.ComponentActivity
@@ -55,6 +58,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -129,6 +134,16 @@ class MainActivity : ComponentActivity() {
         com.example.widget.DarkStoreWidget.updateAllWidgets(this)
     }
 
+    override fun onStart() {
+        super.onStart()
+        com.example.utils.ChatPushState.appInForeground = true
+    }
+
+    override fun onStop() {
+        com.example.utils.ChatPushState.appInForeground = false
+        super.onStop()
+    }
+
     override fun onDestroy() {
         packageReceiver?.let {
             try {
@@ -141,9 +156,8 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        com.example.utils.CrashReporter.install(applicationContext)
         super.onCreate(savedInstanceState)
-        // TEMP: crash log catcher — remove with CrashLogCatcher.kt later
-        com.example.utils.CrashLogCatcher.install(this)
         
         // Optimize Coil Image Loading cache to maximize interface smoothness
         try {
@@ -257,6 +271,38 @@ class MainActivity : ComponentActivity() {
         setContent {
             val context = LocalContext.current
             var showSplash by remember { mutableStateOf(true) }
+            var crashReport by remember { mutableStateOf(com.example.utils.CrashReporter.read(context)) }
+            crashReport?.let { report ->
+                androidx.compose.material3.AlertDialog(
+                    onDismissRequest = {
+                        com.example.utils.CrashReporter.clear(context)
+                        crashReport = null
+                    },
+                    title = { androidx.compose.material3.Text("App crashed last time") },
+                    text = {
+                        androidx.compose.foundation.layout.Box(
+                            Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())
+                        ) {
+                            androidx.compose.foundation.text.selection.SelectionContainer {
+                                androidx.compose.material3.Text(report, fontSize = 10.sp, lineHeight = 13.sp)
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        androidx.compose.material3.TextButton(onClick = {
+                            val cm = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            cm.setPrimaryClip(android.content.ClipData.newPlainText("crash", report))
+                            android.widget.Toast.makeText(context, "Copied — send it to Claude", android.widget.Toast.LENGTH_SHORT).show()
+                        }) { androidx.compose.material3.Text("Copy") }
+                    },
+                    dismissButton = {
+                        androidx.compose.material3.TextButton(onClick = {
+                            com.example.utils.CrashReporter.clear(context)
+                            crashReport = null
+                        }) { androidx.compose.material3.Text("Dismiss") }
+                    }
+                )
+            }
             val isDarkMode by viewModel.isDarkMode.collectAsStateWithLifecycle()
             val isAmoledMode by viewModel.isAmoledMode.collectAsStateWithLifecycle()
             val isLoggedIn by viewModel.isLoggedIn.collectAsStateWithLifecycle()
@@ -854,7 +900,6 @@ fun PlayStoreMainDashboard(
     val appReviews by viewModel.appReviews.collectAsStateWithLifecycle()
     val isReviewsLoading by viewModel.isReviewsLoading.collectAsStateWithLifecycle()
     val isAdmin = userRole.equals("admin", ignoreCase = true)
-    val totalChatUnread by viewModel.totalChatUnread.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val maintenanceConfig by viewModel.maintenanceConfig.collectAsStateWithLifecycle()
 
@@ -913,12 +958,24 @@ fun PlayStoreMainDashboard(
                 // brought back to the front, it's guaranteed a fresh fetch
                 // right away instead of waiting on the background loop.
                 viewModel.refreshMarketplace(force = true)
-                viewModel.refreshChatThreads()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    // Live chat badge: poll the inbox every few seconds, but ONLY while the app is on
+    // screen (STARTED) and signed in — no background polling.
+    val chatUnread by viewModel.totalUnread.collectAsStateWithLifecycle()
+    LaunchedEffect(isLoggedIn, lifecycleOwner) {
+        if (!isLoggedIn) return@LaunchedEffect
+        lifecycleOwner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            while (true) {
+                viewModel.pollChats()
+                kotlinx.coroutines.delay(8_000)
+            }
         }
     }
 
@@ -960,7 +1017,12 @@ fun PlayStoreMainDashboard(
                 }
                 "app_details", "updates" -> {
                     if (appId != null) {
+                        // On a cold start (e.g. tapped from the home-screen widget) the catalog may
+                        // not be loaded yet — wait briefly instead of silently dropping the request.
                         val foundApp = currentUnfilteredApps.find { it.id == appId || it.packageName == appId }
+                            ?: kotlinx.coroutines.withTimeoutOrNull(5_000) {
+                                viewModel.unfilteredApps.first { list -> list.any { it.id == appId || it.packageName == appId } }
+                            }?.find { it.id == appId || it.packageName == appId }
                         if (foundApp != null) {
                             showDetailsApp = foundApp
                         }
@@ -970,7 +1032,27 @@ fun PlayStoreMainDashboard(
                     activeTab = "Settings"
                 }
                 "chat" -> {
-                    if (isLoggedIn) activeTab = "Chat"
+                    if (isLoggedIn) {
+                        activeTab = "Chat"
+                        val peerUid = currentActivity.intent?.getStringExtra("chat_uid").orEmpty()
+                        if (peerUid.isNotBlank()) {
+                            val peerName = currentActivity.intent?.getStringExtra("chat_name").orEmpty()
+                            val peerPhoto = currentActivity.intent?.getStringExtra("chat_photo").orEmpty()
+                            val known = viewModel.developers.value.find { it.uid == peerUid }
+                            viewModel.openChatWith(
+                                known ?: com.example.data.UserEntity(
+                                    uid = peerUid,
+                                    email = "",
+                                    displayName = peerName,
+                                    role = "user",
+                                    isDeveloper = false,
+                                    devName = peerName,
+                                    profilePhotoUrl = peerPhoto
+                                )
+                            )
+                        }
+                        currentActivity.intent?.removeExtra("chat_uid")
+                    }
                 }
             }
             currentActivity.intent?.removeExtra("open_screen")
@@ -1158,31 +1240,32 @@ fun PlayStoreMainDashboard(
                             if (tabId == "Profile" || tabId == "Console") viewModel.refreshSubmissions()
                         },
                         icon = {
-                            val iconMod = Modifier
-                                .graphicsLayer {
-                                    scaleX = iconScale
-                                    scaleY = iconScale
-                                }
-                                .offset(y = iconOffset)
-                            if (tabId == "Chat" && totalChatUnread > 0) {
+                            val navIcon: @Composable () -> Unit = {
+                                Icon(
+                                    imageVector = icon,
+                                    contentDescription = label,
+                                    modifier = Modifier
+                                        .graphicsLayer {
+                                            scaleX = iconScale
+                                            scaleY = iconScale
+                                        }
+                                        .offset(y = iconOffset)
+                                )
+                            }
+                            if (tabId == "Chat" && chatUnread > 0) {
                                 BadgedBox(
                                     badge = {
-                                        Badge(
-                                            containerColor = Color(0xFFEF4444),
-                                            contentColor = Color.White
-                                        ) {
+                                        Badge(containerColor = Color(0xFFEF4444), contentColor = Color.White) {
                                             Text(
-                                                text = if (totalChatUnread > 99) "99+" else "$totalChatUnread",
+                                                text = if (chatUnread > 99) "99+" else chatUnread.toString(),
                                                 fontSize = 10.sp,
                                                 fontWeight = FontWeight.Bold
                                             )
                                         }
                                     }
-                                ) {
-                                    Icon(imageVector = icon, contentDescription = label, modifier = iconMod)
-                                }
+                                ) { navIcon() }
                             } else {
-                                Icon(imageVector = icon, contentDescription = label, modifier = iconMod)
+                                navIcon()
                             }
                         },
                         label = { Text(label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
@@ -4237,6 +4320,21 @@ fun ProfileTabContent(
                     }
                 }
 
+                if (!isDeveloper && userEmail != "guest@darkroot.io") {
+                    val ownPhotoUrl by viewModel.profilePhotoUrl.collectAsStateWithLifecycle()
+                    UserIdentityCard(
+                        viewModel = viewModel,
+                        userName = userName,
+                        userEmail = userEmail,
+                        photoUrl = ownPhotoUrl,
+                        surfaceCol = surfaceCol,
+                        borderCol = borderCol,
+                        textPrimary = textPrimaryCol,
+                        textSecondary = textSecondaryCol,
+                        accent = accentGreen
+                    )
+                }
+
                 // Following/Followers for non-developers only (developers get this
                 // inside the Option 2 profile card below).
                 if (!isDeveloper) {
@@ -4600,54 +4698,8 @@ fun ProfileTabContent(
                     val followerIds by viewModel.followerIds.collectAsStateWithLifecycle()
                     val allKnownUsers by viewModel.developers.collectAsStateWithLifecycle()
                     var showEditProfile by remember { mutableStateOf(false) }
+                    var showOwnPhotoViewer by remember { mutableStateOf(false) }
                     var showFollowersFollowingDialog by remember { mutableStateOf(false) }
-                    var showFullPhoto by remember { mutableStateOf(false) }
-                    var isUploadingPhoto by remember { mutableStateOf(false) }
-                    val profilePhotoPicker = rememberLauncherForActivityResult(
-                        contract = ActivityResultContracts.GetContent()
-                    ) { uri: android.net.Uri? ->
-                        if (uri == null) return@rememberLauncherForActivityResult
-                        isUploadingPhoto = true
-                        coroutineScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                            try {
-                                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                                if (bytes == null) {
-                                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                        isUploadingPhoto = false
-                                        Toast.makeText(context, "Could not read photo", Toast.LENGTH_SHORT).show()
-                                    }
-                                    return@launch
-                                }
-                                val b64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
-                                val form = okhttp3.FormBody.Builder().add("image", b64).build()
-                                val req = okhttp3.Request.Builder()
-                                    .url("https://api.imgbb.com/1/upload?key=a046c848dfa5230136f107106d4bb187")
-                                    .post(form)
-                                    .build()
-                                val resp = okhttp3.OkHttpClient().newCall(req).execute()
-                                val body = resp.body?.string().orEmpty()
-                                val url = try {
-                                    val data = org.json.JSONObject(body).optJSONObject("data")
-                                    data?.optString("url")?.takeIf { it.isNotBlank() }
-                                        ?: data?.optString("display_url")?.takeIf { it.isNotBlank() }
-                                } catch (_: Exception) { null }
-                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                    isUploadingPhoto = false
-                                    if (url != null) {
-                                        viewModel.updateProfilePhoto(url)
-                                        Toast.makeText(context, "Profile photo updated", Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        Toast.makeText(context, "Upload failed", Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                            } catch (e: Exception) {
-                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                    isUploadingPhoto = false
-                                    Toast.makeText(context, "Upload error: ${e.message}", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        }
-                    }
 
                     // Cover + identity card
                     Card(
@@ -4708,22 +4760,15 @@ fun ProfileTabContent(
                                         .size(76.dp)
                                         .clip(CircleShape)
                                         .background(surfaceCol)
-                                        .border(3.dp, surfaceCol, CircleShape)
-                                        .clickable {
-                                            if (profilePhotoUrl.isNotBlank()) {
-                                                showFullPhoto = true
-                                            } else {
-                                                // No photo yet — open edit to set one
-                                                showEditProfile = true
-                                            }
-                                        },
+                                        .border(3.dp, surfaceCol, CircleShape),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Box(
                                         modifier = Modifier
                                             .fillMaxSize()
                                             .clip(CircleShape)
-                                            .background(Color(0xFF3B82F6).copy(alpha = 0.15f)),
+                                            .background(Color(0xFF3B82F6).copy(alpha = 0.15f))
+                                            .clickable(enabled = profilePhotoUrl.isNotBlank()) { showOwnPhotoViewer = true },
                                         contentAlignment = Alignment.Center
                                     ) {
                                         if (profilePhotoUrl.isNotBlank()) {
@@ -4956,41 +5001,6 @@ fun ProfileTabContent(
                     }
 
                     // Full Edit Profile dialog
-
-                    if (showFullPhoto && profilePhotoUrl.isNotBlank()) {
-                        Dialog(
-                            onDismissRequest = { showFullPhoto = false },
-                            properties = DialogProperties(usePlatformDefaultWidth = false)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(Color.Black.copy(alpha = 0.94f))
-                                    .clickable { showFullPhoto = false },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                IconButton(
-                                    onClick = { showFullPhoto = false },
-                                    modifier = Modifier
-                                        .align(Alignment.TopEnd)
-                                        .padding(16.dp)
-                                        .statusBarsPadding()
-                                ) {
-                                    Icon(Icons.Default.Close, null, tint = Color.White)
-                                }
-                                AsyncImage(
-                                    model = profilePhotoUrl,
-                                    contentDescription = "Profile photo",
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 12.dp)
-                                        .clip(RoundedCornerShape(16.dp)),
-                                    contentScale = ContentScale.Fit
-                                )
-                            }
-                        }
-                    }
-
                     if (showEditProfile) {
                         var editName by remember { mutableStateOf(devName.ifBlank { userName }) }
                         var editBio by remember { mutableStateOf(liveDevBio) }
@@ -5020,68 +5030,6 @@ fun ProfileTabContent(
                                             Icon(Icons.Default.Close, null, tint = textSecondaryCol)
                                         }
                                     }
-                                    Spacer(modifier = Modifier.height(12.dp))
-                                    // Profile photo change
-                                    Column(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalAlignment = Alignment.CenterHorizontally
-                                    ) {
-                                        Box(
-                                            modifier = Modifier.size(88.dp),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .fillMaxSize()
-                                                    .clip(CircleShape)
-                                                    .background(Color(0xFF3B82F6).copy(alpha = 0.12f))
-                                                    .border(2.dp, Color(0xFF3B82F6).copy(alpha = 0.35f), CircleShape),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                if (isUploadingPhoto) {
-                                                    CircularProgressIndicator(
-                                                        modifier = Modifier.size(28.dp),
-                                                        strokeWidth = 2.dp,
-                                                        color = Color(0xFF3B82F6)
-                                                    )
-                                                } else if (profilePhotoUrl.isNotBlank()) {
-                                                    AsyncImage(
-                                                        model = profilePhotoUrl,
-                                                        contentDescription = "Profile photo",
-                                                        modifier = Modifier.fillMaxSize().clip(CircleShape),
-                                                        contentScale = ContentScale.Crop
-                                                    )
-                                                } else {
-                                                    Icon(Icons.Default.Person, null, tint = Color(0xFF3B82F6), modifier = Modifier.size(36.dp))
-                                                }
-                                            }
-                                            Box(
-                                                modifier = Modifier
-                                                    .align(Alignment.BottomEnd)
-                                                    .size(28.dp)
-                                                    .clip(CircleShape)
-                                                    .background(Color(0xFF3B82F6))
-                                                    .clickable(enabled = !isUploadingPhoto) {
-                                                        profilePhotoPicker.launch("image/*")
-                                                    },
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Icon(Icons.Default.AddAPhoto, null, tint = Color.White, modifier = Modifier.size(14.dp))
-                                            }
-                                        }
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                        TextButton(
-                                            onClick = { profilePhotoPicker.launch("image/*") },
-                                            enabled = !isUploadingPhoto
-                                        ) {
-                                            Text(
-                                                if (isUploadingPhoto) "Uploading…" else "Change profile photo",
-                                                color = Color(0xFF3B82F6),
-                                                fontWeight = FontWeight.SemiBold,
-                                                fontSize = 13.sp
-                                            )
-                                        }
-                                    }
                                     Spacer(modifier = Modifier.height(8.dp))
                                     Column(
                                         modifier = Modifier
@@ -5097,6 +5045,14 @@ fun ProfileTabContent(
                                             cursorColor = Color(0xFF3B82F6),
                                             focusedLabelColor = Color(0xFF3B82F6),
                                             unfocusedLabelColor = textSecondaryCol
+                                        )
+                                        ProfilePhotoEditor(
+                                            viewModel = viewModel,
+                                            photoUrl = profilePhotoUrl,
+                                            initial = devName.ifBlank { userName },
+                                            accent = Color(0xFF3B82F6),
+                                            textSecondary = textSecondaryCol,
+                                            surfaceColor = surfaceCol
                                         )
                                         OutlinedTextField(
                                             value = editName,
@@ -5181,6 +5137,14 @@ fun ProfileTabContent(
                                 }
                             }
                         }
+                    }
+
+                    if (showOwnPhotoViewer && profilePhotoUrl.isNotBlank()) {
+                        FullScreenPhotoViewer(
+                            photoUrl = profilePhotoUrl,
+                            title = devName.ifBlank { userName },
+                            onDismiss = { showOwnPhotoViewer = false }
+                        )
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
@@ -7701,6 +7665,7 @@ fun SettingsTabContent(
     val notifyUpdates by viewModel.notifyUpdates.collectAsStateWithLifecycle()
     val notifyAnnouncements by viewModel.notifyAnnouncements.collectAsStateWithLifecycle()
     val notifySubmissions by viewModel.notifySubmissions.collectAsStateWithLifecycle()
+    val notifyMessages by viewModel.notifyMessages.collectAsStateWithLifecycle()
     var apkCacheSize by remember { mutableStateOf(StorageManager.getApkCacheSize(context)) }
 
     val notices by viewModel.notices.collectAsStateWithLifecycle()
@@ -7739,125 +7704,6 @@ fun SettingsTabContent(
             )
             Spacer(modifier = Modifier.height(12.dp))
         }
-
-        // TEMP crash log viewer — remove with CrashLogCatcher.kt later
-        item {
-            var showCrashDialog by remember { mutableStateOf(false) }
-            val crashCount = remember { com.example.utils.CrashLogCatcher.count(context) }
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (isDarkMode) Color(0xFF2A1515) else Color(0xFFFFF5F5)
-                ),
-                border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.45f))
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Warning, null, tint = Color(0xFFEF4444), modifier = Modifier.size(20.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            "Crash logs (temp)",
-                            color = textPrimary,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp
-                        )
-                        Spacer(modifier = Modifier.weight(1f))
-                        if (crashCount > 0) {
-                            Text(
-                                "$crashCount",
-                                color = Color.White,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier
-                                    .background(Color(0xFFEF4444), RoundedCornerShape(10.dp))
-                                    .padding(horizontal = 8.dp, vertical = 2.dp)
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        "If the app force-closes, open this to copy the stack trace.",
-                        color = textSecondary,
-                        fontSize = 12.sp
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(
-                            onClick = { showCrashDialog = true },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
-                            shape = RoundedCornerShape(10.dp),
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
-                        ) {
-                            Text("View / Copy", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                        }
-                        OutlinedButton(
-                            onClick = {
-                                com.example.utils.CrashLogCatcher.clear(context)
-                                Toast.makeText(context, "Crash logs cleared", Toast.LENGTH_SHORT).show()
-                            },
-                            shape = RoundedCornerShape(10.dp),
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
-                        ) {
-                            Text("Clear", fontSize = 12.sp, color = textSecondary)
-                        }
-                    }
-                }
-            }
-            if (showCrashDialog) {
-                val logText = remember { com.example.utils.CrashLogCatcher.readAll(context) }
-                Dialog(
-                    onDismissRequest = { showCrashDialog = false },
-                    properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
-                ) {
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth(0.94f)
-                            .fillMaxHeight(0.85f),
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = cardBgColor)
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp).fillMaxSize()) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("Crash logs", color = textPrimary, fontWeight = FontWeight.Bold, fontSize = 17.sp, modifier = Modifier.weight(1f))
-                                IconButton(onClick = { showCrashDialog = false }) {
-                                    Icon(Icons.Default.Close, null, tint = textSecondary)
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(8.dp))
-                            val crashScroll = rememberScrollState()
-                            Text(
-                                text = logText,
-                                color = textSecondary,
-                                fontSize = 11.sp,
-                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .fillMaxWidth()
-                                    .verticalScroll(crashScroll)
-                            )
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Button(
-                                onClick = {
-                                    val cm = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                                    cm.setPrimaryClip(android.content.ClipData.newPlainText("crash_logs", logText))
-                                    Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = ButtonDefaults.buttonColors(containerColor = accentGreen),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Text("Copy all", fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
 
         // ----------------------------------------------------
         // DARKSTORE PREMIUM SUBSCRIPTION CARD
@@ -8688,6 +8534,44 @@ fun SettingsTabContent(
                                 checkedTrackColor = accentGreen.copy(alpha = 0.4f)
                             ),
                             modifier = Modifier.testTag("toggle_submissions_alerts")
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Divider(color = cardBorderColor)
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Chat message alerts
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            modifier = Modifier.weight(1f),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Chat,
+                                contentDescription = "Chat Alerts Icon",
+                                tint = textSecondary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text("Chat Message Alerts", color = textPrimary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                Text("Notify me when someone messages me", color = textSecondary, fontSize = 12.sp)
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Switch(
+                            checked = notifyMessages,
+                            onCheckedChange = { viewModel.setNotifyMessages(it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = accentGreen,
+                                checkedTrackColor = accentGreen.copy(alpha = 0.4f)
+                            ),
+                            modifier = Modifier.testTag("toggle_chat_alerts")
                         )
                     }
                 }
@@ -12815,14 +12699,23 @@ fun AppDetailsDialog(
                             .padding(horizontal = 22.dp)
                             .offset(y = (-36).dp)
                     ) {
-                        // Avatar — real photo when available
+                        // Avatar — real photo when available (tap → full screen)
+                        var showDevPhotoViewer by remember { mutableStateOf(false) }
+                        if (showDevPhotoViewer && devProfile.profilePhotoUrl.isNotBlank()) {
+                            FullScreenPhotoViewer(
+                                photoUrl = devProfile.profilePhotoUrl,
+                                title = devProfile.devName.ifBlank { devProfile.displayName.ifBlank { app.developer } },
+                                onDismiss = { showDevPhotoViewer = false }
+                            )
+                        }
                         Box(
                             modifier = Modifier
                                 .size(80.dp)
                                 .align(Alignment.CenterHorizontally)
                                 .clip(CircleShape)
                                 .background(accentGreen.copy(alpha = 0.12f))
-                                .border(3.dp, cardBgColor, CircleShape),
+                                .border(3.dp, cardBgColor, CircleShape)
+                                .clickable(enabled = devProfile.profilePhotoUrl.isNotBlank()) { showDevPhotoViewer = true },
                             contentAlignment = Alignment.Center
                         ) {
                             if (devProfile.profilePhotoUrl.isNotBlank()) {
@@ -13351,11 +13244,8 @@ fun AddNewAppForm(
                     val response = client.newCall(request).execute()
                     if (response.isSuccessful) {
                         val bodyString = response.body?.string() ?: ""
-                        val uploadedUrl = try {
-                            val data = org.json.JSONObject(bodyString).optJSONObject("data")
-                            data?.optString("url")?.takeIf { it.isNotBlank() }
-                                ?: data?.optString("display_url")?.takeIf { it.isNotBlank() }
-                        } catch (_: Exception) { null }
+                        val match = Regex("\"url\"\\s*:\\s*\"([^\"]+)\"").find(bodyString)
+                        val uploadedUrl = match?.groupValues?.get(1)?.replace("\\/", "/")
                         if (uploadedUrl != null) {
                             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                                 onFinished(uploadedUrl)
@@ -15806,12 +15696,8 @@ internal suspend fun uploadImageToImgBB(
         val response = client.newCall(request).execute()
         if (response.isSuccessful) {
             val bodyString = response.body?.string() ?: ""
-            val uploadedUrl = try {
-                val data = org.json.JSONObject(bodyString).optJSONObject("data")
-                data?.optString("url")?.takeIf { it.isNotBlank() }
-                    ?: data?.optString("display_url")?.takeIf { it.isNotBlank() }
-            } catch (_: Exception) { null }
-            val imageUrl = uploadedUrl ?: ""
+            val match = Regex("\"url\"\\s*:\\s*\"([^\"]+)\"").find(bodyString)
+            val uploadedUrl = match?.groupValues?.get(1)?.replace("\\/", "/")
             if (uploadedUrl == null) {
                 onError("Image server returned an unexpected response. Please try again.")
             }
