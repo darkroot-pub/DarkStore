@@ -1,0 +1,103 @@
+{
+  "rules": {
+    "apps": {
+      ".read": true,
+      "$appId": {
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.email === 'davidstha900@gmail.com' || (!data.exists() && newData.child('submittedBy').val() === auth.token.email && newData.child('isApproved').val() === false) || (data.exists() && data.child('submittedBy').val() === auth.token.email && newData.child('isApproved').val() === data.child('isApproved').val()))"
+      }
+    },
+    "users": {
+      ".read": "auth != null",
+      "$userId": {
+        ".read": "auth != null",
+        ".write": "auth != null && (auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.email === 'davidstha900@gmail.com')"
+      }
+    },
+    "submissions": {
+      ".read": "auth != null",
+      "$submissionId": {
+        ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.email === 'davidstha900@gmail.com' || (data.exists() && data.child('submittedBy').val() === auth.token.email))",
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.email === 'davidstha900@gmail.com' || (!data.exists() && newData.child('submittedBy').val() === auth.token.email && newData.child('status').val() === 'Pending') || (data.exists() && data.child('submittedBy').val() === auth.token.email && newData.child('status').val() === data.child('status').val()))"
+      }
+    },
+    "notices": {
+      ".read": true,
+      "$noticeId": {
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.email === 'davidstha900@gmail.com')"
+      }
+    },
+    "terms_agreements": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "app_policy": {
+      ".read": true,
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.email === 'davidstha900@gmail.com')"
+    },
+    "premiumConfig": {
+      ".read": true,
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.email === 'davidstha900@gmail.com')"
+    },
+    "followers": {
+      "$developerUid": {
+        ".read": true,
+        "$followerUid": {
+          ".write": "auth != null && auth.uid === $followerUid"
+        }
+      }
+    },
+    "following": {
+      "$uid": {
+        ".read": true,
+        "$developerUid": {
+          ".write": "auth != null && auth.uid === $uid"
+        }
+      }
+    },
+    "DarkStoreUpdate": {
+      ".read": true,
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.email === 'davidstha900@gmail.com')"
+    },
+    "maintenanceConfig": {
+      ".read": true,
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.email === 'davidstha900@gmail.com')"
+    },
+    "auditLog": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.email === 'davidstha900@gmail.com')",
+      "$logId": {
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.email === 'davidstha900@gmail.com')"
+      }
+    },
+    "chats": {
+      "$chatId": {
+        "meta": {
+          ".read": "auth != null",
+          ".write": "auth != null"
+        },
+        "messages": {
+          ".read": "auth != null",
+          "$msgId": {
+            ".write": "auth != null && newData.child('senderId').val() === auth.uid"
+          }
+        }
+      }
+    },
+    "userChats": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        "$chatId": {
+          ".write": "auth != null"
+        }
+      }
+    },
+    "reviews": {
+      ".read": true,
+      "$appId": {
+        "$reviewId": {
+          ".write": "auth != null && ((!data.exists() && newData.child('userId').val() === auth.uid) || (data.exists() && data.child('userId').val() === auth.uid && newData.child('userId').val() === auth.uid))",
+          ".validate": "newData.hasChildren(['id','appId','userId','userName','msg','stars','timestamp']) && newData.child('stars').isNumber() && newData.child('stars').val() >= 1 && newData.child('stars').val() <= 5"
+        }
+      }
+    }
+  }
+}
