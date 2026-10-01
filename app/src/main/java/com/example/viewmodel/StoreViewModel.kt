@@ -1350,14 +1350,16 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun updateProfilePhoto(newUrl: String, onDone: ((Boolean) -> Unit)? = null) {
-        sharedPrefs.edit()
-            .putString("profile_photo_url", newUrl)
-            .apply()
+    /**
+     * Saves profile photo URL locally + RTDB.
+     * Supports: updateProfilePhoto(url) { ok, msg -> … }  OR  { ok -> … }
+     */
+    fun updateProfilePhoto(newUrl: String, onDone: (Boolean, String) -> Unit = { _, _ -> }) {
+        sharedPrefs.edit().putString("profile_photo_url", newUrl).apply()
         _profilePhotoUrl.value = newUrl
         val uid = _userUid.value
         if (uid.isBlank() || uid == "guest_uid") {
-            onDone?.invoke(true)
+            onDone(true, "Photo saved locally")
             return
         }
         viewModelScope.launch {
@@ -1378,51 +1380,66 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 )
                 val ok = FirebaseAuthService.saveUserInRealtimeDatabase(user)
                 if (ok) refreshDevelopers()
-                kotlinx.coroutines.withContext(Dispatchers.Main) { onDone?.invoke(ok) }
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    onDone(ok, if (ok) "Profile photo updated" else "Saved offline — will sync later")
+                }
             } catch (e: Exception) {
                 Log.e("StoreViewModel", "updateProfilePhoto failed: ${e.message}", e)
-                kotlinx.coroutines.withContext(Dispatchers.Main) { onDone?.invoke(false) }
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    onDone(false, e.message ?: "Failed to update photo")
+                }
             }
         }
     }
 
-    fun updateUserDisplayName(name: String, onDone: ((Boolean) -> Unit)? = null) {
+    /** Overload for single-arg lambda: updateProfilePhoto(url) { ok -> … } */
+    fun updateProfilePhoto(newUrl: String, onDone: (Boolean) -> Unit) {
+        updateProfilePhoto(newUrl) { ok, _ -> onDone(ok) }
+    }
+
+    /**
+     * Updates display name. Returns Pair immediately (local save) so callers can write:
+     *   val (ok, msg) = viewModel.updateUserDisplayName(name)
+     * RTDB sync continues in the background.
+     */
+    fun updateUserDisplayName(name: String): Pair<Boolean, String> {
         val trimmed = name.trim()
-        if (trimmed.isBlank()) {
-            onDone?.invoke(false)
-            return
-        }
+        if (trimmed.isBlank()) return false to "Name cannot be empty"
         sharedPrefs.edit().putString("user_name", trimmed).apply()
         _userName.value = trimmed
         val uid = _userUid.value
-        if (uid.isBlank() || uid == "guest_uid") {
-            onDone?.invoke(true)
-            return
-        }
-        viewModelScope.launch {
-            try {
-                val user = UserEntity(
-                    uid = uid,
-                    email = _userEmail.value,
-                    displayName = trimmed,
-                    role = _userRole.value,
-                    isDeveloper = _isDeveloper.value,
-                    devWebsite = _devWebsite.value,
-                    devGithub = _devGithub.value,
-                    devName = _devName.value.ifBlank { trimmed },
-                    devBio = _devBio.value,
-                    profilePhotoUrl = _profilePhotoUrl.value,
-                    devLocation = _devLocation.value,
-                    isPremiumMember = _isPremiumMember.value
-                )
-                val ok = FirebaseAuthService.saveUserInRealtimeDatabase(user)
-                if (ok) refreshDevelopers()
-                kotlinx.coroutines.withContext(Dispatchers.Main) { onDone?.invoke(ok) }
-            } catch (e: Exception) {
-                Log.e("StoreViewModel", "updateUserDisplayName failed: ${e.message}", e)
-                kotlinx.coroutines.withContext(Dispatchers.Main) { onDone?.invoke(false) }
+        if (uid.isNotBlank() && uid != "guest_uid") {
+            viewModelScope.launch {
+                try {
+                    val user = UserEntity(
+                        uid = uid,
+                        email = _userEmail.value,
+                        displayName = trimmed,
+                        role = _userRole.value,
+                        isDeveloper = _isDeveloper.value,
+                        devWebsite = _devWebsite.value,
+                        devGithub = _devGithub.value,
+                        devName = _devName.value.ifBlank { trimmed },
+                        devBio = _devBio.value,
+                        profilePhotoUrl = _profilePhotoUrl.value,
+                        devLocation = _devLocation.value,
+                        isPremiumMember = _isPremiumMember.value
+                    )
+                    if (FirebaseAuthService.saveUserInRealtimeDatabase(user)) {
+                        refreshDevelopers()
+                    }
+                } catch (e: Exception) {
+                    Log.e("StoreViewModel", "updateUserDisplayName sync failed: ${e.message}", e)
+                }
             }
         }
+        return true to "Name updated"
+    }
+
+    /** Callback overload: updateUserDisplayName(name) { ok, msg -> … } */
+    fun updateUserDisplayName(name: String, onDone: (Boolean, String) -> Unit) {
+        val result = updateUserDisplayName(name)
+        onDone(result.first, result.second)
     }
 
     // ----------------------------------------------------
