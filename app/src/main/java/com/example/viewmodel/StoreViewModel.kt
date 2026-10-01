@@ -40,6 +40,10 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
 
     private val sharedPrefs = application.getSharedPreferences("dark_store_pref", Context.MODE_PRIVATE)
 
+    private val _maintenanceConfig = MutableStateFlow(FirebaseService.MaintenanceConfig())
+    val maintenanceConfig: StateFlow<FirebaseService.MaintenanceConfig> = _maintenanceConfig.asStateFlow()
+
+
     init {
         val apiKey = sharedPrefs.getString("custom_firebase_api_key", "AIzaSyDWAQ3MmbZwzIQ9zNZvN9lep-_W6dIbv9o") ?: "AIzaSyDWAQ3MmbZwzIQ9zNZvN9lep-_W6dIbv9o"
         val projectId = sharedPrefs.getString("custom_firebase_project_id", "dark-store-6836d") ?: "dark-store-6836d"
@@ -54,6 +58,10 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         FirebaseAuthService.activeRefreshToken = refreshToken
         FirebaseService.activeToken = idToken
         
+        // SYNC CONFIG ONLY in this early init. Do NOT touch MutableStateFlows here —
+        // most of them are declared later in this class. A fast Dispatchers.IO
+        // resume can run before those fields are constructed → NPE on setValue
+        // (see loadMaintenanceConfig crash). Deferred work is in the late init.
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 FirebaseAuthService.refreshIdTokenIfNeeded(application)
@@ -61,28 +69,8 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 if (updatedIdToken.isNotBlank()) {
                     FirebaseService.activeToken = updatedIdToken
                 }
-                refreshAppPolicy()
-                refreshDevelopers()
-                loadFollowingIds()
-                loadFollowerIds()
-                loadPremiumFreeMode()
-                loadMaintenanceConfig()
-                val savedEmail = sharedPrefs.getString("user_email", "") ?: ""
-                if (savedEmail.isNotBlank() && savedEmail != "guest@darkroot.io") {
-                    updateEcosystemPolicyAcceptedForCurrentUser(savedEmail)
-                    updateTermsAcceptedForCurrentUser(savedEmail)
-                    val list = FirebaseService.fetchTermsAgreements()
-                    _termsAgreements.value = list.sortedByDescending { it.timestamp }
-                    val cleanEmail = savedEmail.lowercase().trim()
-                    if (list.any { it.userEmail.lowercase().trim() == cleanEmail }) {
-                        sharedPrefs.edit().putBoolean("is_terms_accepted", true).apply()
-                        sharedPrefs.edit().putBoolean("terms_accepted_${cleanEmail}", true).apply()
-                        sharedPrefs.edit().putBoolean("terms_accepted_v1", true).apply()
-                        _isTermsAccepted.value = true
-                    }
-                }
             } catch (e: Exception) {
-                Log.e("StoreViewModel", "Auto-refresh failed on startup", e)
+                Log.e("StoreViewModel", "Token refresh failed on startup", e)
             }
         }
     }
@@ -359,22 +347,29 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     private val _isPremiumFreeMode = MutableStateFlow(true)
     val isPremiumFreeMode: StateFlow<Boolean> = _isPremiumFreeMode.asStateFlow()
 
-    private val _maintenanceConfig = MutableStateFlow(FirebaseService.MaintenanceConfig())
-    val maintenanceConfig: StateFlow<FirebaseService.MaintenanceConfig> = _maintenanceConfig.asStateFlow()
 
     private val _auditLog = MutableStateFlow<List<FirebaseService.AuditLogEntry>>(emptyList())
     val auditLog: StateFlow<List<FirebaseService.AuditLogEntry>> = _auditLog.asStateFlow()
 
     fun loadPremiumFreeMode() {
         viewModelScope.launch(Dispatchers.IO) {
-            val isFree = FirebaseService.fetchPremiumIsFree()
-            _isPremiumFreeMode.value = isFree
+            try {
+                val isFree = FirebaseService.fetchPremiumIsFree()
+                _isPremiumFreeMode.value = isFree
+            } catch (e: Exception) {
+                Log.e("StoreViewModel", "loadPremiumFreeMode failed: ${e.message}", e)
+            }
         }
     }
 
     fun loadMaintenanceConfig() {
         viewModelScope.launch(Dispatchers.IO) {
-            _maintenanceConfig.value = FirebaseService.fetchMaintenanceConfig()
+            try {
+                val cfg = FirebaseService.fetchMaintenanceConfig()
+                _maintenanceConfig.value = cfg
+            } catch (e: Exception) {
+                Log.e("StoreViewModel", "loadMaintenanceConfig failed: ${e.message}", e)
+            }
         }
     }
 
@@ -1528,6 +1523,36 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         syncUserProfile()
         startInstalledAppMonitoring()
         clearOrphanedDownloadRecords()
+        // All MutableStateFlows are constructed by this late init — safe to load.
+        try { loadFollowingIds() } catch (e: Exception) { Log.e("StoreViewModel", "loadFollowingIds", e) }
+        try { loadFollowerIds() } catch (e: Exception) { Log.e("StoreViewModel", "loadFollowerIds", e) }
+        try { loadPremiumFreeMode() } catch (e: Exception) { Log.e("StoreViewModel", "loadPremiumFreeMode", e) }
+        try { loadMaintenanceConfig() } catch (e: Exception) { Log.e("StoreViewModel", "loadMaintenanceConfig", e) }
+        try { refreshDevelopers() } catch (e: Exception) { Log.e("StoreViewModel", "refreshDevelopers", e) }
+        try { refreshAppPolicy() } catch (e: Exception) { Log.e("StoreViewModel", "refreshAppPolicy", e) }
+        try { refreshChatThreads() } catch (e: Exception) { Log.e("StoreViewModel", "refreshChatThreads", e) }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val savedEmail = sharedPrefs.getString("user_email", "") ?: ""
+                if (savedEmail.isNotBlank() && savedEmail != "guest@darkroot.io") {
+                    updateEcosystemPolicyAcceptedForCurrentUser(savedEmail)
+                    updateTermsAcceptedForCurrentUser(savedEmail)
+                    val list = FirebaseService.fetchTermsAgreements()
+                    _termsAgreements.value = list.sortedByDescending { it.timestamp }
+                    val cleanEmail = savedEmail.lowercase().trim()
+                    if (list.any { it.userEmail.lowercase().trim() == cleanEmail }) {
+                        sharedPrefs.edit()
+                            .putBoolean("is_terms_accepted", true)
+                            .putBoolean("terms_accepted_${cleanEmail}", true)
+                            .putBoolean("terms_accepted_v1", true)
+                            .apply()
+                        _isTermsAccepted.value = true
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("StoreViewModel", "Terms restore failed: ${e.message}", e)
+            }
+        }
         // NOTE: startPeriodicSync() removed — it ran a 12s network-polling loop
         // forever (apps + notices) for as long as the process stayed alive, which
         // is exactly the "background work for notifications" that was asked to be
