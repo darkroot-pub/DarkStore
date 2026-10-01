@@ -1,0 +1,6 @@
+*.keystore
+.gradle/
+build/
+captures/
+*.iml
+# google-services.json is committed so CI (GitHub Actions) can build

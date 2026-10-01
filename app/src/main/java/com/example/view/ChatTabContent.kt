@@ -365,7 +365,11 @@ private fun ChatThreadScreen(
                 val client = okhttp3.OkHttpClient()
                 val resp = client.newCall(req).execute()
                 val body = resp.body?.string().orEmpty()
-                val url = Regex("\"url\"\\s*:\\s*\"([^\"]+)\"").find(body)?.groupValues?.get(1)?.replace("\\/", "/")
+                val url = try {
+                    val data = org.json.JSONObject(body).optJSONObject("data")
+                    data?.optString("url")?.takeIf { it.isNotBlank() }
+                        ?: data?.optString("display_url")?.takeIf { it.isNotBlank() }
+                } catch (_: Exception) { null }
                 kotlinx.coroutines.withContext(Dispatchers.Main) {
                     uploading = false
                     if (url != null) {

@@ -4624,7 +4624,11 @@ fun ProfileTabContent(
                                     .build()
                                 val resp = okhttp3.OkHttpClient().newCall(req).execute()
                                 val body = resp.body?.string().orEmpty()
-                                val url = Regex("\"url\"\s*:\s*\"([^\"]+)\"").find(body)?.groupValues?.get(1)?.replace("\\/", "/")
+                                val url = try {
+                                    val data = org.json.JSONObject(body).optJSONObject("data")
+                                    data?.optString("url")?.takeIf { it.isNotBlank() }
+                                        ?: data?.optString("display_url")?.takeIf { it.isNotBlank() }
+                                } catch (_: Exception) { null }
                                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                                     isUploadingPhoto = false
                                     if (url != null) {
@@ -13226,8 +13230,11 @@ fun AddNewAppForm(
                     val response = client.newCall(request).execute()
                     if (response.isSuccessful) {
                         val bodyString = response.body?.string() ?: ""
-                        val match = Regex("\"url\"\\s*:\\s*\"([^\"]+)\"").find(bodyString)
-                        val uploadedUrl = match?.groupValues?.get(1)?.replace("\\/", "/")
+                        val uploadedUrl = try {
+                            val data = org.json.JSONObject(bodyString).optJSONObject("data")
+                            data?.optString("url")?.takeIf { it.isNotBlank() }
+                                ?: data?.optString("display_url")?.takeIf { it.isNotBlank() }
+                        } catch (_: Exception) { null }
                         if (uploadedUrl != null) {
                             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                                 onFinished(uploadedUrl)
@@ -15678,8 +15685,12 @@ private suspend fun uploadImageToImgBB(
         val response = client.newCall(request).execute()
         if (response.isSuccessful) {
             val bodyString = response.body?.string() ?: ""
-            val match = Regex("\"url\"\\s*:\\s*\"([^\"]+)\"").find(bodyString)
-            val uploadedUrl = match?.groupValues?.get(1)?.replace("\\/", "/")
+            val uploadedUrl = try {
+                val data = org.json.JSONObject(bodyString).optJSONObject("data")
+                data?.optString("url")?.takeIf { it.isNotBlank() }
+                    ?: data?.optString("display_url")?.takeIf { it.isNotBlank() }
+            } catch (_: Exception) { null }
+            val imageUrl = uploadedUrl ?: ""
             if (uploadedUrl == null) {
                 onError("Image server returned an unexpected response. Please try again.")
             }
