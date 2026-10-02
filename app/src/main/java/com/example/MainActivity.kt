@@ -156,7 +156,6 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        com.example.utils.CrashReporter.install(applicationContext)
         super.onCreate(savedInstanceState)
         
         // Optimize Coil Image Loading cache to maximize interface smoothness
@@ -271,38 +270,6 @@ class MainActivity : ComponentActivity() {
         setContent {
             val context = LocalContext.current
             var showSplash by remember { mutableStateOf(true) }
-            var crashReport by remember { mutableStateOf(com.example.utils.CrashReporter.read(context)) }
-            crashReport?.let { report ->
-                androidx.compose.material3.AlertDialog(
-                    onDismissRequest = {
-                        com.example.utils.CrashReporter.clear(context)
-                        crashReport = null
-                    },
-                    title = { androidx.compose.material3.Text("App crashed last time") },
-                    text = {
-                        androidx.compose.foundation.layout.Box(
-                            Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())
-                        ) {
-                            androidx.compose.foundation.text.selection.SelectionContainer {
-                                androidx.compose.material3.Text(report, fontSize = 10.sp, lineHeight = 13.sp)
-                            }
-                        }
-                    },
-                    confirmButton = {
-                        androidx.compose.material3.TextButton(onClick = {
-                            val cm = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                            cm.setPrimaryClip(android.content.ClipData.newPlainText("crash", report))
-                            android.widget.Toast.makeText(context, "Copied — send it to Claude", android.widget.Toast.LENGTH_SHORT).show()
-                        }) { androidx.compose.material3.Text("Copy") }
-                    },
-                    dismissButton = {
-                        androidx.compose.material3.TextButton(onClick = {
-                            com.example.utils.CrashReporter.clear(context)
-                            crashReport = null
-                        }) { androidx.compose.material3.Text("Dismiss") }
-                    }
-                )
-            }
             val isDarkMode by viewModel.isDarkMode.collectAsStateWithLifecycle()
             val isAmoledMode by viewModel.isAmoledMode.collectAsStateWithLifecycle()
             val isLoggedIn by viewModel.isLoggedIn.collectAsStateWithLifecycle()
