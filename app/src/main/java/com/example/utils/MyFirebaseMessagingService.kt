@@ -6,6 +6,13 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
+import android.graphics.RectF
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.google.firebase.messaging.FirebaseMessagingService
@@ -37,6 +44,15 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         if (remoteMessage.data["type"] == "chat") {
             handleChatPush(remoteMessage.data)
             return
+        }
+
+        // Rich pushes from the Dark Store notifier: new app, app update,
+        // submission (to admins), submission status (to the developer), announcement.
+        when (remoteMessage.data["type"]) {
+            "new_app", "app_update", "submission_new", "submission_status", "announcement" -> {
+                handleRichPush(remoteMessage.data)
+                return
+            }
         }
 
         val notificationTitle = remoteMessage.notification?.title ?: remoteMessage.data["title"] ?: "Platform Alert"
@@ -109,6 +125,142 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
 
         // Show systemic push notification banner
         sendNotification(noticeId, notificationTitle, notificationBody, targetAppId)
+    }
+
+    // ------------------------------------------------------------------
+    // RICH PUSHES (new app / update / submission / status / announcement)
+    // ------------------------------------------------------------------
+    private fun handleRichPush(data: Map<String, String>) {
+        try {
+            val type = data["type"].orEmpty()
+            val prefs = getSharedPreferences("dark_store_pref", Context.MODE_PRIVATE)
+            val allowed = when (type) {
+                "new_app" -> prefs.getBoolean("notify_new_apps", true)
+                "app_update" -> prefs.getBoolean("notify_updates", true)
+                "submission_new", "submission_status" -> prefs.getBoolean("notify_submissions", true)
+                else -> prefs.getBoolean("notify_announcements", true)
+            }
+            if (!allowed) return
+
+            val id = data["id"].orEmpty().ifBlank { "ntc_${System.currentTimeMillis()}" }
+            val title = data["title"].orEmpty().ifBlank { "Dark Store" }
+            val message = data["message"].orEmpty()
+            val imageUrl = data["imageUrl"].orEmpty()
+            val bannerUrl = data["bannerUrl"].orEmpty()
+            val target = data["targetAppId"].orEmpty().ifBlank { "all" }
+            val timestamp = data["timestamp"]?.toLongOrNull() ?: System.currentTimeMillis()
+
+            // Keep a copy in the in-app notice dashboard (unread).
+            try {
+                val dao = AppDao(applicationContext)
+                dao.loadCachedNotices()
+                val list = dao.getNoticesList().toMutableList()
+                if (list.none { it.id == id }) {
+                    list.add(0, NoticeEntity(id = id, title = title, message = message, imageUrl = imageUrl,
+                        timestamp = timestamp, targetAppId = target, isRead = false))
+                    dao.insertNotices(list)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to store rich notice: ${e.message}")
+            }
+
+            val (channelId, channelName, accent) = when (type) {
+                "new_app" -> Triple("new_apps_channel", "New apps", 0xFF34D399.toInt())
+                "app_update" -> Triple("app_updates_channel", "App updates", 0xFFF59E0B.toInt())
+                "submission_new" -> Triple("submissions_admin_channel", "New submissions (admin)", 0xFF3B82F6.toInt())
+                "submission_status" ->
+                    if (data["status"] == "Rejected") Triple("submission_status_channel", "Submission status", 0xFFEF4444.toInt())
+                    else Triple("submission_status_channel", "Submission status", 0xFF34D399.toInt())
+                else -> Triple("announcements_channel", "Dark Store Announcements", 0xFF8B5CF6.toInt())
+            }
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                nm.createNotificationChannel(
+                    NotificationChannel(channelId, channelName, NotificationManager.IMPORTANCE_HIGH)
+                )
+            }
+
+            val intent = Intent().apply {
+                setClassName(packageName, "com.example.MainActivity")
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra("view_notice_id", id)
+                when {
+                    target.startsWith("submission:") || type.startsWith("submission") ->
+                        putExtra("open_screen", "submissions")
+                    target.startsWith("update:") -> {
+                        putExtra("open_screen", "updates")
+                        putExtra("app_id", target.substringAfter("update:"))
+                    }
+                    target != "all" -> {
+                        putExtra("open_screen", "app_details")
+                        putExtra("app_id", target)
+                    }
+                    else -> putExtra("open_screen", "announcements")
+                }
+            }
+            val pi = PendingIntent.getActivity(
+                this, id.hashCode(), intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val builder = NotificationCompat.Builder(this, channelId)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setColor(accent)
+                .setContentTitle(title)
+                .setContentText(message)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setCategory(NotificationCompat.CATEGORY_RECOMMENDATION)
+                .setContentIntent(pi)
+                .setAutoCancel(true)
+                .setWhen(timestamp)
+                .setGroup(channelId)
+
+            // App icon / logo shown big on the right of the notification.
+            downloadBitmap(imageUrl, 256)?.let { builder.setLargeIcon(roundedBitmap(it)) }
+
+            val banner = if (type == "new_app") downloadBitmap(bannerUrl, 1024) else null
+            if (banner != null) {
+                builder.setStyle(
+                    NotificationCompat.BigPictureStyle()
+                        .bigPicture(banner)
+                        .setSummaryText(message)
+                        .bigLargeIcon(null as Bitmap?)
+                )
+            } else {
+                builder.setStyle(NotificationCompat.BigTextStyle().bigText(message))
+            }
+            nm.notify(id.hashCode(), builder.build())
+        } catch (e: Exception) {
+            Log.e(TAG, "Error showing rich push: ${e.message}", e)
+        }
+    }
+
+    /** Blocking download — fine here: onMessageReceived already runs on a background thread (~20s budget). */
+    private fun downloadBitmap(url: String, maxSide: Int): Bitmap? {
+        if (!url.startsWith("http")) return null
+        return try {
+            val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+            conn.connectTimeout = 5000
+            conn.readTimeout = 7000
+            conn.inputStream.use { input ->
+                val raw = BitmapFactory.decodeStream(input) ?: return null
+                val ratio = maxSide.toFloat() / maxOf(raw.width, raw.height)
+                if (ratio < 1f) Bitmap.createScaledBitmap(raw, (raw.width * ratio).toInt(), (raw.height * ratio).toInt(), true) else raw
+            }
+        } catch (e: Throwable) {
+            null
+        }
+    }
+
+    private fun roundedBitmap(src: Bitmap): Bitmap {
+        val size = minOf(src.width, src.height)
+        val out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(out)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        canvas.drawRoundRect(RectF(0f, 0f, size.toFloat(), size.toFloat()), size * 0.22f, size * 0.22f, paint)
+        paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_IN)
+        canvas.drawBitmap(src, (size - src.width) / 2f, (size - src.height) / 2f, paint)
+        return out
     }
 
     private fun handleChatPush(data: Map<String, String>) {

@@ -162,7 +162,9 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     private val _userRole = MutableStateFlow(sharedPrefs.getString("user_role", "user") ?: "user")
     val userRole: StateFlow<String> = _userRole.asStateFlow()
 
-    private val _isDeveloper = MutableStateFlow(false)
+    // Restored from the last known server value so a cold start (or an offline / expired-token
+    // launch) never flashes "Become a Verified Developer" for an already-registered developer.
+    private val _isDeveloper = MutableStateFlow(sharedPrefs.getBoolean("is_developer", false))
     val isDeveloper: StateFlow<Boolean> = _isDeveloper.asStateFlow()
 
     private val _devWebsite = MutableStateFlow(sharedPrefs.getString("dev_website", "") ?: "")
@@ -1208,7 +1210,28 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         val uid = _userUid.value
         if (uid.isNotBlank() && uid != "guest_uid") {
             viewModelScope.launch {
-                val user = FirebaseAuthService.getUserProfile(uid)
+                // The ID token only lives ~1 hour. Opening the app hours later used to
+                // fetch the profile with an expired token → denied → null → developer
+                // status looked "unregistered". Refresh first, and retry once if needed.
+                FirebaseAuthService.refreshIdTokenIfNeeded(getApplication())
+                var user = FirebaseAuthService.getUserProfile(uid)
+                if (user == null) {
+                    FirebaseAuthService.refreshIdTokenIfNeeded(getApplication(), force = true)
+                    user = FirebaseAuthService.getUserProfile(uid)
+                }
+                if (user == null) {
+                    // Signed-in account with no database record (its first write used to be
+                    // rejected) — create it so admins can see every login, not just developers.
+                    FirebaseAuthService.ensureUserRecord(
+                        uid = uid,
+                        email = _userEmail.value,
+                        displayName = _userName.value,
+                        role = _userRole.value,
+                        isDeveloper = _isDeveloper.value,
+                        fcmToken = ""
+                    )
+                    return@launch
+                }
                 if (user != null) {
                     // Role must come from RTDB so promoting someone to admin
                     // (users/{uid}/role = "admin") shows the Admin panel without
@@ -1744,7 +1767,10 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 val localIds = currentLocal.map { it.id }.toSet()
                 val newNotices = fetched.filter { it.id !in localIds }
                 
-                appDao.insertNotices(fetched)
+                // Private pushes (submission alerts) exist only on this device — keep them.
+                val fetchedIds = fetched.map { it.id }.toSet()
+                val privateLocal = currentLocal.filter { it.id.startsWith("sub_") && it.id !in fetchedIds }
+                appDao.insertNotices(privateLocal + fetched)
                 lastNoticesRefreshTime = System.currentTimeMillis()
                 
                 if (newNotices.isNotEmpty() && currentLocal.isNotEmpty()) {
@@ -1902,34 +1928,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
             val result = repository.saveApp(appToSave)
             _isRefreshing.value = false
             if (result) {
-                val fcmServerKey = sharedPrefs.getString("fcm_server_key", "") ?: ""
-                if (fcmServerKey.isNotBlank()) {
-                    if (isNew) {
-                        val noticeId = "notice_" + System.currentTimeMillis() + "_" + (1000..9999).random()
-                        val notice = NoticeEntity(
-                            id = noticeId,
-                            title = "New App Available: ${app.name}",
-                            message = app.description,
-                            imageUrl = app.logo,
-                            timestamp = System.currentTimeMillis(),
-                            targetAppId = app.id
-                        )
-                        FirebaseService.saveNotice(notice)
-                        FirebaseService.sendFCMNotification(fcmServerKey, notice)
-                    } else if (isUpdate) {
-                        val noticeId = "notice_" + System.currentTimeMillis() + "_" + (1000..9999).random()
-                        val notice = NoticeEntity(
-                            id = noticeId,
-                            title = "Update Pack Available: ${app.name}",
-                            message = "Version ${app.version} is now ready for deployment. Changelog: ${app.description.take(120)}",
-                            imageUrl = app.logo,
-                            timestamp = System.currentTimeMillis(),
-                            targetAppId = "update:${app.packageName}"
-                        )
-                        FirebaseService.saveNotice(notice)
-                        FirebaseService.sendFCMNotification(fcmServerKey, notice)
-                    }
-                }
+                // New-app / update pushes are sent by the Dark Store notifier worker (watches apps/).
                 refreshMarketplace()
                 kotlinx.coroutines.withContext(Dispatchers.Main) {
                     onFinished(true)
@@ -2111,23 +2110,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 )
                 val success = FirebaseAuthService.submitApp(sub)
                 if (success) {
-                    // Autonotify admins about new submission
-                    val fcmServerKey = sharedPrefs.getString("fcm_server_key", "") ?: ""
-                    val noticeId = "notice_" + System.currentTimeMillis() + "_" + (1000..9999).random()
-                    val notice = NoticeEntity(
-                        id = noticeId,
-                        title = if (isUpdateSubmission) "App Update Submitted" else "New App Submission",
-                        message = if (isUpdateSubmission)
-                            "An update for '$name' (v$version) has been submitted for review by ${userName.value}."
-                        else
-                            "A new app '$name' has been submitted for review by ${userName.value}.",
-                        timestamp = System.currentTimeMillis(),
-                        targetAppId = "all"
-                    )
-                    if (fcmServerKey.isNotBlank()) {
-                        FirebaseService.saveNotice(notice)
-                        FirebaseService.sendFCMNotification(fcmServerKey, notice)
-                    }
+                    // Admins are notified by the notifier worker (watches submissions/) — never broadcast to everyone.
                     refreshSubmissions()
                     kotlinx.coroutines.withContext(Dispatchers.Main) {
                         onFinished(true, if (isUpdateSubmission) "Update submitted successfully and is now pending admin review." else "App submitted successfully under Pending status.")
@@ -2250,25 +2233,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 val repoSuccess = repository.saveApp(app)
                 
-                // Fetch user FCM token and send FCM alert
-                val ownerToken = FirebaseAuthService.getFcmTokenByEmail(submission.submittedBy)
-                val fcmServerKey = sharedPrefs.getString("fcm_server_key", "") ?: ""
-                val noticeId = "notice_" + System.currentTimeMillis() + "_" + (1000..9999).random()
-                val notice = NoticeEntity(
-                    id = noticeId,
-                    title = "App Approved",
-                    message = "Your app ${submission.name} has been approved and published.",
-                    timestamp = System.currentTimeMillis(),
-                    targetAppId = "approved_${submission.id}"
-                )
-                if (fcmServerKey.isNotBlank()) {
-                    FirebaseService.saveNotice(notice)
-                    if (ownerToken != null && ownerToken.isNotBlank()) {
-                        FirebaseService.sendFCMNotification(fcmServerKey, notice.copy(targetAppId = "token:$ownerToken"))
-                    } else {
-                        FirebaseService.sendFCMNotification(fcmServerKey, notice)
-                    }
-                }
+                // The developer is notified by the notifier worker when status changes.
 
                 _isRefreshing.value = false
                 if (repoSuccess) {
@@ -2318,25 +2283,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
             val subSuccess = FirebaseAuthService.updateSubmissionStatus(submission.id, rejectedSub)
             
             if (subSuccess) {
-                // Fetch user FCM token and send FCM Alert
-                val ownerToken = FirebaseAuthService.getFcmTokenByEmail(submission.submittedBy)
-                val fcmServerKey = sharedPrefs.getString("fcm_server_key", "") ?: ""
-                val noticeId = "notice_" + System.currentTimeMillis() + "_" + (1000..9999).random()
-                val notice = NoticeEntity(
-                    id = noticeId,
-                    title = "App Rejected",
-                    message = "Your app ${submission.name} was rejected. Reason: $reason",
-                    timestamp = System.currentTimeMillis(),
-                    targetAppId = "rejected_${submission.id}"
-                )
-                if (fcmServerKey.isNotBlank()) {
-                    FirebaseService.saveNotice(notice)
-                    if (ownerToken != null && ownerToken.isNotBlank()) {
-                        FirebaseService.sendFCMNotification(fcmServerKey, notice.copy(targetAppId = "token:$ownerToken"))
-                    } else {
-                        FirebaseService.sendFCMNotification(fcmServerKey, notice)
-                    }
-                }
+                // The developer is notified by the notifier worker when status changes.
                 _isRefreshing.value = false
                 refreshSubmissions()
                 logAdminAction(

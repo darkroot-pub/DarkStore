@@ -93,6 +93,7 @@ object FirebaseAuthService {
                     val resJson = JSONObject(bodyStr)
                     val uid = resJson.getString("localId")
                     val idToken = resJson.getString("idToken")
+                    activeToken = idToken // active BEFORE any DB read/write below — rules need auth
                     val refreshToken = resJson.optString("refreshToken") ?: ""
 
                     val fcmPrefs = context.getSharedPreferences("dark_store_fcm_prefs", Context.MODE_PRIVATE)
@@ -184,6 +185,7 @@ object FirebaseAuthService {
                     val resJson = JSONObject(bodyStr)
                     val uid = resJson.getString("localId")
                     val idToken = resJson.getString("idToken")
+                    activeToken = idToken // active BEFORE any DB read/write below — rules need auth
                     val refreshToken = resJson.optString("refreshToken") ?: ""
 
                     var user = getUserProfile(uid, idToken)
@@ -465,6 +467,7 @@ object FirebaseAuthService {
                     val email = jsonObj.optString("email") ?: fallbackEmail
                     val displayName = jsonObj.optString("displayName") ?: fallbackName
                     val token = jsonObj.optString("idToken") ?: ""
+                    if (token.isNotBlank()) activeToken = token // active BEFORE the first DB read/write
                     val refreshToken = jsonObj.optString("refreshToken") ?: ""
 
                     val role = if (email.equals("davidstha900@gmail.com", ignoreCase = true)) "admin" else "user"
@@ -649,6 +652,32 @@ object FirebaseAuthService {
             client.newCall(request).execute().use { it.isSuccessful }
         } catch (e: Exception) {
             Log.e(TAG, "patchUserFields failed: ${e.message}", e)
+            false
+        }
+    }
+
+    /**
+     * Makes sure users/{uid} exists. Accounts whose very first sign-in write was
+     * rejected (token not yet active) never got a record, so the admin Users tab
+     * could not list them. Only creates when the server answered "no such record"
+     * — a failed/denied read is never treated as "missing", so an existing profile
+     * can't be overwritten by a transient error.
+     */
+    suspend fun ensureUserRecord(uid: String, email: String, displayName: String, role: String,
+                                 isDeveloper: Boolean, fcmToken: String): Boolean = withContext(Dispatchers.IO) {
+        if (uid.isBlank() || uid == "guest_uid" || getTokenParam().isBlank()) return@withContext false
+        try {
+            val req = Request.Builder().url("${RTDB_URL}users/$uid.json${getTokenParam()}").get().build()
+            val missing = client.newCall(req).execute().use { r ->
+                r.isSuccessful && (r.body?.string()?.trim() ?: "") == "null"
+            }
+            if (!missing) return@withContext false
+            saveUserInRealtimeDatabase(
+                UserEntity(uid = uid, email = email, displayName = displayName,
+                    role = role.ifBlank { "user" }, isDeveloper = isDeveloper, fcmToken = fcmToken)
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "ensureUserRecord failed: ${e.message}")
             false
         }
     }

@@ -9008,6 +9008,7 @@ fun ConsoleTabContent(
     // Admin Subviews Segment selection: "SUBMISSIONS" vs "CATALOG"
     var adminSegmentIndex by remember { mutableStateOf(0) }
     var adminSearchQuery by remember { mutableStateOf("") }
+    var adminUserFilter by remember { mutableStateOf("All") }
     val selectedSubmissionIds = remember { mutableStateListOf<String>() }
 
     val filteredSubmissions = remember(submissions, adminSearchQuery) {
@@ -10259,13 +10260,55 @@ fun ConsoleTabContent(
 
             // ── USERS TAB ────────────────────────────────────────────────────────
             if (isAdmin && adminSegmentIndex == 3) {
+                val sectionUsers = when (adminUserFilter) {
+                    "Developers" -> developers.filter { it.isDeveloper }
+                    "Users" -> developers.filter { !it.isDeveloper && it.role != "admin" }
+                    "Admins" -> developers.filter { it.role == "admin" }
+                    "Suspended" -> developers.filter { it.isSuspended }
+                    else -> developers
+                }
                 val filteredUsers = if (adminSearchQuery.isBlank()) {
-                    developers
+                    sectionUsers
                 } else {
-                    developers.filter {
+                    sectionUsers.filter {
                         it.displayName.contains(adminSearchQuery, ignoreCase = true) ||
                         it.email.contains(adminSearchQuery, ignoreCase = true) ||
                         it.role.contains(adminSearchQuery, ignoreCase = true)
+                    }
+                }
+                item {
+                    val sections = listOf(
+                        "All" to developers.size,
+                        "Users" to developers.count { !it.isDeveloper && it.role != "admin" },
+                        "Developers" to developers.count { it.isDeveloper },
+                        "Admins" to developers.count { it.role == "admin" },
+                        "Suspended" to developers.count { it.isSuspended }
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(bottom = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        sections.forEach { (label, count) ->
+                            val selected = adminUserFilter == label
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .background(if (selected) accentGreen.copy(alpha = 0.18f) else cardBgColor)
+                                    .border(1.dp, if (selected) accentGreen else cardBorderColor, RoundedCornerShape(20.dp))
+                                    .clickable { adminUserFilter = label }
+                                    .padding(horizontal = 14.dp, vertical = 7.dp)
+                            ) {
+                                Text(
+                                    "$label · $count",
+                                    color = if (selected) accentGreen else textSecondary,
+                                    fontSize = 12.sp,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
+                                )
+                            }
+                        }
                     }
                 }
                 if (filteredUsers.isEmpty()) {
@@ -10273,7 +10316,7 @@ fun ConsoleTabContent(
                         Box(modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Icon(Icons.Default.People, contentDescription = null, tint = textSecondary, modifier = Modifier.size(48.dp))
-                                Text("No users found", color = textPrimary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                Text("No users found in \"$adminUserFilter\"", color = textPrimary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                             }
                         }
                     }
