@@ -4766,11 +4766,12 @@ fun ProfileTabContent(
                     var showOwnPhotoViewer by remember { mutableStateOf(false) }
                     var showFollowersFollowingDialog by remember { mutableStateOf(false) }
 
-                    // Cover + identity card — liquid glass shell
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .glass(isDarkMode, RoundedCornerShape(22.dp), elevation = 4.dp)
+                    // Cover + identity card
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = surfaceCol),
+                        border = BorderStroke(1.dp, borderCol)
                     ) {
                         Column(modifier = Modifier.fillMaxWidth()) {
                             // Gradient cover banner
@@ -4922,11 +4923,12 @@ fun ProfileTabContent(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Links card — liquid glass
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .glass(isDarkMode, RoundedCornerShape(20.dp), elevation = 3.dp)
+                    // Links card
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = surfaceCol),
+                        border = BorderStroke(1.dp, borderCol)
                     ) {
                         Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -5032,11 +5034,12 @@ fun ProfileTabContent(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // About card — liquid glass
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .glass(isDarkMode, RoundedCornerShape(20.dp), elevation = 3.dp)
+                    // About card
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = surfaceCol),
+                        border = BorderStroke(1.dp, borderCol)
                     ) {
                         Column(modifier = Modifier.padding(14.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -11584,43 +11587,42 @@ fun AppDetailsDialog(
                             .fillMaxSize()
                             .verticalScroll(scrollState)
                     ) {
-                        // ── Banner: promo video (inline player) or the first screenshot ──
+                        // ── Banner: promo video (play button) or the first screenshot ──
                         var showVideo by remember { mutableStateOf(false) }
                         val ytId = remember(app.videoUrl) { com.example.view.youTubeId(app.videoUrl) }
                         val hasVideo = app.videoUrl.isNotBlank()
                         val bannerModel = remember(app.videoUrl, screenshotList) {
                             if (ytId != null) "https://img.youtube.com/vi/$ytId/hqdefault.jpg" else screenshotList.firstOrNull().orEmpty()
                         }
-                        if (bannerModel.isNotBlank() || hasVideo) {
-                            if (showVideo && hasVideo) {
-                                // Play inline in the same 16:9 banner slot (not fullscreen).
-                                com.example.view.PromoVideoPlayer(
-                                    url = app.videoUrl,
-                                    onClose = { showVideo = false },
-                                    modifier = Modifier.glass(isDarkMode, RoundedCornerShape(24.dp), 5.dp)
-                                )
-                            } else {
-                                Box(
-                                    Modifier.fillMaxWidth().aspectRatio(16f / 9f)
-                                        .glass(isDarkMode, RoundedCornerShape(24.dp), 5.dp)
-                                        .clickable {
-                                            if (hasVideo) showVideo = true
-                                            else if (screenshotList.isNotEmpty()) activeLightboxImageIndex = 0
-                                        }
-                                ) {
-                                    if (bannerModel.isNotBlank()) {
-                                        AsyncImage(model = bannerModel, contentDescription = app.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-                                    } else {
-                                        Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(accentGreen.copy(alpha = 0.55f), accentGreen.copy(alpha = 0.15f)))))
+                        if (showVideo && hasVideo) {
+                            // Plays right here in the page (no full-screen takeover)
+                            com.example.view.InlineVideoPlayer(
+                                url = app.videoUrl, isDark = isDarkMode, accent = accentGreen,
+                                textPrimary = textPrimary, textSecondary = textSecondary,
+                                onClose = { showVideo = false }
+                            )
+                            Spacer(Modifier.height(16.dp))
+                        } else if (bannerModel.isNotBlank() || hasVideo) {
+                            Box(
+                                Modifier.fillMaxWidth().aspectRatio(16f / 9f)
+                                    .glass(isDarkMode, RoundedCornerShape(24.dp), 5.dp)
+                                    .clickable {
+                                        if (hasVideo) showVideo = true
+                                        else if (screenshotList.isNotEmpty()) activeLightboxImageIndex = 0
                                     }
-                                    if (hasVideo) {
-                                        Box(
-                                            Modifier.align(Alignment.Center).size(66.dp).clip(CircleShape)
-                                                .background(Color.White.copy(alpha = 0.26f))
-                                                .border(2.dp, Color.White.copy(alpha = 0.85f), CircleShape),
-                                            contentAlignment = Alignment.Center
-                                        ) { Icon(Icons.Default.PlayArrow, contentDescription = "Play video", tint = Color.White, modifier = Modifier.size(40.dp)) }
-                                    }
+                            ) {
+                                if (bannerModel.isNotBlank()) {
+                                    AsyncImage(model = bannerModel, contentDescription = app.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                                } else {
+                                    Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(accentGreen.copy(alpha = 0.55f), accentGreen.copy(alpha = 0.15f)))))
+                                }
+                                if (hasVideo) {
+                                    Box(
+                                        Modifier.align(Alignment.Center).size(66.dp).clip(CircleShape)
+                                            .background(Color.White.copy(alpha = 0.26f))
+                                            .border(2.dp, Color.White.copy(alpha = 0.85f), CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) { Icon(Icons.Default.PlayArrow, contentDescription = "Play video", tint = Color.White, modifier = Modifier.size(40.dp)) }
                                 }
                             }
                             Spacer(Modifier.height(16.dp))

@@ -1,15 +1,17 @@
 package com.example.view
 
 import android.annotation.SuppressLint
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
-import android.view.View
-import android.view.ViewGroup
+import android.os.Handler
+import android.os.Looper
+import android.webkit.JavascriptInterface
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
 import android.webkit.WebChromeClient
-import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.widget.FrameLayout
 import android.widget.MediaController
 import android.widget.Toast
 import android.widget.VideoView
@@ -17,6 +19,7 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -35,11 +38,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-
-/** 11-character YouTube id from watch / youtu.be / shorts / embed links, or null. */
-fun youTubeId(url: String): String? =
-    Regex("""(?:youtu\.be/|youtube\.com/(?:watch\?(?:.*&)?v=|embed/|shorts/|v/))([A-Za-z0-9_-]{11})""")
-        .find(url)?.groupValues?.getOrNull(1)
+import kotlinx.coroutines.delay
 
 /** One of the four info boxes under the app title (Size · Version · Ads · Reviews). */
 @Composable
@@ -118,156 +117,221 @@ fun WhatsNewCard(version: String, changelog: String, isDark: Boolean, accent: Co
     }
 }
 
+// ───────────────────────── Promo video ─────────────────────────
+
+private val YT_ID = Regex("^[A-Za-z0-9_-]{11}$")
+
+private fun queryParam(rawQuery: String?, key: String): String? =
+    rawQuery?.split('&')?.map { it.split('=', limit = 2) }?.firstOrNull { it[0] == key }?.getOrNull(1)
+
 /**
- * Inline promo video player for the app-details banner (16:9).
- * Plays in place on the detail page — does NOT open a fullscreen dialog.
- *
- * YouTube Error 153 fix: HTTP Referer via loadUrl(headers) using the app ID as HTTPS
- * origin (YouTube API Services Required Minimum Functionality).
- * Black-screen / audio-only fix: hardware layer, wide viewport, MATCH_PARENT layout.
+ * 11-character video id from youtu.be/ID, youtube.com/watch?v=ID, /embed/ID, /shorts/ID, /live/ID, /v/ID
+ * and youtube-nocookie.com/embed/ID links (extra parameters like ?si= or &t= are ignored). Null if it
+ * isn't a YouTube link. Pure JVM (java.net.URI) so it can be unit-tested without Android.
  */
-@SuppressLint("SetJavaScriptEnabled")
-@Composable
-fun PromoVideoPlayer(
-    url: String,
-    onClose: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val context = LocalContext.current
-    val ytId = remember(url) { youTubeId(url) }
-    val appOrigin = "https://com.darkstore.darkroot"
-
-    Box(
-        modifier
-            .fillMaxWidth()
-            .aspectRatio(16f / 9f)
-            .clip(RoundedCornerShape(24.dp))
-            .background(Color.Black)
-    ) {
-        if (ytId != null) {
-            AndroidView(
-                modifier = Modifier.fillMaxSize(),
-                factory = { ctx ->
-                    // Outer FrameLayout so WebView always gets MATCH_PARENT size before load.
-                    FrameLayout(ctx).apply {
-                        layoutParams = ViewGroup.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.MATCH_PARENT
-                        )
-                        val webView = WebView(ctx).apply {
-                            layoutParams = FrameLayout.LayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                ViewGroup.LayoutParams.MATCH_PARENT
-                            )
-                            // Hardware layer avoids black-screen + audio-only on many devices.
-                            setLayerType(View.LAYER_TYPE_HARDWARE, null)
-                            settings.apply {
-                                javaScriptEnabled = true
-                                domStorageEnabled = true
-                                mediaPlaybackRequiresUserGesture = false
-                                useWideViewPort = true
-                                loadWithOverviewMode = true
-                                cacheMode = WebSettings.LOAD_DEFAULT
-                                // Do not weaken security (no allowFileAccessFromFileURLs etc.).
-                            }
-                            setBackgroundColor(android.graphics.Color.BLACK)
-                            webChromeClient = WebChromeClient()
-                            webViewClient = object : WebViewClient() {
-                                @Deprecated("Deprecated in Java")
-                                override fun onReceivedError(
-                                    view: WebView?,
-                                    errorCode: Int,
-                                    description: String?,
-                                    failingUrl: String?
-                                ) {
-                                    Toast.makeText(
-                                        ctx,
-                                        "Couldn't play this video here — try Open externally",
-                                        Toast.LENGTH_LONG
-                                    ).show()
-                                }
-                            }
-                            // Official embed URL. origin= helps client identity.
-                            val embedUrl =
-                                "https://www.youtube.com/embed/$ytId?autoplay=1&playsinline=1&rel=0&modestbranding=1&fs=0&origin=${Uri.encode(appOrigin)}"
-                            // Primary path from YouTube docs (direct embed, no local HTML): Referer header.
-                            val headers = mapOf("Referer" to appOrigin)
-                            loadUrl(embedUrl, headers)
-                        }
-                        addView(webView)
-                        tag = webView // for onRelease cleanup
-                    }
-                },
-                onRelease = { container ->
-                    val wv = container.tag as? WebView
-                    wv?.stopLoading()
-                    wv?.loadUrl("about:blank")
-                    wv?.destroy()
-                    container.removeAllViews()
-                }
-            )
-        } else {
-            AndroidView(
-                modifier = Modifier.fillMaxSize(),
-                factory = { ctx ->
-                    VideoView(ctx).apply {
-                        layoutParams = ViewGroup.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.MATCH_PARENT
-                        )
-                        val controller = MediaController(ctx).also { it.setAnchorView(this) }
-                        setMediaController(controller)
-                        setVideoURI(Uri.parse(url))
-                        setOnPreparedListener { start() }
-                        setOnErrorListener { _, _, _ ->
-                            Toast.makeText(ctx, "Couldn't play this video here — try Open externally", Toast.LENGTH_LONG).show()
-                            true
-                        }
-                    }
-                },
-                onRelease = { it.stopPlayback() }
-            )
+fun youTubeId(url: String): String? {
+    val raw = url.trim()
+    if (raw.isEmpty()) return null
+    val uri = try { java.net.URI(if ("://" in raw) raw else "https://$raw") } catch (e: Exception) { return null }
+    val host = uri.host?.lowercase()?.removePrefix("www.")?.removePrefix("m.") ?: return null
+    val segments = (uri.path ?: "").split('/').filter { it.isNotEmpty() }
+    val candidate = when (host) {
+        "youtu.be" -> segments.firstOrNull()
+        "youtube.com", "music.youtube.com", "youtube-nocookie.com" -> when (segments.firstOrNull()) {
+            "watch" -> queryParam(uri.rawQuery, "v")
+            "embed", "shorts", "live", "v" -> segments.getOrNull(1)
+            else -> null
         }
-
-        // Close — stays on the banner, not system status bars.
-        Icon(
-            Icons.Default.Close, "Close", tint = Color.White,
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(10.dp)
-                .size(34.dp)
-                .clip(CircleShape)
-                .background(Color.Black.copy(alpha = 0.45f))
-                .clickable(onClick = onClose)
-                .padding(6.dp)
-        )
-        // Open externally
-        Text(
-            tr("det_open_ext"), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(10.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .background(Color.Black.copy(alpha = 0.45f))
-                .clickable {
-                    try {
-                        context.startActivity(
-                            Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        )
-                    } catch (e: Exception) {
-                        Toast.makeText(context, "No app can open this link", Toast.LENGTH_SHORT).show()
-                    }
-                }
-                .padding(horizontal = 12.dp, vertical = 7.dp)
-        )
+        else -> null
     }
+    return candidate?.takeIf { YT_ID.matches(it) }
+}
+
+/** https://www.youtube.com/embed/VIDEO_ID with the documented player parameters (no fullscreen button). */
+private fun embedUrl(videoId: String, appOrigin: String): String =
+    "https://www.youtube.com/embed/$videoId?enablejsapi=1&autoplay=1&playsinline=1&rel=0&fs=0" +
+        "&origin=" + java.net.URLEncoder.encode(appOrigin, "UTF-8")
+
+/**
+ * Player page. It is loaded with loadDataWithBaseURL(baseUrl = https://<applicationId>/), which is the
+ * documented way to give an app-bundled player its API-client identity: the iframe request then carries
+ * Referer: https://<applicationId>/ . The iframe sets referrerpolicy explicitly (never "no-referrer") and
+ * the IFrame API is attached to it only to report errors back to the app.
+ */
+internal fun youTubePlayerHtml(videoId: String, appOrigin: String): String = """
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}iframe{position:absolute;top:0;left:0;width:100%;height:100%;border:0}</style>
+</head><body>
+<iframe id="yt" src="${embedUrl(videoId, appOrigin)}"
+  referrerpolicy="strict-origin-when-cross-origin"
+  allow="autoplay; encrypted-media; picture-in-picture"></iframe>
+<script>
+  var tag = document.createElement('script');
+  tag.src = 'https://www.youtube.com/iframe_api';
+  tag.onerror = function () { DarkStore.onError(-1); };
+  document.head.appendChild(tag);
+  function onYouTubeIframeAPIReady() {
+    new YT.Player('yt', { events: {
+      onReady: function () { DarkStore.onReady(); },
+      onError: function (e) { DarkStore.onError(e.data); }
+    }});
+  }
+</script>
+</body></html>
+""".trimIndent()
+
+/** Receives the player's events. Harmless on purpose: it can only report "ready" or an error code. */
+private class YouTubeBridge(private val readyCallback: () -> Unit, private val errorCallback: (Int) -> Unit) {
+    private val main = Handler(Looper.getMainLooper())
+    @JavascriptInterface fun onReady() { main.post { readyCallback() } }
+    @JavascriptInterface fun onError(code: Int) { main.post { errorCallback(code) } }
+}
+
+private fun openExternally(context: android.content.Context, url: String, videoId: String?) {
+    val tries = buildList {
+        if (videoId != null) add(Intent(Intent.ACTION_VIEW, Uri.parse("vnd.youtube:$videoId")))   // YouTube app
+        add(Intent(Intent.ACTION_VIEW, Uri.parse(if (videoId != null) "https://www.youtube.com/watch?v=$videoId" else url)))
+    }
+    for (intent in tries) {
+        try { context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); return } catch (e: ActivityNotFoundException) { }
+    }
+    Toast.makeText(context, "No app can open this link", Toast.LENGTH_SHORT).show()
 }
 
 /**
- * Backwards-compatible entry used by MainActivity. Plays inline in the detail banner
- * (same 16:9 slot) — no fullscreen dialog.
+ * Plays the app's promo video right inside the details page (16:9, no full-screen takeover).
+ * Close / "Open in YouTube" sit BELOW the player — YouTube's rules forbid overlays on top of it.
+ * YouTube links use the embedded player; any other link is played with the built-in video view.
  */
+@SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun VideoPlayerDialog(url: String, onDismiss: () -> Unit) {
-    PromoVideoPlayer(url = url, onClose = onDismiss)
+fun InlineVideoPlayer(
+    url: String,
+    isDark: Boolean,
+    accent: Color,
+    textPrimary: Color,
+    textSecondary: Color,
+    onClose: () -> Unit
+) {
+    val context = LocalContext.current
+    val ytId = remember(url) { youTubeId(url) }
+    val appOrigin = remember { "https://" + context.packageName.lowercase() }
+    var error by remember(url) { mutableStateOf<String?>(null) }
+    var ready by remember(url) { mutableStateOf(false) }
+    var slow by remember(url) { mutableStateOf(false) }
+
+    // Pre-resolve messages: the player callbacks aren't composable
+    val msg153 = tr("vid_err_153")
+    val msgBlocked = tr("vid_err_blocked")
+    val msgUnavailable = tr("vid_err_unavailable")
+    val msgNet = tr("vid_err_net")
+    val msgGeneric = tr("vid_err_generic")
+    fun messageFor(code: Int) = when (code) {
+        153 -> "$msg153 (153)"
+        101, 150 -> "$msgBlocked ($code)"
+        100 -> "$msgUnavailable (100)"
+        -1 -> msgNet
+        else -> "$msgGeneric ($code)"
+    }
+
+    LaunchedEffect(url) {
+        if (ytId != null) { delay(12_000); if (!ready && error == null) slow = true }
+    }
+
+    Column(Modifier.fillMaxWidth()) {
+        Box(
+            Modifier.fillMaxWidth().aspectRatio(16f / 9f)
+                .glass(isDark, RoundedCornerShape(24.dp), 5.dp)
+                .background(Color.Black)
+        ) {
+            val err = error
+            if (err != null) {
+                Column(
+                    Modifier.fillMaxSize().background(Color(0xFF111418)).padding(18.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(Icons.Default.ErrorOutline, null, tint = Color(0xFFFFB300), modifier = Modifier.size(30.dp))
+                    Text(err, color = Color.White, fontSize = 13.sp, lineHeight = 18.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        modifier = Modifier.padding(top = 8.dp))
+                    Text(
+                        tr("vid_open_yt"), color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(top = 12.dp).clip(RoundedCornerShape(20.dp))
+                            .background(accent).clickable { openExternally(context, url, ytId) }
+                            .padding(horizontal = 18.dp, vertical = 9.dp)
+                    )
+                }
+            } else if (ytId != null) {
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = { ctx ->
+                        WebView(ctx).apply {
+                            setBackgroundColor(android.graphics.Color.BLACK)
+                            settings.javaScriptEnabled = true           // required by the YouTube player
+                            settings.domStorageEnabled = true
+                            settings.mediaPlaybackRequiresUserGesture = false
+                            settings.allowFileAccess = false            // hardening: this page needs no local files
+                            settings.allowContentAccess = false
+                            webChromeClient = WebChromeClient()
+                            webViewClient = object : WebViewClient() {
+                                override fun onReceivedError(view: WebView, request: WebResourceRequest, e: WebResourceError) {
+                                    if (request.isForMainFrame) error = messageFor(-1)
+                                }
+                            }
+                            addJavascriptInterface(
+                                YouTubeBridge(readyCallback = { ready = true; slow = false }, errorCallback = { code -> error = messageFor(code) }),
+                                "DarkStore"
+                            )
+                            // baseUrl https://<applicationId>/ → Referer for the embedded player (API client identity)
+                            loadDataWithBaseURL("$appOrigin/", youTubePlayerHtml(ytId, appOrigin), "text/html", "utf-8", null)
+                        }
+                    },
+                    onRelease = { it.removeJavascriptInterface("DarkStore"); it.stopLoading(); it.loadUrl("about:blank"); it.destroy() }
+                )
+            } else {
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = { ctx ->
+                        VideoView(ctx).apply {
+                            val controller = MediaController(ctx).also { it.setAnchorView(this) }
+                            setMediaController(controller)
+                            setVideoURI(Uri.parse(url))
+                            setOnPreparedListener { ready = true; start() }
+                            setOnErrorListener { _, _, _ -> error = msgGeneric; true }
+                        }
+                    },
+                    onRelease = { it.stopPlayback() }
+                )
+            }
+        }
+
+        // Controls under the player (never on top of it)
+        Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                Modifier.clip(RoundedCornerShape(20.dp)).glass(isDark, RoundedCornerShape(20.dp), 2.dp)
+                    .clickable(onClick = onClose).padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.Close, null, tint = textPrimary, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(tr("vid_close"), color = textPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            }
+            Spacer(Modifier.weight(1f))
+            Row(
+                Modifier.clip(RoundedCornerShape(20.dp)).glass(isDark, RoundedCornerShape(20.dp), 2.dp)
+                    .clickable { openExternally(context, url, ytId) }.padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.OpenInNew, null, tint = accent, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(tr("det_open_ext"), color = accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+        if (slow && error == null) {
+            Text(tr("vid_slow"), color = textSecondary, fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp, start = 4.dp))
+        }
+    }
 }

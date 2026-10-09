@@ -321,12 +321,6 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     private val _chatMessages = MutableStateFlow<List<com.example.data.ChatMessageEntity>>(emptyList())
     val chatMessages: StateFlow<List<com.example.data.ChatMessageEntity>> = _chatMessages.asStateFlow()
 
-    private val _globalChatMessages = MutableStateFlow<List<com.example.data.ChatMessageEntity>>(emptyList())
-    val globalChatMessages: StateFlow<List<com.example.data.ChatMessageEntity>> = _globalChatMessages.asStateFlow()
-
-    private val _inGlobalChat = MutableStateFlow(false)
-    val inGlobalChat: StateFlow<Boolean> = _inGlobalChat.asStateFlow()
-
     private val _activeChatPeer = MutableStateFlow<UserEntity?>(null)
     val activeChatPeer: StateFlow<UserEntity?> = _activeChatPeer.asStateFlow()
 
@@ -2942,85 +2936,6 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         val chatId = com.example.data.chatIdFor(me, peer.uid)
         viewModelScope.launch(Dispatchers.IO) {
             _chatMessages.value = FirebaseService.fetchChatMessages(chatId)
-        }
-    }
-
-    fun openGlobalChat() {
-        _inGlobalChat.value = true
-        _activeChatPeer.value = null
-        viewModelScope.launch(Dispatchers.IO) {
-            _globalChatMessages.value = FirebaseService.fetchGlobalChatMessages()
-        }
-    }
-
-    fun closeGlobalChat() {
-        _inGlobalChat.value = false
-        _globalChatMessages.value = emptyList()
-    }
-
-    fun pollGlobalChat() {
-        if (!_inGlobalChat.value) return
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                _globalChatMessages.value = FirebaseService.fetchGlobalChatMessages()
-            } catch (e: Exception) {
-                Log.e("StoreViewModel", "pollGlobalChat: ${e.message}")
-            }
-        }
-    }
-
-    fun sendGlobalChatMessage(text: String, imageUrl: String = "", onDone: (Boolean) -> Unit = {}) {
-        val me = _userUid.value
-        if (me.isBlank()) { onDone(false); return }
-        val myName = _devName.value.ifBlank { _userName.value }.ifBlank { _userEmail.value }
-        viewModelScope.launch(Dispatchers.IO) {
-            val ok = FirebaseService.sendGlobalChatMessage(me, myName, text.trim(), imageUrl.trim())
-            if (ok) _globalChatMessages.value = FirebaseService.fetchGlobalChatMessages()
-            kotlinx.coroutines.withContext(Dispatchers.Main) { onDone(ok) }
-        }
-    }
-
-    fun editChatMessage(msgId: String, newText: String, onDone: (Boolean) -> Unit = {}) {
-        val me = _userUid.value
-        val peer = _activeChatPeer.value
-        if (me.isBlank() || peer == null || msgId.isBlank()) { onDone(false); return }
-        val chatId = com.example.data.chatIdFor(me, peer.uid)
-        viewModelScope.launch(Dispatchers.IO) {
-            val ok = FirebaseService.editChatMessage(chatId, msgId, newText.trim(), me)
-            if (ok) _chatMessages.value = FirebaseService.fetchChatMessages(chatId)
-            kotlinx.coroutines.withContext(Dispatchers.Main) { onDone(ok) }
-        }
-    }
-
-    fun deleteChatMessage(msgId: String, onDone: (Boolean) -> Unit = {}) {
-        val me = _userUid.value
-        val peer = _activeChatPeer.value
-        if (me.isBlank() || peer == null || msgId.isBlank()) { onDone(false); return }
-        val chatId = com.example.data.chatIdFor(me, peer.uid)
-        viewModelScope.launch(Dispatchers.IO) {
-            val ok = FirebaseService.deleteChatMessage(chatId, msgId, me)
-            if (ok) _chatMessages.value = FirebaseService.fetchChatMessages(chatId)
-            kotlinx.coroutines.withContext(Dispatchers.Main) { onDone(ok) }
-        }
-    }
-
-    fun editGlobalChatMessage(msgId: String, newText: String, onDone: (Boolean) -> Unit = {}) {
-        val me = _userUid.value
-        if (me.isBlank() || msgId.isBlank()) { onDone(false); return }
-        viewModelScope.launch(Dispatchers.IO) {
-            val ok = FirebaseService.editGlobalChatMessage(msgId, newText.trim(), me)
-            if (ok) _globalChatMessages.value = FirebaseService.fetchGlobalChatMessages()
-            kotlinx.coroutines.withContext(Dispatchers.Main) { onDone(ok) }
-        }
-    }
-
-    fun deleteGlobalChatMessage(msgId: String, onDone: (Boolean) -> Unit = {}) {
-        val me = _userUid.value
-        if (me.isBlank() || msgId.isBlank()) { onDone(false); return }
-        viewModelScope.launch(Dispatchers.IO) {
-            val ok = FirebaseService.deleteGlobalChatMessage(msgId, me)
-            if (ok) _globalChatMessages.value = FirebaseService.fetchGlobalChatMessages()
-            kotlinx.coroutines.withContext(Dispatchers.Main) { onDone(ok) }
         }
     }
 
