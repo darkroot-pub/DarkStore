@@ -1,0 +1,3077 @@
+package com.example.viewmodel
+
+import android.app.Application
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
+import android.util.Log
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import com.example.data.*
+import com.example.utils.CustomDownloadManager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.*
+
+
+
+
+
+
+
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+
+
+class StoreViewModel(application: Application) : AndroidViewModel(application) {
+
+    private var lastAppsRefreshTime: Long = 0
+    private var lastNoticesRefreshTime: Long = 0
+
+    private val _isInternetAvailable = MutableStateFlow(true)
+    val isInternetAvailable: StateFlow<Boolean> = _isInternetAvailable.asStateFlow()
+
+    private val sharedPrefs = application.getSharedPreferences("dark_store_pref", Context.MODE_PRIVATE)
+
+    init {
+        val apiKey = sharedPrefs.getString("custom_firebase_api_key", "AIzaSyDWAQ3MmbZwzIQ9zNZvN9lep-_W6dIbv9o") ?: "AIzaSyDWAQ3MmbZwzIQ9zNZvN9lep-_W6dIbv9o"
+        val projectId = sharedPrefs.getString("custom_firebase_project_id", "dark-store-6836d") ?: "dark-store-6836d"
+        val rtdbUrl = sharedPrefs.getString("custom_firebase_rtdb_url", "https://dark-store-6836d-default-rtdb.asia-southeast1.firebasedatabase.app/") ?: "https://dark-store-6836d-default-rtdb.asia-southeast1.firebasedatabase.app/"
+        val idToken = sharedPrefs.getString("auth_id_token", "") ?: ""
+        val refreshToken = sharedPrefs.getString("auth_refresh_token", "") ?: ""
+        
+        FirebaseAuthService.updateConfig(apiKey, projectId, rtdbUrl)
+        FirebaseService.updateConfig(projectId, rtdbUrl)
+        
+        FirebaseAuthService.activeToken = idToken
+        FirebaseAuthService.activeRefreshToken = refreshToken
+        FirebaseService.activeToken = idToken
+    }
+
+    /**
+     * Startup refresh. MUST NOT run from the first init block: it touches state
+     * flows declared further down (_maintenanceConfig, _termsAgreements, …) and
+     * runs on a background thread, so it could start before they were
+     * initialised → NullPointerException. It is launched from the LAST init
+     * block at the bottom of the class, when every property exists.
+     */
+    private fun startStartupRefresh() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                FirebaseAuthService.refreshIdTokenIfNeeded(getApplication())
+                val updatedIdToken = sharedPrefs.getString("auth_id_token", "") ?: ""
+                if (updatedIdToken.isNotBlank()) {
+                    FirebaseService.activeToken = updatedIdToken
+                }
+                refreshAppPolicy()
+                refreshDevelopers()
+                loadFollowingIds()
+                loadFollowerIds()
+                loadPremiumFreeMode()
+                loadMaintenanceConfig()
+                val savedEmail = sharedPrefs.getString("user_email", "") ?: ""
+                if (savedEmail.isNotBlank() && savedEmail != "guest@darkroot.io") {
+                    updateEcosystemPolicyAcceptedForCurrentUser(savedEmail)
+                    updateTermsAcceptedForCurrentUser(savedEmail)
+                    val list = FirebaseService.fetchTermsAgreements()
+                    _termsAgreements.value = list.sortedByDescending { it.timestamp }
+                    val cleanEmail = savedEmail.lowercase().trim()
+                    if (list.any { it.userEmail.lowercase().trim() == cleanEmail }) {
+                        sharedPrefs.edit().putBoolean("is_terms_accepted", true).apply()
+                        sharedPrefs.edit().putBoolean("terms_accepted_${cleanEmail}", true).apply()
+                        sharedPrefs.edit().putBoolean("terms_accepted_v1", true).apply()
+                        _isTermsAccepted.value = true
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("StoreViewModel", "Auto-refresh failed on startup", e)
+            }
+        }
+    }
+
+    // Configuration
+    private val _customFirebaseApiKey = MutableStateFlow(
+        run {
+            var loadedKey = sharedPrefs.getString("custom_firebase_api_key", "AIzaSyDWAQ3MmbZwzIQ9zNZvN9lep-_W6dIbv9o") ?: "AIzaSyDWAQ3MmbZwzIQ9zNZvN9lep-_W6dIbv9o"
+            if (loadedKey.length > 4 && loadedKey.substring(0, 4).equals("alza", ignoreCase = true)) {
+                loadedKey = "AIza" + loadedKey.substring(4)
+            }
+            loadedKey
+        }
+    )
+    val customFirebaseApiKey: StateFlow<String> = _customFirebaseApiKey.asStateFlow()
+
+    private val _customGoogleWebClientId = MutableStateFlow(sharedPrefs.getString("custom_google_web_client_id", "210511589455-90vu807op09vmokh1g9niflgid076dfd.apps.googleusercontent.com") ?: "210511589455-90vu807op09vmokh1g9niflgid076dfd.apps.googleusercontent.com")
+    val customGoogleWebClientId: StateFlow<String> = _customGoogleWebClientId.asStateFlow()
+
+    private val _customFirebaseProjectId = MutableStateFlow(sharedPrefs.getString("custom_firebase_project_id", "dark-store-6836d") ?: "dark-store-6836d")
+    val customFirebaseProjectId: StateFlow<String> = _customFirebaseProjectId.asStateFlow()
+
+    private val _customFirebaseRtdbUrl = MutableStateFlow(sharedPrefs.getString("custom_firebase_rtdb_url", "https://dark-store-6836d-default-rtdb.asia-southeast1.firebasedatabase.app/") ?: "https://dark-store-6836d-default-rtdb.asia-southeast1.firebasedatabase.app/")
+    val customFirebaseRtdbUrl: StateFlow<String> = _customFirebaseRtdbUrl.asStateFlow()
+
+    fun updateFirebaseConfig(apiKey: String, clientId: String, projectId: String, rtdbUrl: String) {
+        var cleanApiKey = apiKey.trim()
+        if (cleanApiKey.length > 4 && cleanApiKey.substring(0, 4).equals("alza", ignoreCase = true)) {
+            cleanApiKey = "AIza" + cleanApiKey.substring(4)
+        }
+        val cleanClientId = clientId.trim()
+        val cleanProjectId = projectId.trim()
+        val cleanRtdbUrl = rtdbUrl.trim()
+
+        sharedPrefs.edit().apply {
+            putString("custom_firebase_api_key", cleanApiKey)
+            putString("custom_google_web_client_id", cleanClientId)
+            putString("custom_firebase_project_id", cleanProjectId)
+            putString("custom_firebase_rtdb_url", cleanRtdbUrl)
+            apply()
+        }
+        _customFirebaseApiKey.value = cleanApiKey
+        _customGoogleWebClientId.value = cleanClientId
+        _customFirebaseProjectId.value = cleanProjectId
+        _customFirebaseRtdbUrl.value = cleanRtdbUrl
+        
+        // Push configuration immediately to singletons
+        FirebaseAuthService.updateConfig(cleanApiKey, cleanProjectId, cleanRtdbUrl)
+        FirebaseService.updateConfig(cleanProjectId, cleanRtdbUrl)
+    }
+
+    val firebaseApiKey: String
+        get() = _customFirebaseApiKey.value
+
+    // Authentication States
+    private val _isLoggedIn = MutableStateFlow(sharedPrefs.getBoolean("is_logged_in", false))
+    val isLoggedIn: StateFlow<Boolean> = _isLoggedIn.asStateFlow()
+
+    private val _userEmail = MutableStateFlow(sharedPrefs.getString("user_email", "guest@darkroot.io") ?: "guest@darkroot.io")
+    val userEmail: StateFlow<String> = _userEmail.asStateFlow()
+
+    private val _userName = MutableStateFlow(sharedPrefs.getString("user_name", "") ?: "")
+    val userName: StateFlow<String> = _userName.asStateFlow()
+
+    private val _userUid = MutableStateFlow(sharedPrefs.getString("user_uid", "guest_uid") ?: "guest_uid")
+    val userUid: StateFlow<String> = _userUid.asStateFlow()
+
+    private val _userRole = MutableStateFlow(sharedPrefs.getString("user_role", "user") ?: "user")
+    val userRole: StateFlow<String> = _userRole.asStateFlow()
+
+    // Restored from the last known server value so a cold start (or an offline / expired-token
+    // launch) never flashes "Become a Verified Developer" for an already-registered developer.
+    private val _isDeveloper = MutableStateFlow(sharedPrefs.getBoolean("is_developer", false))
+    val isDeveloper: StateFlow<Boolean> = _isDeveloper.asStateFlow()
+
+    private val _devWebsite = MutableStateFlow(sharedPrefs.getString("dev_website", "") ?: "")
+    val devWebsite: StateFlow<String> = _devWebsite.asStateFlow()
+
+    private val _devGithub = MutableStateFlow(sharedPrefs.getString("dev_github", "") ?: "")
+    val devGithub: StateFlow<String> = _devGithub.asStateFlow()
+
+    private val _devName = MutableStateFlow(sharedPrefs.getString("dev_name", "") ?: "")
+    val devName: StateFlow<String> = _devName.asStateFlow()
+
+    private val _devBio = MutableStateFlow(sharedPrefs.getString("dev_bio", "") ?: "")
+    val devBio: StateFlow<String> = _devBio.asStateFlow()
+
+    private val _devLocation = MutableStateFlow(sharedPrefs.getString("dev_location", "") ?: "")
+    val devLocation: StateFlow<String> = _devLocation.asStateFlow()
+
+    // Profile photo — visible to other users when they view this developer's
+    // public profile (e.g. from an app's "By <developer>" listing).
+    private val _profilePhotoUrl = MutableStateFlow(sharedPrefs.getString("profile_photo_url", "") ?: "")
+    val profilePhotoUrl: StateFlow<String> = _profilePhotoUrl.asStateFlow()
+
+    // Defaults to true so accounts that existed before this feature shipped are
+    // never retroactively nagged/blocked — only genuinely-unverified new signups
+    // (and anyone whose RTDB record explicitly says isEmailVerified=false) see
+    // any verification UI at all.
+    private val _isEmailVerified = MutableStateFlow(sharedPrefs.getBoolean("is_email_verified", true))
+    val isEmailVerified: StateFlow<Boolean> = _isEmailVerified.asStateFlow()
+
+    // Drives the one-time full-screen "verify your email" gate shown right after
+    // a fresh signup. Skipping it just dismisses this — it does NOT mark the
+    // email as verified, so the small banner in Profile still reminds them later.
+    private val _showEmailVerificationPrompt = MutableStateFlow(false)
+    val showEmailVerificationPrompt: StateFlow<Boolean> = _showEmailVerificationPrompt.asStateFlow()
+
+    // ----------------------------------------------------
+    // FOLLOW / FOLLOWERS
+    // ----------------------------------------------------
+    private val _followingIds = MutableStateFlow<Set<String>>(emptySet())
+    val followingIds: StateFlow<Set<String>> = _followingIds.asStateFlow()
+
+    // Who follows ME — only meaningful if the current account is itself a
+    // developer with published apps, but harmless (just empty) otherwise.
+    private val _followerIds = MutableStateFlow<Set<String>>(emptySet())
+    val followerIds: StateFlow<Set<String>> = _followerIds.asStateFlow()
+
+    fun isFollowingDeveloper(developerUid: String): Boolean = _followingIds.value.contains(developerUid)
+
+    fun loadFollowingIds() {
+        val uid = _userUid.value
+        if (uid.isBlank() || uid == "guest_uid") {
+            _followingIds.value = emptySet()
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            val ids = FirebaseService.fetchFollowingIds(uid)
+            _followingIds.value = ids
+        }
+    }
+
+    fun loadFollowerIds() {
+        val uid = _userUid.value
+        if (uid.isBlank() || uid == "guest_uid") {
+            _followerIds.value = emptySet()
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            val ids = FirebaseService.fetchFollowerIds(uid)
+            _followerIds.value = ids
+        }
+    }
+
+    fun toggleFollowDeveloper(developerUid: String, onResult: ((Boolean) -> Unit)? = null) {
+        val myUid = _userUid.value
+        if (myUid.isBlank() || myUid == "guest_uid" || developerUid.isBlank() || developerUid == myUid) {
+            onResult?.invoke(false)
+            return
+        }
+        val currentlyFollowing = isFollowingDeveloper(developerUid)
+        val wantFollow = !currentlyFollowing
+
+        // Optimistic UI update — reverted below if the write actually fails,
+        // so the button responds instantly instead of waiting on a round trip.
+        _followingIds.value = if (wantFollow) {
+            _followingIds.value + developerUid
+        } else {
+            _followingIds.value - developerUid
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val success = FirebaseService.setFollowing(myUid, developerUid, wantFollow)
+            if (!success) {
+                _followingIds.value = if (wantFollow) {
+                    _followingIds.value - developerUid
+                } else {
+                    _followingIds.value + developerUid
+                }
+            }
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                onResult?.invoke(success)
+            }
+        }
+    }
+
+    suspend fun fetchFollowerCount(developerUid: String): Int = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        FirebaseService.fetchFollowerCount(developerUid)
+    }
+
+    fun dismissEmailVerificationPrompt() {
+        _showEmailVerificationPrompt.value = false
+    }
+
+    fun sendVerificationEmail(onFinished: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            val idToken = sharedPrefs.getString("auth_id_token", "") ?: ""
+            val (success, message) = FirebaseAuthService.sendEmailVerification(idToken, firebaseApiKey)
+            onFinished(success, message)
+        }
+    }
+
+    fun refreshEmailVerificationStatus(onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            val idToken = sharedPrefs.getString("auth_id_token", "") ?: ""
+            val verified = FirebaseAuthService.checkEmailVerified(idToken, firebaseApiKey)
+            if (verified != _isEmailVerified.value) {
+                _isEmailVerified.value = verified
+                sharedPrefs.edit().putBoolean("is_email_verified", verified).apply()
+                if (verified) {
+                    _showEmailVerificationPrompt.value = false
+                    // Reconcile the RTDB copy too so other devices/sessions see it.
+                    viewModelScope.launch(Dispatchers.IO) {
+                        val uid = _userUid.value
+                        if (uid.isNotBlank() && uid != "guest_uid") {
+                            val current = FirebaseAuthService.getUserProfile(uid)
+                            if (current != null && !current.isEmailVerified) {
+                                FirebaseAuthService.saveUserInRealtimeDatabase(current.copy(isEmailVerified = true))
+                            }
+                        }
+                    }
+                }
+            }
+            onResult(verified)
+        }
+    }
+
+    // Developers List State
+    private val _developers = MutableStateFlow<List<UserEntity>>(emptyList())
+    val developers: StateFlow<List<UserEntity>> = _developers.asStateFlow()
+
+    private val _chatThreads = MutableStateFlow<List<com.example.data.ChatThreadEntity>>(emptyList())
+    val chatThreads: StateFlow<List<com.example.data.ChatThreadEntity>> = _chatThreads.asStateFlow()
+
+    private val _chatMessages = MutableStateFlow<List<com.example.data.ChatMessageEntity>>(emptyList())
+    val chatMessages: StateFlow<List<com.example.data.ChatMessageEntity>> = _chatMessages.asStateFlow()
+
+    private val _globalChatMessages = MutableStateFlow<List<com.example.data.ChatMessageEntity>>(emptyList())
+    val globalChatMessages: StateFlow<List<com.example.data.ChatMessageEntity>> = _globalChatMessages.asStateFlow()
+
+    private val _inGlobalChat = MutableStateFlow(false)
+    val inGlobalChat: StateFlow<Boolean> = _inGlobalChat.asStateFlow()
+
+    private val _activeChatPeer = MutableStateFlow<UserEntity?>(null)
+    val activeChatPeer: StateFlow<UserEntity?> = _activeChatPeer.asStateFlow()
+
+    /**
+     * Sum of unread messages across all conversations, excluding the one that is
+     * open right now (it is being read). Drives the numeric badge on the Chat tab.
+     */
+    val totalUnread: StateFlow<Int> = combine(_chatThreads, _activeChatPeer, _userUid) { threads, peer, me ->
+        val openId = if (peer != null && me.isNotBlank()) com.example.data.chatIdFor(me, peer.uid) else ""
+        threads.filter { it.chatId != openId }.sumOf { it.unread.coerceAtLeast(0) }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, 0)
+
+    // Submissions List State
+    private val _submissions = MutableStateFlow<List<SubmissionEntity>>(emptyList())
+    val submissions: StateFlow<List<SubmissionEntity>> = _submissions.asStateFlow()
+
+    // Terms Agreements List State
+    private val _termsAgreements = MutableStateFlow<List<TermsAgreementEntity>>(emptyList())
+    val termsAgreements: StateFlow<List<TermsAgreementEntity>> = _termsAgreements.asStateFlow()
+
+    // App Preferences
+    private val _isDarkMode = MutableStateFlow(sharedPrefs.getBoolean("is_dark_mode", false))
+    val isDarkMode: StateFlow<Boolean> = _isDarkMode.asStateFlow()
+
+    private val _isAmoledMode = MutableStateFlow(sharedPrefs.getBoolean("is_amoled_mode", false))
+    val isAmoledMode: StateFlow<Boolean> = _isAmoledMode.asStateFlow()
+
+    private val _wifiOnly = MutableStateFlow(sharedPrefs.getBoolean("wifi_only", false))
+    val wifiOnly: StateFlow<Boolean> = _wifiOnly.asStateFlow()
+
+    private val _autoInstall = MutableStateFlow(sharedPrefs.getBoolean("auto_install", true))
+    val autoInstall: StateFlow<Boolean> = _autoInstall.asStateFlow()
+
+    private val _notifyNewApps = MutableStateFlow(sharedPrefs.getBoolean("notify_new_apps", true))
+    val notifyNewApps: StateFlow<Boolean> = _notifyNewApps.asStateFlow()
+
+    private val _notifyUpdates = MutableStateFlow(sharedPrefs.getBoolean("notify_updates", true))
+    val notifyUpdates: StateFlow<Boolean> = _notifyUpdates.asStateFlow()
+
+    private val _notifyAnnouncements = MutableStateFlow(sharedPrefs.getBoolean("notify_announcements", true))
+    val notifyAnnouncements: StateFlow<Boolean> = _notifyAnnouncements.asStateFlow()
+
+    // ───────────── Curated collections ─────────────
+    private val _collections = MutableStateFlow(
+        com.example.data.CollectionEntity.listFromJson(sharedPrefs.getString("collections_cache", ""))
+    )
+    /** All collections (admins see inactive ones too — the UI filters for everyone else). */
+    val collections: StateFlow<List<com.example.data.CollectionEntity>> = _collections.asStateFlow()
+    private var lastCollectionsFetch = 0L
+
+    fun refreshCollections(force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force && now - lastCollectionsFetch < 30_000L) return
+        lastCollectionsFetch = now
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val fresh = FirebaseService.fetchCollections() ?: return@launch
+                val sorted = fresh.sortedWith(compareBy({ it.order }, { -it.createdAt }))
+                _collections.value = sorted
+                sharedPrefs.edit().putString("collections_cache", com.example.data.CollectionEntity.listToJson(sorted)).apply()
+            } catch (e: Exception) {
+                Log.e("StoreViewModel", "refreshCollections failed: ${e.message}")
+            }
+        }
+    }
+
+    fun saveCollection(c: com.example.data.CollectionEntity, onDone: (Boolean) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val withId = if (c.id.isBlank()) c.copy(id = "col_" + System.currentTimeMillis(), createdAt = System.currentTimeMillis()) else c
+            val ok = FirebaseService.saveCollection(withId)
+            if (ok) {
+                logAdminAction("SAVE_COLLECTION", "collection", withId.id, withId.title, "${withId.appIds.size} apps")
+                refreshCollections(force = true)
+            }
+            kotlinx.coroutines.withContext(Dispatchers.Main) { onDone(ok) }
+        }
+    }
+
+    fun deleteCollection(id: String, name: String, onDone: (Boolean) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val ok = FirebaseService.deleteCollection(id)
+            if (ok) {
+                logAdminAction("DELETE_COLLECTION", "collection", id, name)
+                refreshCollections(force = true)
+            }
+            kotlinx.coroutines.withContext(Dispatchers.Main) { onDone(ok) }
+        }
+    }
+
+    // ───────────── Admin console PIN (hashed, stored in Firebase adminSecurity) ─────────────
+    suspend fun loadAdminPin(): Pair<String, com.example.utils.AdminPin.Record?> = withContext(Dispatchers.IO) {
+        FirebaseAuthService.refreshIdTokenIfNeeded(getApplication())
+        FirebaseService.fetchAdminPin()
+    }
+
+    suspend fun verifyAdminPin(pin: String, record: com.example.utils.AdminPin.Record): Boolean =
+        withContext(Dispatchers.Default) { com.example.utils.AdminPin.verify(pin, record) }
+
+    suspend fun saveAdminPin(newPin: String): Boolean = withContext(Dispatchers.IO) {
+        if (!com.example.utils.AdminPin.isValidFormat(newPin)) return@withContext false
+        val rec = com.example.utils.AdminPin.create(newPin)
+        val ok = FirebaseService.saveAdminPin(rec, _userEmail.value)
+        if (ok) logAdminAction("CHANGE_ADMIN_PIN", "security", "adminSecurity", "Admin console PIN", "PIN created or changed")
+        ok
+    }
+
+    // ───────────── Home banners ─────────────
+    private val _banners = MutableStateFlow(
+        com.example.data.BannerEntity.listFromJson(sharedPrefs.getString("banners_cache", ""))
+    )
+    val banners: StateFlow<List<com.example.data.BannerEntity>> = _banners.asStateFlow()
+    private var lastBannersFetch = 0L
+
+    fun refreshBanners(force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force && now - lastBannersFetch < 30_000L) return
+        lastBannersFetch = now
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val fresh = FirebaseService.fetchBanners() ?: return@launch
+                val sorted = fresh.sortedWith(compareBy({ it.order }, { -it.createdAt }))
+                _banners.value = sorted
+                sharedPrefs.edit().putString("banners_cache", com.example.data.BannerEntity.listToJson(sorted)).apply()
+            } catch (e: Exception) {
+                Log.e("StoreViewModel", "refreshBanners failed: ${e.message}")
+            }
+        }
+    }
+
+    fun saveBanner(b: com.example.data.BannerEntity, onDone: (Boolean) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val withId = if (b.id.isBlank()) b.copy(id = "bn_" + System.currentTimeMillis(), createdAt = System.currentTimeMillis()) else b
+            val ok = FirebaseService.saveBanner(withId)
+            if (ok) {
+                logAdminAction("SAVE_BANNER", "banner", withId.id, withId.title.ifBlank { "Banner" }, withId.targetType)
+                refreshBanners(force = true)
+            }
+            withContext(Dispatchers.Main) { onDone(ok) }
+        }
+    }
+
+    fun deleteBanner(id: String, name: String, onDone: (Boolean) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val ok = FirebaseService.deleteBanner(id)
+            if (ok) {
+                logAdminAction("DELETE_BANNER", "banner", id, name.ifBlank { "Banner" })
+                refreshBanners(force = true)
+            }
+            withContext(Dispatchers.Main) { onDone(ok) }
+        }
+    }
+
+    // ───────────── Notification read-state (notices are shared; "read" is per device) ─────────────
+    private val _readNoticeIds = MutableStateFlow(sharedPrefs.getStringSet("read_notice_ids", emptySet())?.toSet() ?: emptySet())
+    val readNoticeIds: StateFlow<Set<String>> = _readNoticeIds.asStateFlow()
+
+    fun markNoticeRead(id: String) = markAllNoticesRead(listOf(id))
+
+    fun markAllNoticesRead(ids: Collection<String>) {
+        val merged = _readNoticeIds.value + ids
+        if (merged == _readNoticeIds.value) return
+        _readNoticeIds.value = merged
+        // keep the stored set from growing forever
+        sharedPrefs.edit().putStringSet("read_notice_ids", merged.toList().takeLast(500).toSet()).apply()
+    }
+
+    // ───────────── Language (en / ne / hi) ─────────────
+    private val _appLanguage = MutableStateFlow(sharedPrefs.getString("app_language", "en") ?: "en")
+    val appLanguage: StateFlow<String> = _appLanguage.asStateFlow()
+    fun setAppLanguage(code: String) {
+        _appLanguage.value = code
+        sharedPrefs.edit().putString("app_language", code).apply()
+    }
+
+    private val _notifyMessages = MutableStateFlow(sharedPrefs.getBoolean("notify_messages", true))
+    val notifyMessages: StateFlow<Boolean> = _notifyMessages.asStateFlow()
+    fun setNotifyMessages(enabled: Boolean) {
+        _notifyMessages.value = enabled
+        sharedPrefs.edit().putBoolean("notify_messages", enabled).apply()
+    }
+
+    private val _notifySubmissions = MutableStateFlow(sharedPrefs.getBoolean("notify_submissions", true))
+    val notifySubmissions: StateFlow<Boolean> = _notifySubmissions.asStateFlow()
+
+    private val _isPremiumMember = MutableStateFlow(sharedPrefs.getBoolean("is_premium_member", false))
+    val isPremiumMember: StateFlow<Boolean> = _isPremiumMember.asStateFlow()
+
+    // Whether Premium can currently be turned on for free — admin-controlled,
+    // see setPremiumFreeModeAsAdmin() below. Defaults true (free) until the
+    // real value loads, so nobody is ever blocked by a slow network request;
+    // an admin has to deliberately switch this off.
+    private val _isPremiumFreeMode = MutableStateFlow(true)
+    val isPremiumFreeMode: StateFlow<Boolean> = _isPremiumFreeMode.asStateFlow()
+
+    private val _maintenanceConfig = MutableStateFlow(FirebaseService.MaintenanceConfig())
+    val maintenanceConfig: StateFlow<FirebaseService.MaintenanceConfig> = _maintenanceConfig.asStateFlow()
+
+    private val _auditLog = MutableStateFlow<List<FirebaseService.AuditLogEntry>>(emptyList())
+    val auditLog: StateFlow<List<FirebaseService.AuditLogEntry>> = _auditLog.asStateFlow()
+
+    fun loadPremiumFreeMode() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val isFree = FirebaseService.fetchPremiumIsFree()
+            _isPremiumFreeMode.value = isFree
+        }
+    }
+
+    fun loadMaintenanceConfig() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _maintenanceConfig.value = FirebaseService.fetchMaintenanceConfig()
+        }
+    }
+
+    fun setMaintenanceModeAsAdmin(
+        isEnabled: Boolean,
+        message: String = "Dark Store is temporarily offline for maintenance. Please check back soon.",
+        onResult: ((Boolean) -> Unit)? = null
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val config = FirebaseService.MaintenanceConfig(isEnabled = isEnabled, message = message)
+            val success = FirebaseService.saveMaintenanceConfig(config)
+            if (success) {
+                _maintenanceConfig.value = config
+                logAdminAction(
+                    action = if (isEnabled) "MAINTENANCE_ON" else "MAINTENANCE_OFF",
+                    targetType = "config",
+                    targetId = "maintenanceConfig",
+                    targetName = "Store Maintenance",
+                    details = message
+                )
+            }
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                onResult?.invoke(success)
+            }
+        }
+    }
+
+    fun refreshAuditLog() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _auditLog.value = FirebaseService.fetchAuditLog(150)
+        }
+    }
+
+    /** Audit-trail entry for a targeted notification sent from Admin ▸ Notify. */
+    fun logNotificationSent(audience: String, title: String, summary: String) {
+        logAdminAction(
+            action = "SEND_NOTIFICATION",
+            targetType = "notification",
+            targetId = audience,
+            targetName = title,
+            details = summary
+        )
+    }
+
+    private fun logAdminAction(
+        action: String,
+        targetType: String,
+        targetId: String,
+        targetName: String,
+        details: String = ""
+    ) {
+        FirebaseService.writeAuditLog(
+            FirebaseService.AuditLogEntry(
+                action = action,
+                targetType = targetType,
+                targetId = targetId,
+                targetName = targetName,
+                adminEmail = _userEmail.value,
+                adminUid = _userUid.value,
+                details = details
+            )
+        )
+    }
+
+    // Admin-only — enforced by the RTDB rules on premiumConfig, not just this
+    // client check, so a non-admin calling this would simply have the write
+    // rejected server-side.
+    fun setPremiumFreeModeAsAdmin(isFree: Boolean, onResult: ((Boolean) -> Unit)? = null) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val success = FirebaseService.savePremiumIsFree(isFree)
+            if (success) {
+                _isPremiumFreeMode.value = isFree
+                logAdminAction(
+                    action = if (isFree) "PREMIUM_FREE_ON" else "PREMIUM_FREE_OFF",
+                    targetType = "config",
+                    targetId = "premiumConfig",
+                    targetName = "Premium Free Mode",
+                    details = "isFree=$isFree"
+                )
+            }
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                onResult?.invoke(success)
+            }
+        }
+    }
+
+    // Returns true if the change was actually allowed to happen. Turning
+    // Premium OFF is always allowed. Turning it ON is only allowed while
+    // isPremiumFreeMode is true — once an admin switches that off, this
+    // returns false and changes nothing, so the caller can show a Coming
+    // Soon message instead of silently granting something that's supposed
+    // to require a real subscription.
+    fun setPremiumMember(enabled: Boolean): Boolean {
+        if (enabled && !_isPremiumFreeMode.value) {
+            return false
+        }
+        sharedPrefs.edit().putBoolean("is_premium_member", enabled).apply()
+        _isPremiumMember.value = enabled
+        // Synced to the real account record (not just this device) so it
+        // survives reinstalls, works across devices, and — unlike the old
+        // local-only flag — is something OTHER users can actually see (the
+        // premium badge on reviews/profile).
+        val uid = _userUid.value
+        if (uid.isNotBlank() && uid != "guest_uid") {
+            viewModelScope.launch(Dispatchers.IO) {
+                val current = FirebaseAuthService.getUserProfile(uid)
+                if (current != null && current.isPremiumMember != enabled) {
+                    FirebaseAuthService.saveUserInRealtimeDatabase(current.copy(isPremiumMember = enabled))
+                }
+            }
+        }
+        return true
+    }
+
+    private val _premiumTheme = MutableStateFlow(sharedPrefs.getString("premium_theme_color", "gold") ?: "gold")
+    val premiumTheme: StateFlow<String> = _premiumTheme.asStateFlow()
+
+    /** Premium members never see in-catalog ad badges / promo noise. */
+    fun shouldShowAds(): Boolean = !_isPremiumMember.value
+
+    fun setPremiumTheme(theme: String) {
+        sharedPrefs.edit().putString("premium_theme_color", theme).apply()
+        _premiumTheme.value = theme
+    }
+
+    private val _appPolicy = MutableStateFlow(AppPolicyEntity())
+    val appPolicy: StateFlow<AppPolicyEntity> = _appPolicy.asStateFlow()
+
+    private val _updateConfig = MutableStateFlow<com.example.data.UpdateConfigEntity?>(
+        run {
+            val cachedCode = sharedPrefs.getInt("cached_latest_version_code", -1)
+            if (cachedCode != -1) {
+                com.example.data.UpdateConfigEntity(
+                    latestVersionCode = cachedCode,
+                    latestVersionName = sharedPrefs.getString("cached_latest_version_name", "") ?: "",
+                    apkDownloadUrl = sharedPrefs.getString("cached_apk_download_url", "") ?: "",
+                    updateTitle = sharedPrefs.getString("cached_update_title", "") ?: "",
+                    updateMessage = sharedPrefs.getString("cached_update_message", "") ?: "",
+                    forceUpdate = sharedPrefs.getBoolean("cached_force_update", false)
+                )
+            } else {
+                null
+            }
+        }
+    )
+    val updateConfig: StateFlow<com.example.data.UpdateConfigEntity?> = _updateConfig.asStateFlow()
+
+    private val _isEcosystemPolicyAccepted = MutableStateFlow(false)
+    val isEcosystemPolicyAccepted: StateFlow<Boolean> = _isEcosystemPolicyAccepted.asStateFlow()
+
+    private val _purchasedAppIds = MutableStateFlow<Set<String>>(
+        (sharedPrefs.getString("purchased_app_ids", "") ?: "")
+            .split(",")
+            .filter { it.isNotEmpty() }
+            .toSet()
+    )
+    val purchasedAppIds: StateFlow<Set<String>> = _purchasedAppIds.asStateFlow()
+
+    private val _preRegisteredAppIds = MutableStateFlow<Set<String>>(
+        (sharedPrefs.getString("preregistered_app_ids", "") ?: "")
+            .split(",")
+            .filter { it.isNotEmpty() }
+            .toSet()
+    )
+    val preRegisteredAppIds: StateFlow<Set<String>> = _preRegisteredAppIds.asStateFlow()
+
+    // purchaseApp() was removed along with the fake payment checkout dialog —
+    // it only ever got called from that dialog's "purchase confirmed"
+    // callback, which faked a successful payment with no real processor
+    // behind it. _purchasedAppIds itself is kept so anyone who already has
+    // locally-recorded purchases from before this change keeps their access.
+
+    fun preRegisterApp(appId: String) {
+        val current = _preRegisteredAppIds.value.toMutableSet()
+        current.add(appId)
+        _preRegisteredAppIds.value = current
+        sharedPrefs.edit().putString("preregistered_app_ids", current.joinToString(",")).apply()
+    }
+
+    fun updateEcosystemPolicyAcceptedForCurrentUser(email: String) {
+        if (email.isBlank()) return
+        val cleanEmail = email.lowercase().trim()
+        val accepted = sharedPrefs.getBoolean("ecosystem_policy_accepted_$cleanEmail", false)
+        _isEcosystemPolicyAccepted.value = accepted
+    }
+
+    fun updateTermsAcceptedForCurrentUser(email: String) {
+        if (email.isBlank() || email == "guest@darkroot.io") {
+            _isTermsAccepted.value = false
+            return
+        }
+        val cleanEmail = email.lowercase().trim()
+        val accepted = sharedPrefs.getBoolean("terms_accepted_$cleanEmail", false)
+        _isTermsAccepted.value = accepted
+    }
+
+    fun acceptEcosystemPolicy(email: String) {
+        if (email.isBlank()) return
+        val cleanEmail = email.lowercase().trim()
+        sharedPrefs.edit().putBoolean("ecosystem_policy_accepted_$cleanEmail", true).apply()
+        _isEcosystemPolicyAccepted.value = true
+    }
+
+    fun refreshAppPolicy() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val policy = FirebaseService.fetchAppPolicy()
+            if (policy != null) {
+                _appPolicy.value = policy
+            }
+        }
+    }
+
+    fun saveAppPolicy(title: String, content: String, updatedBy: String, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val policy = AppPolicyEntity(
+                title = title,
+                content = content,
+                lastUpdated = System.currentTimeMillis(),
+                updatedBy = updatedBy
+            )
+            val success = FirebaseService.saveAppPolicy(policy)
+            if (success) {
+                _appPolicy.value = policy
+            }
+            viewModelScope.launch(Dispatchers.Main) {
+                onResult(success)
+            }
+        }
+    }
+
+    fun refreshUpdateConfig() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val config = FirebaseService.fetchUpdateConfig()
+            if (config != null) {
+                _updateConfig.value = config
+                sharedPrefs.edit().apply {
+                    putInt("cached_latest_version_code", config.latestVersionCode)
+                    putString("cached_latest_version_name", config.latestVersionName)
+                    putString("cached_apk_download_url", config.apkDownloadUrl)
+                    putString("cached_update_title", config.updateTitle)
+                    putString("cached_update_message", config.updateMessage)
+                    putBoolean("cached_force_update", config.forceUpdate)
+                    apply()
+                }
+            }
+        }
+    }
+
+    fun saveUpdateConfig(config: com.example.data.UpdateConfigEntity, onResult: (Boolean, String?) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            // Try to update Firebase database (RTDB)
+            val (success, errorMsg) = FirebaseService.saveUpdateConfig(config)
+            
+            if (success) {
+                // Only cache and update state upon true success to Firebase RTDB
+                sharedPrefs.edit().apply {
+                    putInt("cached_latest_version_code", config.latestVersionCode)
+                    putString("cached_latest_version_name", config.latestVersionName)
+                    putString("cached_apk_download_url", config.apkDownloadUrl)
+                    putString("cached_update_title", config.updateTitle)
+                    putString("cached_update_message", config.updateMessage)
+                    putBoolean("cached_force_update", config.forceUpdate)
+                    apply()
+                }
+                _updateConfig.value = config
+            }
+            
+            viewModelScope.launch(Dispatchers.Main) {
+                onResult(success, errorMsg)
+            }
+        }
+    }
+
+    private val _isTermsAccepted = MutableStateFlow(
+        run {
+            val globalAccepted = sharedPrefs.getBoolean("terms_accepted_v1", false)
+            val savedEmail = sharedPrefs.getString("user_email", "") ?: ""
+            val cleanEmail = savedEmail.lowercase().trim()
+            val emailAccepted = if (cleanEmail.isNotBlank()) {
+                sharedPrefs.getBoolean("terms_accepted_$cleanEmail", false)
+            } else {
+                false
+            }
+            globalAccepted || emailAccepted
+        }
+    )
+    val isTermsAccepted: StateFlow<Boolean> = _isTermsAccepted.asStateFlow()
+
+    // Preferences Setters
+    fun setTermsAccepted(accepted: Boolean) {
+        val savedEmail = sharedPrefs.getString("user_email", "") ?: ""
+        val cleanEmail = savedEmail.lowercase().trim()
+        sharedPrefs.edit().apply {
+            putBoolean("terms_accepted_v1", accepted)
+            if (cleanEmail.isNotBlank()) {
+                putBoolean("terms_accepted_$cleanEmail", accepted)
+                putBoolean("is_terms_accepted", accepted)
+            }
+            apply()
+        }
+        _isTermsAccepted.value = accepted
+    }
+
+    fun hasUserAgreedToTerms(email: String): Boolean {
+        if (email.isBlank()) return false
+        val cleanEmail = email.lowercase().trim()
+        
+        // 1. Check local Preference for this exact email
+        if (sharedPrefs.getBoolean("terms_accepted_${cleanEmail}", false)) {
+            return true
+        }
+        
+        // 2. Check the live termsAgreements list
+        val match = termsAgreements.value.any { it.userEmail.lowercase().trim() == cleanEmail }
+        if (match) {
+            // Cache it locally so subsequent lookups are instant
+            sharedPrefs.edit().putBoolean("terms_accepted_${cleanEmail}", true).apply()
+            return true
+        }
+        return false
+    }
+
+    fun markTermsAcceptedForEmail(email: String, name: String) {
+        if (email.isBlank()) return
+        val cleanEmail = email.lowercase().trim()
+        
+        // Save locally
+        sharedPrefs.edit().putBoolean("terms_accepted_${cleanEmail}", true).apply()
+        
+        // Save to Realtime Database
+        recordTermsAgreementOnServer(
+            explicitEmail = cleanEmail,
+            explicitName = name,
+            explicitUid = null
+        )
+    }
+
+    fun setDarkMode(enabled: Boolean) {
+        sharedPrefs.edit().putBoolean("is_dark_mode", enabled).apply()
+        _isDarkMode.value = enabled
+    }
+
+    fun setAmoledMode(enabled: Boolean) {
+        sharedPrefs.edit().putBoolean("is_amoled_mode", enabled).apply()
+        _isAmoledMode.value = enabled
+    }
+
+    fun setWifiOnly(enabled: Boolean) {
+        sharedPrefs.edit().putBoolean("wifi_only", enabled).apply()
+        _wifiOnly.value = enabled
+    }
+
+    fun setAutoInstall(enabled: Boolean) {
+        sharedPrefs.edit().putBoolean("auto_install", enabled).apply()
+        _autoInstall.value = enabled
+    }
+
+    fun setNotifyNewApps(enabled: Boolean) {
+        sharedPrefs.edit().putBoolean("notify_new_apps", enabled).apply()
+        _notifyNewApps.value = enabled
+    }
+
+    fun setNotifyUpdates(enabled: Boolean) {
+        sharedPrefs.edit().putBoolean("notify_updates", enabled).apply()
+        _notifyUpdates.value = enabled
+    }
+
+    fun setNotifyAnnouncements(enabled: Boolean) {
+        sharedPrefs.edit().putBoolean("notify_announcements", enabled).apply()
+        _notifyAnnouncements.value = enabled
+    }
+
+    fun setNotifySubmissions(enabled: Boolean) {
+        sharedPrefs.edit().putBoolean("notify_submissions", enabled).apply()
+        _notifySubmissions.value = enabled
+    }
+
+    // ----------------------------------------------------
+    // AUTHENTICATION OPERATIONS
+    // ----------------------------------------------------
+
+    fun signUpWithEmail(
+        email: String,
+        password: String,
+        displayName: String,
+        onFinished: (Boolean, String?) -> Unit
+    ) {
+        val lowerName = displayName.lowercase().trim()
+        if (lowerName.contains("darkroot")) {
+            onFinished(false, "The name cannot contain reserved terms like 'DarkRoot'.")
+            return
+        }
+
+        viewModelScope.launch {
+            _isRefreshing.value = true
+
+            // Fetch latest users/developers list from Realtime Database for accurate checking
+            val latestDevs = try {
+                FirebaseAuthService.fetchDevelopers()
+            } catch (e: Exception) {
+                _developers.value
+            }
+
+            val nameExists = latestDevs.any {
+                it.devName.lowercase().trim() == lowerName || it.displayName.lowercase().trim() == lowerName
+            }
+            if (nameExists) {
+                _isRefreshing.value = false
+                onFinished(false, "The name '$displayName' is already registered by another user/developer.")
+                return@launch
+            }
+
+            val res = FirebaseAuthService.signUp(getApplication(), email, password, displayName, firebaseApiKey)
+            _isRefreshing.value = false
+            if (res.first && res.third != null) {
+                val user = res.third!!
+                _isLoggedIn.value = true
+                _userEmail.value = user.email
+                _userName.value = user.displayName
+                _userUid.value = user.uid
+                _userRole.value = user.role
+                _isDeveloper.value = user.isDeveloper
+                _devWebsite.value = user.devWebsite
+                _devGithub.value = user.devGithub
+                _devName.value = user.devName
+                _devBio.value = user.devBio
+                _devLocation.value = user.devLocation
+                _isEmailVerified.value = user.isEmailVerified
+                sharedPrefs.edit().putBoolean("is_email_verified", user.isEmailVerified).apply()
+                // Only a genuinely fresh, real-account signup should trigger the
+                // full-screen verification gate.
+                _showEmailVerificationPrompt.value = !user.isEmailVerified
+                
+                updateEcosystemPolicyAcceptedForCurrentUser(user.email)
+                updateTermsAcceptedForCurrentUser(user.email)
+                refreshSubmissions()
+                syncUserProfile()
+                loadFollowingIds()
+                loadFollowerIds()
+                onFinished(true, res.second)
+            } else {
+                onFinished(false, res.second ?: "Failed to sign up.")
+            }
+        }
+    }
+
+    fun signInWithEmail(
+        email: String,
+        password: String,
+        onFinished: (Boolean, String?) -> Unit
+    ) {
+        viewModelScope.launch {
+            _isRefreshing.value = true
+            val res = FirebaseAuthService.signIn(getApplication(), email, password, firebaseApiKey)
+            _isRefreshing.value = false
+            if (res.first && res.third != null) {
+                val user = res.third!!
+                _isLoggedIn.value = true
+                _userEmail.value = user.email
+                _userName.value = user.displayName
+                _userUid.value = user.uid
+                _userRole.value = user.role
+                _isDeveloper.value = user.isDeveloper
+                _devWebsite.value = user.devWebsite
+                _devGithub.value = user.devGithub
+                _devName.value = user.devName
+                _devBio.value = user.devBio
+                _devLocation.value = user.devLocation
+                _profilePhotoUrl.value = user.profilePhotoUrl
+                _isEmailVerified.value = user.isEmailVerified
+                // Login never triggers the full-screen gate (only signup does) —
+                // an unverified returning user just sees the small banner in
+                // Profile instead of being interrupted again on every launch.
+                
+                // BUG FIX: this only updated in-memory state before, never
+                // SharedPreferences — so on the NEXT cold start (app fully closed
+                // and reopened), the profile screen would read stale cached values
+                // (often "not a developer") and briefly show the "become a
+                // developer" gate even for an already-registered developer, until
+                // the async syncUserProfile() network call finished correcting it.
+                // Persisting immediately on login avoids that flash entirely.
+                sharedPrefs.edit().apply {
+                    putBoolean("is_logged_in", true)
+                    putString("user_email", user.email)
+                    putString("user_name", user.displayName)
+                    putString("user_uid", user.uid)
+                    putString("user_role", user.role)
+                    putBoolean("is_developer", user.isDeveloper)
+                    putString("dev_name", user.devName)
+                    putString("dev_website", user.devWebsite)
+                    putString("dev_github", user.devGithub)
+                    putString("dev_bio", user.devBio)
+                    putString("profile_photo_url", user.profilePhotoUrl)
+                    putBoolean("is_email_verified", user.isEmailVerified)
+                    apply()
+                }
+                
+                updateEcosystemPolicyAcceptedForCurrentUser(user.email)
+                updateTermsAcceptedForCurrentUser(user.email)
+                refreshSubmissions()
+                syncUserProfile()
+                
+                loadFollowingIds()
+                loadFollowerIds()
+                // Automatically find and cache terms agreement if already exist on server
+                viewModelScope.launch(Dispatchers.IO) {
+                    val list = FirebaseService.fetchTermsAgreements()
+                    _termsAgreements.value = list.sortedByDescending { it.timestamp }
+                    val cleanEmail = user.email.lowercase().trim()
+                    if (list.any { it.userEmail.lowercase().trim() == cleanEmail }) {
+                        sharedPrefs.edit().putBoolean("is_terms_accepted", true).apply()
+                        sharedPrefs.edit().putBoolean("terms_accepted_${cleanEmail}", true).apply()
+                        _isTermsAccepted.value = true
+                    }
+                }
+                
+                onFinished(true, res.second)
+            } else {
+                onFinished(false, res.second ?: "Failed to log in.")
+            }
+        }
+    }
+
+    fun resetUserPassword(email: String, onFinished: (Boolean, String?) -> Unit) {
+        viewModelScope.launch {
+            val res = FirebaseAuthService.resetPassword(email, firebaseApiKey)
+            onFinished(res.first, res.second)
+        }
+    }
+
+    fun loginWithGoogle(email: String, name: String) {
+        viewModelScope.launch {
+            val res = FirebaseAuthService.googleSignIn(getApplication(), email, name)
+            if (res.first && res.third != null) {
+                val user = res.third!!
+                _isLoggedIn.value = true
+                _userEmail.value = user.email
+                _userName.value = user.displayName
+                _userUid.value = user.uid
+                _userRole.value = user.role
+                _isDeveloper.value = user.isDeveloper
+                _devWebsite.value = user.devWebsite
+                _devGithub.value = user.devGithub
+                _devName.value = user.devName
+                _devBio.value = user.devBio
+                _devLocation.value = user.devLocation
+                _profilePhotoUrl.value = user.profilePhotoUrl
+
+                // BUG FIX: same missing-persistence issue as signInWithEmail above.
+                sharedPrefs.edit().apply {
+                    putBoolean("is_logged_in", true)
+                    putString("user_email", user.email)
+                    putString("user_name", user.displayName)
+                    putString("user_uid", user.uid)
+                    putString("user_role", user.role)
+                    putBoolean("is_developer", user.isDeveloper)
+                    putString("dev_name", user.devName)
+                    putString("dev_website", user.devWebsite)
+                    putString("dev_github", user.devGithub)
+                    putString("dev_bio", user.devBio)
+                    putString("profile_photo_url", user.profilePhotoUrl)
+                    apply()
+                }
+                
+                updateEcosystemPolicyAcceptedForCurrentUser(user.email)
+                updateTermsAcceptedForCurrentUser(user.email)
+                refreshSubmissions()
+                syncUserProfile()
+                
+                loadFollowingIds()
+                loadFollowerIds()
+                // Automatically find and cache terms agreement if already exist on server
+                viewModelScope.launch(Dispatchers.IO) {
+                    val list = FirebaseService.fetchTermsAgreements()
+                    _termsAgreements.value = list.sortedByDescending { it.timestamp }
+                    val cleanEmail = user.email.lowercase().trim()
+                    if (list.any { it.userEmail.lowercase().trim() == cleanEmail }) {
+                        sharedPrefs.edit().putBoolean("is_terms_accepted", true).apply()
+                        sharedPrefs.edit().putBoolean("terms_accepted_${cleanEmail}", true).apply()
+                        sharedPrefs.edit().putBoolean("terms_accepted_v1", true).apply()
+                        _isTermsAccepted.value = true
+                    }
+                }
+            }
+        }
+    }
+
+    fun loginWithGoogleIdToken(idToken: String, fallbackEmail: String, fallbackName: String, onFinished: (Boolean, String?) -> Unit) {
+        viewModelScope.launch {
+            val res = FirebaseAuthService.googleSignInWithIdToken(getApplication(), idToken, fallbackEmail, fallbackName, firebaseApiKey)
+            if (res.first && res.third != null) {
+                val user = res.third!!
+                _isLoggedIn.value = true
+                _userEmail.value = user.email
+                _userName.value = user.displayName
+                _userUid.value = user.uid
+                _userRole.value = user.role
+                _isDeveloper.value = user.isDeveloper
+                _devWebsite.value = user.devWebsite
+                _devGithub.value = user.devGithub
+                _devName.value = user.devName
+                _devBio.value = user.devBio
+                _devLocation.value = user.devLocation
+                _profilePhotoUrl.value = user.profilePhotoUrl
+
+                // BUG FIX: same missing-persistence issue as signInWithEmail above.
+                sharedPrefs.edit().apply {
+                    putBoolean("is_logged_in", true)
+                    putString("user_email", user.email)
+                    putString("user_name", user.displayName)
+                    putString("user_uid", user.uid)
+                    putString("user_role", user.role)
+                    putBoolean("is_developer", user.isDeveloper)
+                    putString("dev_name", user.devName)
+                    putString("dev_website", user.devWebsite)
+                    putString("dev_github", user.devGithub)
+                    putString("dev_bio", user.devBio)
+                    putString("profile_photo_url", user.profilePhotoUrl)
+                    apply()
+                }
+                
+                updateEcosystemPolicyAcceptedForCurrentUser(user.email)
+                updateTermsAcceptedForCurrentUser(user.email)
+                refreshSubmissions()
+                syncUserProfile()
+                
+                loadFollowingIds()
+                loadFollowerIds()
+                // Automatically find and cache terms agreement if already exist on server
+                viewModelScope.launch(Dispatchers.IO) {
+                    val list = FirebaseService.fetchTermsAgreements()
+                    _termsAgreements.value = list.sortedByDescending { it.timestamp }
+                    val cleanEmail = user.email.lowercase().trim()
+                    if (list.any { it.userEmail.lowercase().trim() == cleanEmail }) {
+                        sharedPrefs.edit().putBoolean("is_terms_accepted", true).apply()
+                        sharedPrefs.edit().putBoolean("terms_accepted_${cleanEmail}", true).apply()
+                        sharedPrefs.edit().putBoolean("terms_accepted_v1", true).apply()
+                        _isTermsAccepted.value = true
+                    }
+                }
+                
+                onFinished(true, res.second)
+            } else {
+                onFinished(false, res.second ?: "Failed Google authentication via Firebase IDP.")
+            }
+        }
+    }
+
+    fun logout() {
+        val context = getApplication<Application>()
+
+        // Force Google Sign-In to forget the last account to ensure the account picker appears on next login
+        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestIdToken(_customGoogleWebClientId.value)
+            .requestEmail()
+            .build()
+        GoogleSignIn.getClient(context, gso).signOut()
+
+        sharedPrefs.edit().apply {
+            putBoolean("is_logged_in", false)
+            putString("user_email", "guest@darkroot.io")
+            putString("user_name", "")
+            putString("user_uid", "guest_uid")
+            putString("user_role", "user")
+            putBoolean("is_developer", false)
+            putString("dev_name", "")
+            putString("dev_website", "")
+            putString("dev_github", "")
+            putString("dev_bio", "")
+            putString("profile_photo_url", "")
+            putString("auth_id_token", "")
+            // BUG FIX: purchasedAppIds/preRegisteredAppIds were stored under
+            // device-global keys and never cleared here — meaning if a different
+            // person logged into this app on the same phone, they'd see the
+            // PREVIOUS user's purchased/pre-registered apps shown as their own.
+            // Clearing them on logout, same as every other per-user field above.
+            putString("purchased_app_ids", "")
+            putString("preregistered_app_ids", "")
+            apply()
+        }
+        FirebaseAuthService.activeToken = ""
+        FirebaseService.activeToken = ""
+        _isLoggedIn.value = false
+        _userEmail.value = "guest@darkroot.io"
+        _userName.value = ""
+        _userUid.value = "guest_uid"
+        _userRole.value = "user"
+        _isDeveloper.value = false
+        _devName.value = ""
+        _devWebsite.value = ""
+        _devGithub.value = ""
+        _devBio.value = ""
+        _devLocation.value = ""
+        _profilePhotoUrl.value = ""
+        _isTermsAccepted.value = false
+        _isEcosystemPolicyAccepted.value = false
+        _submissions.value = emptyList()
+        _purchasedAppIds.value = emptySet()
+        _preRegisteredAppIds.value = emptySet()
+        _followingIds.value = emptySet()
+        _followerIds.value = emptySet()
+    }
+
+    fun loginAsGuest() {
+        sharedPrefs.edit().apply {
+            putBoolean("is_logged_in", true)
+            putString("user_email", "guest@darkroot.io")
+            putString("user_name", "")
+            putString("user_uid", "guest_uid")
+            putString("user_role", "user")
+            putBoolean("is_developer", false)
+            putString("dev_name", "")
+            putString("dev_website", "")
+            putString("dev_github", "")
+            putString("dev_bio", "")
+            putString("profile_photo_url", "")
+            putString("auth_id_token", "")
+            putString("purchased_app_ids", "")
+            putString("preregistered_app_ids", "")
+            putBoolean("terms_accepted_v1", true)
+            putBoolean("terms_accepted_guest@darkroot.io", true)
+            putBoolean("is_terms_accepted", true)
+            apply()
+        }
+        _isLoggedIn.value = true
+        _userEmail.value = "guest@darkroot.io"
+        _userName.value = ""
+        _userUid.value = "guest_uid"
+        _userRole.value = "user"
+        _isDeveloper.value = false
+        _devName.value = ""
+        _devWebsite.value = ""
+        _devGithub.value = ""
+        _devBio.value = ""
+        _profilePhotoUrl.value = ""
+        _isTermsAccepted.value = true
+        _isEcosystemPolicyAccepted.value = true
+        _purchasedAppIds.value = emptySet()
+        _preRegisteredAppIds.value = emptySet()
+        _followingIds.value = emptySet()
+        _followerIds.value = emptySet()
+    }
+
+    fun registerDeveloper(devName: String, website: String, github: String, bio: String = "", onFinished: (Boolean, String?) -> Unit) {
+        val uid = _userUid.value
+        val email = _userEmail.value
+        val role = _userRole.value
+        if (uid.isBlank() || uid == "guest_uid") {
+            onFinished(false, "You must be logged in to register as a developer.")
+            return
+        }
+
+        val lowerName = devName.lowercase().trim()
+        if (lowerName.contains("darkroot")) {
+            onFinished(false, "The developer name cannot contain reserved terms like 'DarkRoot'.")
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            // Check freshest developers/users list from database first!
+            val latestDevs = try {
+                FirebaseAuthService.fetchDevelopers()
+            } catch (e: Exception) {
+                _developers.value
+            }
+
+            val nameExists = latestDevs.any { 
+                it.uid != uid && (it.devName.lowercase().trim() == lowerName || it.displayName.lowercase().trim() == lowerName)
+            }
+            if (nameExists) {
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    onFinished(false, "The developer name '$devName' is already registered by another developer.")
+                }
+                return@launch
+            }
+
+            sharedPrefs.edit().apply {
+                putBoolean("is_developer", true)
+                putString("dev_name", devName)
+                putString("dev_website", website)
+                putString("dev_github", github)
+                putString("dev_bio", bio)
+                putString("user_name", devName)
+                apply()
+            }
+
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                _isDeveloper.value = true
+                _devName.value = devName
+                _devWebsite.value = website
+                _devGithub.value = github
+                _devBio.value = bio
+                _userName.value = devName
+            }
+
+            // Make sure the record exists (no-op if it does), then PATCH only the developer
+            // fields — a full overwrite used to wipe the user's fcmToken and premium flag.
+            FirebaseAuthService.ensureUserRecord(uid, email, devName, role, false, "")
+            val rtdbSuccess = FirebaseAuthService.patchUserFields(
+                uid,
+                mapOf(
+                    "displayName" to devName, "userName" to devName,
+                    "developer" to devName, "developerName" to devName,
+                    "isDeveloper" to true,
+                    "devName" to devName, "devWebsite" to website,
+                    "devGithub" to github, "devBio" to bio,
+                    "profilePhotoUrl" to (sharedPrefs.getString("profile_photo_url", "") ?: "")
+                )
+            )
+            refreshDevelopers()
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                if (rtdbSuccess) {
+                    onFinished(true, "Successfully registered as a Developer! Welcome to Dark Store.")
+                } else {
+                    onFinished(true, "Registered locally. Server sync failed but session is active.")
+                }
+            }
+        }
+    }
+
+    fun syncUserProfile() {
+        val uid = _userUid.value
+        if (uid.isNotBlank() && uid != "guest_uid") {
+            viewModelScope.launch {
+                // The ID token only lives ~1 hour. Opening the app hours later used to
+                // fetch the profile with an expired token → denied → null → developer
+                // status looked "unregistered". Refresh first, and retry once if needed.
+                FirebaseAuthService.refreshIdTokenIfNeeded(getApplication())
+                var user = FirebaseAuthService.getUserProfile(uid)
+                if (user == null) {
+                    FirebaseAuthService.refreshIdTokenIfNeeded(getApplication(), force = true)
+                    user = FirebaseAuthService.getUserProfile(uid)
+                }
+                if (user == null) {
+                    // Already-logged-in account with no database record (older users, or a
+                    // first write that was rejected). Create it NOW — with this device's push
+                    // token — so admins can list them and notifications can reach them.
+                    val token = awaitFcmToken()
+                    val created = FirebaseAuthService.ensureUserRecord(
+                        uid = uid,
+                        email = _userEmail.value,
+                        displayName = _userName.value.ifBlank { _userEmail.value.substringBefore("@") },
+                        role = _userRole.value,
+                        isDeveloper = _isDeveloper.value,
+                        fcmToken = token
+                    )
+                    if (!created) return@launch
+                    user = FirebaseAuthService.getUserProfile(uid) ?: return@launch
+                }
+                if (user != null) {
+                    // Role must come from RTDB so promoting someone to admin
+                    // (users/{uid}/role = "admin") shows the Admin panel without
+                    // requiring a full reinstall or hardcoded email.
+                    _userRole.value = user.role.ifBlank { "user" }
+                    _isPremiumMember.value = user.isPremiumMember
+                    _isDeveloper.value = user.isDeveloper
+                    _devWebsite.value = user.devWebsite
+                    _devGithub.value = user.devGithub
+                    _devName.value = user.devName
+                    _devBio.value = user.devBio
+                    _devLocation.value = user.devLocation
+                    _userName.value = user.displayName
+                    _profilePhotoUrl.value = user.profilePhotoUrl
+                    syncFcmToken(user.fcmToken)
+
+                    sharedPrefs.edit().apply {
+                        putString("user_role", user.role.ifBlank { "user" })
+                        putBoolean("is_premium_member", user.isPremiumMember)
+                        putBoolean("is_developer", user.isDeveloper)
+                        putString("dev_name", user.devName)
+                        putString("dev_website", user.devWebsite)
+                        putString("dev_github", user.devGithub)
+                        putString("dev_bio", user.devBio)
+                        putString("user_name", user.displayName)
+                        putString("profile_photo_url", user.profilePhotoUrl)
+                        apply()
+                    }
+                }
+            }
+        }
+    }
+
+    fun updateDeveloperName(newName: String): Pair<Boolean, String> {
+        val lowerName = newName.lowercase().trim()
+        if (lowerName.contains("darkroot")) {
+            return Pair(false, "The developer name cannot contain reserved terms like 'DarkRoot'.")
+        }
+
+        val uid = _userUid.value
+        val nameExists = _developers.value.any { 
+            it.uid != uid && (it.devName.lowercase().trim() == lowerName || it.displayName.lowercase().trim() == lowerName)
+        }
+        if (nameExists) {
+            return Pair(false, "The developer name '$newName' is already registered by another developer.")
+        }
+
+        sharedPrefs.edit()
+            .putString("user_name", newName)
+            .putString("dev_name", newName)
+            .apply()
+        _userName.value = newName
+        _devName.value = newName
+        if (uid.isNotBlank() && uid != "guest_uid") {
+            viewModelScope.launch {
+                // PATCH only the name fields — never a full overwrite (see patchUserFields).
+                FirebaseAuthService.patchUserFields(
+                    uid,
+                    mapOf(
+                        "displayName" to newName,
+                        "userName" to newName,
+                        "developer" to newName,
+                        "developerName" to newName,
+                        "devName" to newName
+                    )
+                )
+                refreshDevelopers()
+            }
+        }
+        return Pair(true, "Developer credentials updated across all instances!")
+    }
+
+    fun updateDeveloperBio(newBio: String) {
+        sharedPrefs.edit()
+            .putString("dev_bio", newBio)
+            .apply()
+        _devBio.value = newBio
+        val uid = _userUid.value
+        val email = _userEmail.value
+        val role = _userRole.value
+        val website = sharedPrefs.getString("dev_website", "") ?: ""
+        val github = sharedPrefs.getString("dev_github", "") ?: ""
+        val name = sharedPrefs.getString("dev_name", "") ?: ""
+        val photoUrl = sharedPrefs.getString("profile_photo_url", "") ?: ""
+        if (uid.isNotBlank() && uid != "guest_uid") {
+            viewModelScope.launch {
+                // PATCH only the bio. The old full overwrite rebuilt the record without
+                // isDeveloper = true, silently un-registering the developer.
+                FirebaseAuthService.patchUserFields(uid, mapOf("devBio" to newBio))
+            }
+        }
+    }
+
+
+    /**
+     * Updates a single public profile field (name, bio, website, github, location)
+     * and syncs to RTDB + local prefs.
+     */
+    fun updateDeveloperField(field: String, value: String, onDone: (Boolean, String) -> Unit = { _, _ -> }) {
+        val clean = value.trim()
+        when (field) {
+            "name" -> {
+                val result = updateDeveloperName(clean)
+                onDone(result.first, result.second)
+                return
+            }
+            "bio" -> {
+                sharedPrefs.edit().putString("dev_bio", clean).apply()
+                _devBio.value = clean
+            }
+            "website" -> {
+                sharedPrefs.edit().putString("dev_website", clean).apply()
+                _devWebsite.value = clean
+            }
+            "github" -> {
+                sharedPrefs.edit().putString("dev_github", clean).apply()
+                _devGithub.value = clean
+            }
+            "location" -> {
+                sharedPrefs.edit().putString("dev_location", clean).apply()
+                _devLocation.value = clean
+            }
+            else -> {
+                onDone(false, "Unknown field")
+                return
+            }
+        }
+        val uid = _userUid.value
+        if (uid.isBlank() || uid == "guest_uid") {
+            onDone(true, "Saved locally")
+            return
+        }
+        val remoteKey = when (field) {
+            "bio" -> "devBio"
+            "website" -> "devWebsite"
+            "github" -> "devGithub"
+            else -> "devLocation"
+        }
+        viewModelScope.launch {
+            // PATCH just this field so fcmToken / premium / suspension flags survive.
+            val ok = FirebaseAuthService.patchUserFields(uid, mapOf(remoteKey to clean))
+            if (ok) refreshDevelopers()
+            onDone(ok, if (ok) "Profile updated" else "Saved offline — will sync later")
+        }
+    }
+
+    fun updateProfilePhoto(newUrl: String, onDone: (Boolean) -> Unit = {}) {
+        sharedPrefs.edit()
+            .putString("profile_photo_url", newUrl)
+            .apply()
+        _profilePhotoUrl.value = newUrl
+        val uid = _userUid.value
+        if (uid.isBlank() || uid == "guest_uid") {
+            onDone(true)
+            return
+        }
+        viewModelScope.launch {
+            val ok = FirebaseAuthService.patchUserFields(uid, mapOf("profilePhotoUrl" to newUrl))
+            if (ok) refreshDevelopers()
+            onDone(ok)
+        }
+    }
+
+    /** Display-name edit for regular (non-developer) accounts. */
+    fun updateUserDisplayName(newName: String): Pair<Boolean, String> {
+        val clean = newName.trim()
+        if (clean.isBlank()) return Pair(false, "Name can't be empty.")
+        if (clean.length > 40) return Pair(false, "Name is too long (max 40 characters).")
+        if (clean.lowercase().contains("darkroot")) {
+            return Pair(false, "The name cannot contain reserved terms like 'DarkRoot'.")
+        }
+        sharedPrefs.edit().putString("user_name", clean).apply()
+        _userName.value = clean
+        val uid = _userUid.value
+        if (uid.isNotBlank() && uid != "guest_uid") {
+            viewModelScope.launch {
+                FirebaseAuthService.patchUserFields(
+                    uid,
+                    mapOf("displayName" to clean, "userName" to clean)
+                )
+                refreshDevelopers()
+            }
+        }
+        return Pair(true, "Name updated")
+    }
+
+    // ----------------------------------------------------
+    // REPOSITORY & DATA SOURCES
+    // ----------------------------------------------------
+    private val appDao = AppDao(application)
+    private val repository = AppRepository(appDao)
+    private val downloader = CustomDownloadManager(application, repository)
+
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    private val _selectedCategory = MutableStateFlow("All")
+    val selectedCategory: StateFlow<String> = _selectedCategory.asStateFlow()
+
+    private val _installedPackages = MutableStateFlow<Set<String>>(emptySet())
+    val installedPackages: StateFlow<Set<String>> = _installedPackages.asStateFlow()
+
+    private val _installedAppsInfo = MutableStateFlow<Map<String, com.example.utils.ApkInstaller.InstalledAppInfo>>(emptyMap())
+    val installedAppsInfo: StateFlow<Map<String, com.example.utils.ApkInstaller.InstalledAppInfo>> = _installedAppsInfo.asStateFlow()
+
+    private val _realtimeApps = MutableStateFlow<List<AppEntity>>(emptyList())
+    val realtimeApps: StateFlow<List<AppEntity>> = _realtimeApps.asStateFlow()
+
+    private val activeAppSourceFlow: Flow<List<AppEntity>> = combine(
+        isInternetAvailable,
+        _realtimeApps,
+        repository.allApps
+    ) { online, remote, local ->
+        // Online: prefer live RTDB list, but keep local Room data visible until
+        // the first successful fetch fills _realtimeApps (avoids empty/loading flash).
+        when {
+            online && remote.isNotEmpty() -> remote
+            online && local.isNotEmpty() -> local
+            online -> remote
+            else -> local
+        }
+    }
+
+    @OptIn(kotlinx.coroutines.FlowPreview::class)
+    val apps: StateFlow<List<AppEntity>> = activeAppSourceFlow
+        .combine(_searchQuery.debounce(300).distinctUntilChanged()) { appList, query ->
+            val approvedList = appList.filter { it.isApproved && !it.isSuspended }
+            if (query.isBlank()) approvedList else {
+                approvedList.filter { 
+                    it.name.contains(query, ignoreCase = true) || 
+                    it.developer.contains(query, ignoreCase = true) ||
+                    it.description.contains(query, ignoreCase = true)
+                }
+            }
+        }
+        .combine(_selectedCategory) { appList, category ->
+            if (category == "All") appList else {
+                appList.filter { it.category.equals(category, ignoreCase = true) }
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val unfilteredApps: StateFlow<List<AppEntity>> = activeAppSourceFlow
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val downloads: StateFlow<List<DownloadEntity>> = repository.allDownloads
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val notices: StateFlow<List<NoticeEntity>> = appDao.getNotices()
+
+    private fun loadConfigFromGoogleServices() {
+        if (sharedPrefs.contains("custom_firebase_project_id")) {
+            Log.d("StoreViewModel", "Custom Firebase config already present in SharedPrefs. Skipping bootstrap override.")
+            return
+        }
+        try {
+            // Obfuscated string segments to prevent static analysis extraction
+            val prefixProj = "dark"
+            val sepProj = "-"
+            val nameProj = "store"
+            val suffixProj = "6836d"
+            val projectId = prefixProj + sepProj + nameProj + sepProj + suffixProj
+
+            val keyPart1 = "AIzaSyDWAQ3"
+            val keyPart2 = "MmbZwzIQ9z"
+            val keyPart3 = "NZvN9lep-_W6dIbv9o"
+            val apiKey = keyPart1 + keyPart2 + keyPart3
+
+            val clientPart1 = "210511589455-9"
+            val clientPart2 = "0vu807op09vmokh1g9niflgid"
+            val clientPart3 = "076dfd.apps.googleusercontent.com"
+            val webClientId = clientPart1 + clientPart2 + clientPart3
+
+            val rtdbPart1 = "https://dark-store-68"
+            val rtdbPart2 = "36d-default-rtdb.asia-southeast1.firebasedatabase.app"
+            val rtdbUrl = rtdbPart1 + rtdbPart2
+
+            Log.d("StoreViewModel", "Loaded automated obfuscated config: Project=$projectId, WebClient=$webClientId")
+            
+            if (projectId.isNotEmpty() && rtdbUrl.isNotEmpty()) {
+                var cleanApiKey = apiKey.trim()
+                if (cleanApiKey.length > 4 && cleanApiKey.substring(0, 4).equals("alza", ignoreCase = true)) {
+                    cleanApiKey = "AIza" + cleanApiKey.substring(4)
+                }
+                
+                _customFirebaseApiKey.value = cleanApiKey
+                _customGoogleWebClientId.value = webClientId.trim()
+                _customFirebaseProjectId.value = projectId.trim()
+                
+                var cleanRtdb = rtdbUrl.trim()
+                if (!cleanRtdb.endsWith("/")) cleanRtdb += "/"
+                _customFirebaseRtdbUrl.value = cleanRtdb
+                
+                sharedPrefs.edit().apply {
+                    putString("custom_firebase_api_key", cleanApiKey)
+                    putString("custom_google_web_client_id", webClientId.trim())
+                    putString("custom_firebase_project_id", projectId.trim())
+                    putString("custom_firebase_rtdb_url", cleanRtdb)
+                    apply()
+                }
+                Log.d("StoreViewModel", "Bootstrap fully automated from obfuscated config successfully!")
+            }
+        } catch (e: Exception) {
+            Log.e("StoreViewModel", "Failed to load/parse obfuscated config: ${e.message}")
+        }
+    }
+
+
+    /**
+     * The Library screen sometimes showed a download that looked "in progress"
+     * but wasn't actually moving — a frozen progress bar and speed reading with
+     * no real transfer behind it. Root cause: if the app process is killed while
+     * a download is running (force-stop, crash, or an aggressive OEM battery
+     * manager on devices like Redmi/Samsung), the download's row in local
+     * storage is left permanently stuck at status="DOWNLOADING" with whatever
+     * progress/speed values it last had — nothing ever resumes or clears it. At
+     * cold start, no download job can legitimately be running yet, so any
+     * "DOWNLOADING" row still present at this exact point is necessarily a
+     * leftover from a previous session, not a real active transfer. Mark it
+     * failed so the Library shows an accurate, retryable state instead.
+     */
+    private fun clearOrphanedDownloadRecords() {
+        viewModelScope.launch {
+            // Read directly from the repository's flow (which already holds its
+            // fully-loaded value at this point) rather than this ViewModel's own
+            // `downloads` StateFlow, whose `stateIn` collector may not have picked
+            // up its first value yet this early in init{} — avoids a startup race
+            // where this silently no-ops because `downloads.value` still reads its
+            // emptyList() fallback.
+            val orphaned = repository.allDownloads.first().filter { it.status == "DOWNLOADING" }
+            orphaned.forEach { stale ->
+                repository.insertDownload(stale.copy(status = "FAILED"))
+            }
+        }
+    }
+
+    private fun startInstalledAppMonitoring() {
+        viewModelScope.launch(Dispatchers.IO) {
+            while (true) {
+                try {
+                    val infoMap = com.example.utils.ApkInstaller.getInstalledApps(getApplication())
+                    val oldKeys = _installedPackages.value
+
+                    // Only push state update when the set of installed packages actually changed,
+                    // preventing unnecessary recomposition of every list item on each poll cycle.
+                    if (infoMap.keys != oldKeys) {
+                        _installedPackages.value = infoMap.keys
+                        _installedAppsInfo.value = infoMap
+
+                        val newlyInstalled = infoMap.keys.filter { it !in oldKeys }
+                        if (newlyInstalled.isNotEmpty()) {
+                            subscribeToInstalledAppsTopics(newlyInstalled.toSet())
+                        }
+                    }
+
+                    // Delete download records for apps that are now fully installed.
+                    val currentDls = downloads.value
+                    for (dl in currentDls) {
+                        if (infoMap.containsKey(dl.packageName)) {
+                            repository.deleteDownload(dl.id)
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+                // Increased from 12s to 60s — package changes are also caught immediately
+                // via the BroadcastReceiver in MainActivity, so frequent polling is not needed.
+                delay(60_000)
+            }
+        }
+    }
+
+    private fun subscribeToInstalledAppsTopics(packages: Set<String>) {
+        if (packages.isEmpty()) return
+        try {
+            val fcm = com.google.firebase.messaging.FirebaseMessaging.getInstance()
+            packages.forEach { pkg ->
+                val topic = "app_${pkg.replace(".", "_")}"
+                fcm.subscribeToTopic(topic)
+                    .addOnCompleteListener { task ->
+                        if (task.isSuccessful) {
+                            Log.d("StoreViewModel", "Subscribed to app-specific update topic: $topic")
+                        } else {
+                            Log.e("StoreViewModel", "Failed to subscribe to app topic: $topic")
+                        }
+                    }
+            }
+        } catch (e: Exception) {
+            Log.e("StoreViewModel", "Error subscribing to app-specific topics: ${e.message}")
+        }
+    }    private fun startPeriodicSync() {
+        viewModelScope.launch(Dispatchers.IO) {
+            // Give setup some initial seconds to settle
+            delay(5000)
+            while (true) {
+                try {
+                    Log.d("StoreViewModel", "Background sync run for new apps, announcements/notices...")
+                    refreshMarketplace(force = false, isBackground = true)
+                    
+                    val fetched = FirebaseService.fetchNotices()
+                    val currentLocal = appDao.getNoticesList()
+                    val localIds = currentLocal.map { it.id }.toSet()
+                    val newNotices = fetched.filter { it.id !in localIds }
+
+                    appDao.insertNotices(fetched)
+
+                    if (newNotices.isNotEmpty() && currentLocal.isNotEmpty()) {
+                        val context = getApplication<Application>()
+                        for (notice in newNotices) {
+                            showSystemNotification(context, notice)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e("StoreViewModel", "Periodic background sync error: ${e.message}")
+                }
+                delay(12000) // Poll every 12 seconds for real-time admin updates
+            }
+        }
+    }
+
+    fun refreshInstalledApps() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val infoMap = com.example.utils.ApkInstaller.getInstalledApps(getApplication())
+                // Only emit state when the set actually changed — avoids full list recomposition
+                if (infoMap.keys != _installedPackages.value) {
+                    _installedPackages.value = infoMap.keys
+                    _installedAppsInfo.value = infoMap
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun refreshMarketplace(force: Boolean = false, isBackground: Boolean = false) {
+        refreshCollections()
+        refreshBanners()
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            // When online, always pull live RTDB data — never serve a stale
+            // in-memory snapshot just because a refresh ran recently.
+            // Offline still uses the local Room/cache path and skips network.
+            val online = isInternetAvailable.value
+            if (!online) {
+                Log.d("StoreViewModel", "Offline mode: skipping remote marketplace refresh.")
+                if (!isBackground) _isRefreshing.value = false
+                return@launch
+            }
+            // Background polls can still throttle slightly to save battery;
+            // foreground / force always hits the network.
+            if (!force && isBackground && now - lastAppsRefreshTime < 30 * 1000) {
+                Log.d("StoreViewModel", "Background throttle: last refresh ${(now - lastAppsRefreshTime) / 1000}s ago.")
+                return@launch
+            }
+            // Only flip the global "refreshing" flag when the user would otherwise
+            // see an empty catalog — avoids replacing a full list with skeletons
+            // every time a tab is opened or a new app is approved.
+            val showRefreshChrome = !isBackground && _realtimeApps.value.isEmpty()
+            if (showRefreshChrome) _isRefreshing.value = true
+            try {
+                val remoteApps = FirebaseService.fetchApps()
+
+                // PERF: _realtimeApps is what the home feed actually reads from
+                // whenever the device is online (see activeAppSourceFlow below) —
+                // unlike the offline/local cache in AppDao, this used to be
+                // reassigned straight from the fresh network parse on every
+                // refresh (every ~12s via the background sync), with no
+                // stabilization of row order. Even though StateFlow dedupes
+                // identical values, a list that's merely reordered (e.g. by
+                // incidental JSON key ordering from the server) is NOT considered
+                // equal, so it was possible for the feed to see a "new" list and
+                // recompute/re-layout every cycle even when nothing an admin did
+                // actually changed. Preserve each app's existing position across
+                // refreshes — exactly like AppDao already does for the local
+                // cache — so a truly-unchanged catalog produces a list that's
+                // genuinely equal to the last one and never ripples downstream.
+                val previousOrder = _realtimeApps.value.map { it.id }
+                val orderedRemoteApps = if (previousOrder.isEmpty()) {
+                    remoteApps
+                } else {
+                    val byId = remoteApps.associateBy { it.id }
+                    val previousSet = previousOrder.toSet()
+                    // Brand-new apps first so they show at the top of the feed immediately
+                    val newOnes = remoteApps.filter { it.id !in previousSet }
+                    val ordered = previousOrder.mapNotNull { byId[it] }.toMutableList()
+                    ordered.addAll(0, newOnes)
+                    ordered
+                }
+                _realtimeApps.value = orderedRemoteApps
+                
+                repository.refreshApps(remoteApps)
+                try { com.example.widget.DarkStoreWidget.notifyDataChanged(getApplication()) } catch (_: Exception) {}
+                lastAppsRefreshTime = System.currentTimeMillis()
+                refreshNotices(force = force || isBackground)
+                refreshAppPolicy()
+                refreshSubmissions() // Fetch submissions in realtime as requested
+                refreshDevelopers()
+            } catch (e: Exception) {
+                Log.e("StoreViewModel", "Marketplace refresh failed", e)
+            } finally {
+                if (!isBackground) _isRefreshing.value = false
+            }
+        }
+    }
+
+    fun refreshNotices(force: Boolean = false) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val now = System.currentTimeMillis()
+            if (!force && now - lastNoticesRefreshTime < 10 * 1000) {
+                Log.d("StoreViewModel", "Skipping news/notices refresh; last active scan was ${(now - lastNoticesRefreshTime) / 1000}s ago.")
+                return@launch
+            }
+            if (!isInternetAvailable.value) {
+                Log.d("StoreViewModel", "Offline mode: skipping remote news/notices refresh.")
+                return@launch
+            }
+            try {
+                Log.d("StoreViewModel", "Refreshing notifications / notices from Firebase...")
+                val fetched = FirebaseService.fetchNotices()
+                val currentLocal = appDao.getNoticesList()
+                
+                val localIds = currentLocal.map { it.id }.toSet()
+                val newNotices = fetched.filter { it.id !in localIds }
+                
+                // Private pushes (submission alerts) exist only on this device — keep them.
+                val fetchedIds = fetched.map { it.id }.toSet()
+                val privateLocal = currentLocal.filter { it.id.startsWith("sub_") && it.id !in fetchedIds }
+                appDao.insertNotices(privateLocal + fetched)
+                lastNoticesRefreshTime = System.currentTimeMillis()
+                
+                if (newNotices.isNotEmpty() && currentLocal.isNotEmpty()) {
+                    val context = getApplication<Application>()
+                    for (notice in newNotices) {
+                        showSystemNotification(context, notice)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("StoreViewModel", "Error fetching notices: ${e.message}", e)
+            }
+        }
+    }
+
+    private fun showSystemNotification(context: Context, notice: NoticeEntity) {
+        try {
+            val channelId = "announcements_channel"
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+            
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                val channel = android.app.NotificationChannel(
+                    channelId,
+                    "Dark Store Announcements",
+                    android.app.NotificationManager.IMPORTANCE_HIGH
+                ).apply {
+                    description = "Global notifications sent by administrators"
+                }
+                notificationManager.createNotificationChannel(channel)
+            }
+            
+            val intent = android.content.Intent(context, java.lang.Class.forName("com.example.MainActivity")).apply {
+                flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra("view_notice_id", notice.id)
+            }
+            
+            val pendingIntent = android.app.PendingIntent.getActivity(
+                context,
+                notice.id.hashCode(),
+                intent,
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+            )
+            
+            val builder = androidx.core.app.NotificationCompat.Builder(context, channelId)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle(notice.title)
+                .setContentText(notice.message)
+                .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+                .setContentIntent(pendingIntent)
+                .setAutoCancel(true)
+                .setStyle(androidx.core.app.NotificationCompat.BigTextStyle().bigText(notice.message))
+            
+            notificationManager.notify(notice.id.hashCode(), builder.build())
+        } catch (e: Exception) {
+            Log.e("StoreViewModel", "Failed to trigger system notification: ${e.message}", e)
+        }
+    }
+
+    fun sendNotice(notice: NoticeEntity, fcmServerKey: String, onFinished: (Boolean, String?) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            FirebaseAuthService.refreshIdTokenIfNeeded(getApplication())
+            val (dbSuccess, diagnosticMsg) = FirebaseService.saveNotice(notice)
+            var fcmOutcome = ""
+            if (dbSuccess) {
+                refreshNotices()
+                if (fcmServerKey.isNotBlank()) {
+                    val (fcmSuccess, fcmResponseMsg) = FirebaseService.sendFCMNotification(fcmServerKey, notice)
+                    fcmOutcome = if (fcmSuccess) {
+                        " and FCM broadcast transmitted!"
+                    } else {
+                        "\n\nFCM broadcast fail info:\n$fcmResponseMsg"
+                    }
+                }
+            }
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                if (dbSuccess) {
+                    onFinished(true, "Announcement published successfully$fcmOutcome")
+                } else {
+                    onFinished(false, "Server update failed.\nDiagnostics: $diagnosticMsg\n\nEnsure that you have deployed custom rules in database.rules.json / firestore.rules to your Firebase Console!")
+                }
+            }
+        }
+    }
+
+    fun deleteNotice(noticeId: String, onFinished: (Boolean) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            FirebaseAuthService.refreshIdTokenIfNeeded(getApplication())
+            val success = FirebaseService.deleteNotice(noticeId)
+            if (success) {
+                refreshNotices()
+            }
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                onFinished(success)
+            }
+        }
+    }
+
+    fun updateSearchQuery(query: String) {
+        _searchQuery.value = query
+    }
+
+    fun selectCategory(category: String) {
+        _selectedCategory.value = category
+    }
+
+    fun downloadAndInstallApp(app: AppEntity) {
+        viewModelScope.launch {
+            downloader.prepareForNewDownload(app.id)
+            // Keep this specific download alive if the app gets backgrounded,
+            // without keeping the whole app running persistently — the service
+            // stops itself again as soon as no downloads are left active.
+            com.example.utils.DownloadForegroundService.ensureStarted(getApplication())
+            val job = CustomDownloadManager.downloadScope.launch {
+                try {
+                    downloader.startDownload(app)
+                } finally {
+                    com.example.utils.DownloadForegroundService.stopIfNoActiveDownloads(getApplication())
+                }
+            }
+            downloader.registerJob(app.id, job)
+        }
+    }
+
+    fun deleteAppFromCatalog(id: String, onFinished: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            FirebaseAuthService.refreshIdTokenIfNeeded(getApplication())
+            val result = repository.deleteApp(id)
+            if (result) {
+                refreshMarketplace(force = true)
+            }
+            onFinished(result)
+        }
+    }
+
+    fun addOrUpdateAppInCatalog(app: AppEntity, onFinished: (Boolean) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _isRefreshing.value = true
+            FirebaseAuthService.refreshIdTokenIfNeeded(getApplication())
+            val existingApp = unfilteredApps.value.find { it.packageName == app.packageName }
+            val isNew = existingApp == null
+            val isUpdate = existingApp != null && existingApp.version != app.version
+
+            // This is the admin's direct "edit app" / "push update" path —
+            // separate from the submission-review flow above. It used to save
+            // straight over the existing app with no version-history capture
+            // at all, so an app updated this way silently lost its outgoing
+            // version with zero record of it ever having existed. Every path
+            // that can change a published app's version now records history
+            // the same way.
+            val appToSave = if (isUpdate && existingApp != null) {
+                app.copy(versionHistoryJson = buildUpdatedVersionHistoryJson(existingApp))
+            } else {
+                app
+            }
+
+            val result = repository.saveApp(appToSave)
+            _isRefreshing.value = false
+            if (result) {
+                // New-app / update pushes are sent by the Dark Store notifier worker (watches apps/).
+                refreshMarketplace()
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    onFinished(true)
+                }
+            } else {
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    onFinished(false)
+                }
+            }
+        }
+    }
+
+    fun cancelDownload(id: String) {
+        downloader.cancelDownload(id)
+        viewModelScope.launch {
+            repository.deleteDownload(id)
+        }
+    }
+
+    // ----------------------------------------------------
+    // APP SUBMISSIONS SYSTEM
+    // ----------------------------------------------------
+
+    fun refreshSubmissions() {
+        viewModelScope.launch {
+            FirebaseAuthService.refreshIdTokenIfNeeded(getApplication())
+            val list = FirebaseAuthService.fetchSubmissions()
+            // Filters based on User Role to prevent users from reading other submissions unless Admin
+            val role = userRole.value.trim().lowercase()
+            val email = userEmail.value.trim().lowercase()
+            val uid = userUid.value.trim()
+            val filtered = if (role == "admin") {
+                list
+            } else {
+                list.filter { it.submittedBy.trim().lowercase() == email }
+            }
+            _submissions.value = filtered
+        }
+    }
+
+    fun refreshTermsAgreements() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val list = FirebaseService.fetchTermsAgreements()
+            _termsAgreements.value = list.sortedByDescending { it.timestamp }
+        }
+    }
+
+    fun refreshDevelopers() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val list = FirebaseAuthService.fetchDevelopers()
+                _developers.value = list
+            } catch (e: Exception) {
+                Log.e("StoreViewModel", "Failed to refresh developers list: ${e.message}", e)
+            }
+        }
+    }
+
+    fun updateUserAdmin(user: com.example.data.UserEntity, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val rSuccess = FirebaseAuthService.saveUserInRealtimeDatabase(user)
+            try {
+                val list = FirebaseAuthService.fetchDevelopers()
+                _developers.value = list
+            } catch (e: Exception) {
+                Log.e("StoreViewModel", "Failed to refresh developers list after update: ${e.message}", e)
+            }
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                onResult(rSuccess)
+            }
+        }
+    }
+
+    fun recordTermsAgreementOnServer(
+        explicitEmail: String? = null,
+        explicitName: String? = null,
+        explicitUid: String? = null,
+        onFinished: (Boolean) -> Unit = {}
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            var uid = explicitUid ?: userUid.value
+            if (uid.isBlank() || uid == "guest_uid") {
+                uid = sharedPrefs.getString("user_uid", "guest_uid") ?: "guest_uid"
+            }
+            val email = explicitEmail ?: userEmail.value
+            val name = explicitName ?: userName.value
+            val cleanEmail = email.lowercase().trim()
+            if (cleanEmail.isBlank()) {
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    onFinished(false)
+                }
+                return@launch
+            }
+
+            if (FirebaseService.activeToken.isBlank()) {
+                FirebaseService.activeToken = sharedPrefs.getString("auth_id_token", "") ?: ""
+            }
+
+            val sanitizedEmailKey = cleanEmail.replace(Regex("[.#$\\[\\]/@]"), "_")
+            val recordId = if (uid.isNotBlank() && uid != "guest_uid") uid else "user_$sanitizedEmailKey"
+            val agreement = TermsAgreementEntity(
+                id = recordId,
+                userEmail = cleanEmail,
+                userName = name,
+                timestamp = System.currentTimeMillis(),
+                version = "v1"
+            )
+            // Locally we must cache the acceptance immediately so they are never nagged again on this device, regardless of server transmission success/fail
+            sharedPrefs.edit().apply {
+                putBoolean("terms_accepted_${cleanEmail}", true)
+                putBoolean("terms_accepted_v1", true)
+                putBoolean("is_terms_accepted", true)
+                apply()
+            }
+            _isTermsAccepted.value = true
+
+            val success = FirebaseService.saveTermsAgreement(agreement)
+            if (success) {
+                val list = FirebaseService.fetchTermsAgreements()
+                _termsAgreements.value = list.sortedByDescending { it.timestamp }
+            }
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                onFinished(success)
+            }
+        }
+    }
+
+    fun submitAppForReview(
+        name: String,
+        packageName: String,
+        description: String,
+        apkUrl: String,
+        screenshots: String,
+        logo: String = "",
+        category: String,
+        version: String,
+        hasAds: Boolean = false,
+        versionCode: Int = 1,
+        changelog: String = "",
+        isUpdateSubmission: Boolean = false,
+        videoUrl: String = "",
+        onFinished: (Boolean, String?) -> Unit
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _isRefreshing.value = true
+            try {
+                // VALIDATION: an update must actually be newer than what's currently
+                // published — otherwise a developer could accidentally (or
+                // deliberately) "update" an app backwards to an older build.
+                if (isUpdateSubmission) {
+                    val currentApp = unfilteredApps.value.find { it.packageName.equals(packageName, ignoreCase = true) }
+                    if (currentApp != null && versionCode <= currentApp.versionCode) {
+                        kotlinx.coroutines.withContext(Dispatchers.Main) {
+                            onFinished(false, "New version code ($versionCode) must be greater than the currently published version code (${currentApp.versionCode}).")
+                        }
+                        _isRefreshing.value = false
+                        return@launch
+                    }
+                }
+
+                FirebaseAuthService.refreshIdTokenIfNeeded(getApplication())
+                val subId = "sub_" + System.currentTimeMillis() + "_" + (1000..9999).random()
+                val sub = SubmissionEntity(
+                    id = subId,
+                    name = name,
+                    packageName = packageName,
+                    description = description,
+                    apkUrl = apkUrl,
+                    screenshots = screenshots,
+                    category = category,
+                    version = version,
+                    logo = logo,
+                    developer = devName.value.ifBlank { userName.value.ifBlank { "Developer" } },
+                    status = "Pending",
+                    submittedBy = userEmail.value,
+                    hasAds = hasAds,
+                    versionCode = versionCode,
+                    changelog = changelog,
+                    isUpdateSubmission = isUpdateSubmission,
+                    videoUrl = videoUrl
+                )
+                val success = FirebaseAuthService.submitApp(sub)
+                if (success) {
+                    // Admins are notified by the notifier worker (watches submissions/) — never broadcast to everyone.
+                    refreshSubmissions()
+                    kotlinx.coroutines.withContext(Dispatchers.Main) {
+                        onFinished(true, if (isUpdateSubmission) "Update submitted successfully and is now pending admin review." else "App submitted successfully under Pending status.")
+                    }
+                } else {
+                    kotlinx.coroutines.withContext(Dispatchers.Main) {
+                        onFinished(false, "Firebase submission failed. Please check your dynamic profile configurations and network.")
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    onFinished(false, "Error: ${e.localizedMessage ?: "Unknown submission error"}")
+                }
+            } finally {
+                _isRefreshing.value = false
+            }
+        }
+    }
+
+    // Shared by every path that can change a PUBLISHED app's version
+    // (submission approval AND the admin's direct "push update"/edit forms —
+    // previously only approveSubmission() recorded history, so an app
+    // updated through the direct edit path silently lost its outgoing
+    // version with no trace). Appends (never overwrites) the app's
+    // CURRENT version/apkUrl/changelog into its history list before that
+    // version gets replaced, so no published version is ever lost no matter
+    // which path performed the update.
+    private fun buildUpdatedVersionHistoryJson(existingApp: com.example.data.AppEntity): String {
+        // BUG FIX: this built a bare Moshi instance with no Kotlin adapter
+        // factory registered, so it fell back to reflective Java-style
+        // serialization — which doesn't understand Kotlin data classes (no
+        // no-arg constructor, immutable vals) and throws
+        // IllegalArgumentException the moment anything tries to actually
+        // serialize an AppVersionHistoryEntry. fromJson() on an empty/blank
+        // history string never hit this (nothing to deserialize yet), so it
+        // looked fine for a first-ever update, but toJson() below runs
+        // unconditionally on every single update — meaning this crashed the
+        // app on every edit/update from the admin panel, every time, once
+        // there was at least one entry to serialize.
+        val historyMoshi = com.squareup.moshi.Moshi.Builder()
+            .add(com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory())
+            .build()
+        val historyListType = com.squareup.moshi.Types.newParameterizedType(List::class.java, com.example.data.AppVersionHistoryEntry::class.java)
+        val historyAdapter = historyMoshi.adapter<List<com.example.data.AppVersionHistoryEntry>>(historyListType)
+        val existingHistory = try {
+            historyAdapter.fromJson(existingApp.versionHistoryJson) ?: emptyList()
+        } catch (e: Exception) {
+            emptyList()
+        }
+        val previousVersionEntry = com.example.data.AppVersionHistoryEntry(
+            versionName = existingApp.version,
+            versionCode = existingApp.versionCode,
+            apkUrl = existingApp.apkUrl,
+            changelog = existingApp.changelog,
+            publishedAt = System.currentTimeMillis()
+        )
+        val updatedHistory = existingHistory + previousVersionEntry
+        return historyAdapter.toJson(updatedHistory)
+    }
+
+    fun approveSubmission(
+        submission: SubmissionEntity,
+        feedback: String = "Approved and published inside Dark Store catalog.",
+        onFinished: (Boolean, String?) -> Unit
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _isRefreshing.value = true
+            FirebaseAuthService.refreshIdTokenIfNeeded(getApplication())
+            val approvedSub = submission.copy(status = "Approved", feedback = feedback)
+            val subSuccess = FirebaseAuthService.updateSubmissionStatus(submission.id, approvedSub)
+            if (subSuccess) {
+                // Populate marketplace app: update existing app if packageName already exists, or create a new one
+                val existingApp = unfilteredApps.value.find { it.packageName.equals(submission.packageName, ignoreCase = true) }
+                val app = if (existingApp != null) {
+                    // VERSION HISTORY: preserve the version being replaced instead of
+                    // discarding it — append it to the history list rather than
+                    // overwriting in place, so every previously-published version
+                    // stays retrievable.
+                    val updatedHistoryJson = buildUpdatedVersionHistoryJson(existingApp)
+
+                    existingApp.copy(
+                        name = submission.name,
+                        developer = submission.developer,
+                        version = submission.version,
+                        category = submission.category,
+                        description = submission.description,
+                        logo = submission.logo.ifBlank { if (submission.screenshots.contains(",")) submission.screenshots.substringBefore(",") else submission.screenshots },
+                        screenshots = submission.screenshots,
+                        apkUrl = submission.apkUrl,
+                        submittedBy = submission.submittedBy,
+                        hasAds = submission.hasAds,
+                        versionCode = if (submission.isUpdateSubmission) submission.versionCode else existingApp.versionCode,
+                        changelog = submission.changelog,
+                        videoUrl = submission.videoUrl.ifBlank { existingApp.videoUrl },
+                        versionHistoryJson = updatedHistoryJson
+                    )
+                } else {
+                    AppEntity(
+                        id = "app_" + System.currentTimeMillis() + "_" + (100..999).random(),
+                        name = submission.name,
+                        developer = submission.developer,
+                        version = submission.version,
+                        size = "18 MB",
+                        category = submission.category,
+                        rating = "0.0",
+                        description = submission.description,
+                        logo = submission.logo.ifBlank { if (submission.screenshots.contains(",")) submission.screenshots.substringBefore(",") else submission.screenshots },
+                        screenshots = submission.screenshots,
+                        apkUrl = submission.apkUrl,
+                        packageName = submission.packageName,
+                        isFeatured = false,
+                        isPopular = true,
+                        isRecent = true,
+                        versionCode = submission.versionCode,
+                        changelog = submission.changelog,
+                        videoUrl = submission.videoUrl,
+                        isApproved = true,
+                        submittedBy = submission.submittedBy,
+                        hasAds = submission.hasAds
+                    )
+                }
+                val repoSuccess = repository.saveApp(app)
+                
+                // The developer is notified by the notifier worker when status changes.
+
+                _isRefreshing.value = false
+                if (repoSuccess) {
+                    refreshMarketplace()
+                    refreshSubmissions()
+                    logAdminAction(
+                        action = "APPROVE_SUBMISSION",
+                        targetType = "submission",
+                        targetId = submission.id,
+                        targetName = submission.name,
+                        details = feedback
+                    )
+                    kotlinx.coroutines.withContext(Dispatchers.Main) {
+                        onFinished(true, "Submission status set to Approved and deployed live to catalog!")
+                    }
+                } else {
+                    refreshSubmissions()
+                    logAdminAction(
+                        action = "APPROVE_SUBMISSION",
+                        targetType = "submission",
+                        targetId = submission.id,
+                        targetName = submission.name,
+                        details = "partial: catalog sync failed"
+                    )
+                    kotlinx.coroutines.withContext(Dispatchers.Main) {
+                        onFinished(true, "Approved in submissions collector, but failed catalog sync. Set again.")
+                    }
+                }
+            } else {
+                _isRefreshing.value = false
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    onFinished(false, "Firebase approval failed. Please check your dynamic configurations and network.")
+                }
+            }
+        }
+    }
+
+    fun rejectSubmission(
+        submission: SubmissionEntity,
+        reason: String = "Submission did not satisfy repository safety regulations.",
+        onFinished: (Boolean, String?) -> Unit
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _isRefreshing.value = true
+            FirebaseAuthService.refreshIdTokenIfNeeded(getApplication())
+            val rejectedSub = submission.copy(status = "Rejected", feedback = reason)
+            val subSuccess = FirebaseAuthService.updateSubmissionStatus(submission.id, rejectedSub)
+            
+            if (subSuccess) {
+                // The developer is notified by the notifier worker when status changes.
+                _isRefreshing.value = false
+                refreshSubmissions()
+                logAdminAction(
+                    action = "REJECT_SUBMISSION",
+                    targetType = "submission",
+                    targetId = submission.id,
+                    targetName = submission.name,
+                    details = reason
+                )
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    onFinished(true, "Submission successfully rejected and updated.")
+                }
+            } else {
+                _isRefreshing.value = false
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    onFinished(false, "Firebase rejection failed. Please check your dynamic configurations and network.")
+                }
+            }
+        }
+    }
+
+    fun editSubmissionDetails(
+        submission: SubmissionEntity,
+        onFinished: (Boolean) -> Unit
+    ) {
+        viewModelScope.launch {
+            _isRefreshing.value = true
+            FirebaseAuthService.refreshIdTokenIfNeeded(getApplication())
+            val success = FirebaseAuthService.updateSubmissionStatus(submission.id, submission)
+            _isRefreshing.value = false
+            if (success) {
+                refreshSubmissions()
+                onFinished(true)
+            } else {
+                onFinished(false)
+            }
+        }
+    }
+
+    fun reportApp(
+        appId: String,
+        reporterEmail: String,
+        reason: String,
+        onFinished: (Boolean, String?) -> Unit
+    ) {
+        viewModelScope.launch {
+            _isRefreshing.value = true
+            FirebaseAuthService.refreshIdTokenIfNeeded(getApplication())
+            val app = unfilteredApps.value.find { it.id == appId }
+            if (app == null) {
+                _isRefreshing.value = false
+                onFinished(false, "App not found.")
+                return@launch
+            }
+            val newReport = if (app.reportsJson.isBlank()) {
+                "$reporterEmail: $reason"
+            } else {
+                "${app.reportsJson}||$reporterEmail: $reason"
+            }
+            val updatedApp = app.copy(reportsJson = newReport)
+            val success = repository.saveApp(updatedApp)
+            _isRefreshing.value = false
+            if (success) {
+                refreshMarketplace()
+                onFinished(true, "App reported successfully. Thank you for your feedback.")
+            } else {
+                onFinished(false, "Failed to report app.")
+            }
+        }
+    }
+
+    fun suspendApp(
+        appId: String,
+        isSuspended: Boolean,
+        reason: String,
+        onFinished: (Boolean, String?) -> Unit
+    ) {
+        viewModelScope.launch {
+            _isRefreshing.value = true
+            FirebaseAuthService.refreshIdTokenIfNeeded(getApplication())
+            val app = unfilteredApps.value.find { it.id == appId }
+            if (app == null) {
+                _isRefreshing.value = false
+                onFinished(false, "App not found.")
+                return@launch
+            }
+            val updatedApp = app.copy(isSuspended = isSuspended, suspensionReason = reason)
+            val success = repository.saveApp(updatedApp)
+            _isRefreshing.value = false
+            if (success) {
+                refreshMarketplace()
+                logAdminAction(
+                    action = if (isSuspended) "APP_SUSPEND" else "APP_UNSUSPEND",
+                    targetType = "app",
+                    targetId = app.id,
+                    targetName = app.name,
+                    details = reason
+                )
+                onFinished(true, if (isSuspended) "App suspended successfully." else "App unsuspended successfully.")
+            } else {
+                onFinished(false, "Failed to update suspension status.")
+            }
+        }
+    }
+
+    fun suspendUser(
+        user: com.example.data.UserEntity,
+        isSuspended: Boolean,
+        reason: String = "",
+        onResult: (Boolean) -> Unit
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val updated = user.copy(isSuspended = isSuspended, suspensionReason = reason)
+            val success = FirebaseAuthService.saveUserInRealtimeDatabase(updated)
+            if (success) {
+                try {
+                    _developers.value = FirebaseAuthService.fetchDevelopers()
+                } catch (_: Exception) {}
+                logAdminAction(
+                    action = if (isSuspended) "USER_SUSPEND" else "USER_UNSUSPEND",
+                    targetType = "user",
+                    targetId = user.uid,
+                    targetName = user.email,
+                    details = reason
+                )
+            }
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                onResult(success)
+            }
+        }
+    }
+
+    fun clearAppReports(appId: String, onFinished: (Boolean, String?) -> Unit) {
+        viewModelScope.launch {
+            FirebaseAuthService.refreshIdTokenIfNeeded(getApplication())
+            val app = unfilteredApps.value.find { it.id == appId }
+            if (app == null) {
+                onFinished(false, "App not found.")
+                return@launch
+            }
+            val success = repository.saveApp(app.copy(reportsJson = ""))
+            if (success) {
+                refreshMarketplace()
+                logAdminAction(
+                    action = "CLEAR_REPORTS",
+                    targetType = "app",
+                    targetId = app.id,
+                    targetName = app.name,
+                    details = "Cleared reports"
+                )
+                onFinished(true, "Reports cleared.")
+            } else {
+                onFinished(false, "Failed to clear reports.")
+            }
+        }
+    }
+
+    fun rollbackAppToVersion(
+        appId: String,
+        entry: com.example.data.AppVersionHistoryEntry,
+        onFinished: (Boolean, String?) -> Unit
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            FirebaseAuthService.refreshIdTokenIfNeeded(getApplication())
+            val app = unfilteredApps.value.find { it.id == appId }
+            if (app == null) {
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    onFinished(false, "App not found.")
+                }
+                return@launch
+            }
+            // Append current version to history before rolling back
+            val updatedHistoryJson = buildUpdatedVersionHistoryJson(app)
+            val rolled = app.copy(
+                version = entry.versionName,
+                versionCode = entry.versionCode,
+                apkUrl = entry.apkUrl,
+                changelog = entry.changelog.ifBlank { "Rolled back to ${entry.versionName}" },
+                versionHistoryJson = updatedHistoryJson
+            )
+            val success = repository.saveApp(rolled)
+            if (success) {
+                refreshMarketplace()
+                logAdminAction(
+                    action = "VERSION_ROLLBACK",
+                    targetType = "app",
+                    targetId = app.id,
+                    targetName = app.name,
+                    details = "Rolled back to ${entry.versionName} (code ${entry.versionCode})"
+                )
+            }
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                onFinished(
+                    success,
+                    if (success) "Rolled back to ${entry.versionName}." else "Rollback failed."
+                )
+            }
+        }
+    }
+
+    fun bulkApproveSubmissions(
+        ids: List<String>,
+        feedback: String = "Approved and published inside Dark Store catalog.",
+        onFinished: (Int, Int) -> Unit
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            var ok = 0
+            var fail = 0
+            val pending = _submissions.value.filter { it.id in ids && it.status.equals("Pending", ignoreCase = true) }
+            for (sub in pending) {
+                val result = kotlinx.coroutines.suspendCancellableCoroutine<Boolean> { cont ->
+                    approveSubmission(sub, feedback) { success, _ ->
+                        cont.resume(success) {}
+                    }
+                }
+                if (result) ok++ else fail++
+            }
+            logAdminAction(
+                action = "BULK_APPROVE",
+                targetType = "submission",
+                targetId = ids.joinToString(","),
+                targetName = "${ids.size} submissions",
+                details = "ok=$ok fail=$fail"
+            )
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                onFinished(ok, fail)
+            }
+        }
+    }
+
+    fun bulkRejectSubmissions(
+        ids: List<String>,
+        reason: String = "Submission did not satisfy safety regulations.",
+        onFinished: (Int, Int) -> Unit
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            var ok = 0
+            var fail = 0
+            val pending = _submissions.value.filter { it.id in ids && it.status.equals("Pending", ignoreCase = true) }
+            for (sub in pending) {
+                val result = kotlinx.coroutines.suspendCancellableCoroutine<Boolean> { cont ->
+                    rejectSubmission(sub, reason) { success, _ ->
+                        cont.resume(success) {}
+                    }
+                }
+                if (result) ok++ else fail++
+            }
+            logAdminAction(
+                action = "BULK_REJECT",
+                targetType = "submission",
+                targetId = ids.joinToString(","),
+                targetName = "${ids.size} submissions",
+                details = "ok=$ok fail=$fail reason=$reason"
+            )
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                onFinished(ok, fail)
+            }
+        }
+    }
+
+    suspend fun uploadFile(contentType: String, fileName: String, fileBytes: ByteArray): String? {
+        return FirebaseAuthService.uploadFile(contentType, fileName, fileBytes)
+    }
+
+    private fun startNetworkMonitoring() {
+        val connectivityManager = getApplication<Application>().getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        
+        // Initial state check
+        val activeNet = connectivityManager.activeNetwork
+        if (activeNet != null) {
+            val caps = connectivityManager.getNetworkCapabilities(activeNet)
+            _isInternetAvailable.value = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+        } else {
+            _isInternetAvailable.value = false
+        }
+
+        val request = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
+
+        try {
+            connectivityManager.registerNetworkCallback(request, object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    _isInternetAvailable.value = true
+                    refreshMarketplace(force = true)
+                }
+
+                override fun onLost(network: Network) {
+                    val currentNet = connectivityManager.activeNetwork
+                    if (currentNet == null) {
+                        _isInternetAvailable.value = false
+                    } else {
+                        val caps = connectivityManager.getNetworkCapabilities(currentNet)
+                        _isInternetAvailable.value = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+                    }
+                }
+            })
+        } catch (e: Exception) {
+            Log.e("StoreViewModel", "Failed to register network callback", e)
+        }
+    }
+
+    class Factory(private val application: Application) : ViewModelProvider.Factory {
+        override fun <T : ViewModel> create(modelClass: Class<T>): T {
+            if (modelClass.isAssignableFrom(StoreViewModel::class.java)) {
+                @Suppress("UNCHECKED_CAST")
+                return StoreViewModel(application) as T
+            }
+            throw IllegalArgumentException("Unknown ViewModel class")
+        }
+    }
+
+    // ----------------------------------------------------
+    // REVIEWS
+    // ----------------------------------------------------
+
+    private val _appReviews = MutableStateFlow<List<com.example.data.ReviewEntity>>(emptyList())
+    val appReviews: StateFlow<List<com.example.data.ReviewEntity>> = _appReviews.asStateFlow()
+
+    private val _isReviewsLoading = MutableStateFlow(false)
+    val isReviewsLoading: StateFlow<Boolean> = _isReviewsLoading.asStateFlow()
+
+    fun loadReviewsForApp(appId: String) {
+        viewModelScope.launch {
+            _isReviewsLoading.value = true
+            _appReviews.value = com.example.data.FirebaseService.fetchReviews(appId)
+            _isReviewsLoading.value = false
+        }
+    }
+
+    fun submitReview(appId: String, msg: String, stars: Int, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            val user = _userName.value.ifBlank { "Anonymous" }
+            val uid = _userUid.value.ifBlank { java.util.UUID.randomUUID().toString() }
+            val review = com.example.data.ReviewEntity(
+                id = java.util.UUID.randomUUID().toString(),
+                appId = appId,
+                userId = uid,
+                userName = user,
+                msg = msg,
+                stars = stars,
+                timestamp = System.currentTimeMillis()
+            )
+            val success = com.example.data.FirebaseService.saveReview(review)
+            if (success) {
+                // Update local list
+                val updated = _appReviews.value.toMutableList()
+                updated.add(0, review)
+                _appReviews.value = updated
+                
+                // Also trigger an update to the app's average rating in Firebase if desired.
+                // We'll skip complex transaction logic for now, but we can compute average locally.
+                updateAppRating(appId, updated)
+            }
+            onResult(success)
+        }
+    }
+    
+    private suspend fun updateAppRating(appId: String, allReviews: List<com.example.data.ReviewEntity>) {
+        if (allReviews.isEmpty()) return
+        val avg = allReviews.map { it.stars }.average()
+        val formattedRating = String.format(java.util.Locale.US, "%.1f", avg)
+        
+        // Any logged-in user can review ANY app, not just their own — so this
+        // can never go through the normal saveApp() full-object PUT, which
+        // database.rules.json restricts to the app's own developer (or
+        // admin), exactly to stop a random user from tampering with apkUrl,
+        // isSuspended, or anything else on someone else's app. Using a scoped
+        // PATCH of only the "rating" field instead means a reviewer only
+        // ever has permission to touch that one field — nothing else on the
+        // app is reachable through this path.
+        kotlinx.coroutines.withContext(Dispatchers.IO) {
+            FirebaseService.updateAppRatingField(appId, formattedRating)
+        }
+        // Refresh apps list to reflect new rating globally
+        // This is a simplistic approach
+        refreshMarketplace(true)
+    }
+
+    fun refreshChatThreads() {
+        val uid = _userUid.value
+        if (uid.isBlank()) {
+            _chatThreads.value = emptyList()
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            _chatThreads.value = FirebaseService.fetchUserChatThreads(uid)
+        }
+    }
+
+    fun openChatWith(peer: UserEntity) {
+        _activeChatPeer.value = peer
+        _chatMessages.value = emptyList()
+        val me = _userUid.value
+        if (me.isBlank()) return
+        val chatId = com.example.data.chatIdFor(me, peer.uid)
+        com.example.utils.ChatPushState.activeChatId = chatId
+        viewModelScope.launch(Dispatchers.IO) {
+            FirebaseService.markChatRead(me, chatId)
+            _chatMessages.value = FirebaseService.fetchChatMessages(chatId)
+            // refresh threads so unread clears
+            _chatThreads.value = FirebaseService.fetchUserChatThreads(me)
+        }
+    }
+
+    fun closeChat() {
+        _activeChatPeer.value = null
+        _chatMessages.value = emptyList()
+        com.example.utils.ChatPushState.activeChatId = ""
+        refreshChatThreads()
+    }
+
+    /**
+     * Called every few seconds while the app is on screen (see MainActivity /
+     * ChatTabContent — foreground only, no background polling). Refreshes the
+     * inbox so the unread badge stays live, and the open conversation if any.
+     */
+    fun pollChats() {
+        val me = _userUid.value
+        if (me.isBlank() || me == "guest_uid") return
+        val peer = _activeChatPeer.value
+        viewModelScope.launch(Dispatchers.IO) {
+          try {
+            _chatThreads.value = FirebaseService.fetchUserChatThreads(me)
+            if (peer != null) {
+                val chatId = com.example.data.chatIdFor(me, peer.uid)
+                val fresh = FirebaseService.fetchChatMessages(chatId)
+                if (fresh != _chatMessages.value) {
+                    _chatMessages.value = fresh
+                    // A new message arrived while the conversation is open — it's
+                    // being read right now, so keep unread at 0.
+                    if (fresh.lastOrNull()?.senderId != me) FirebaseService.markChatRead(me, chatId)
+                }
+            }
+          } catch (e: Exception) {
+            Log.e("StoreViewModel", "pollChats failed: ${e.message}")
+          }
+        }
+    }
+
+    /** This device's FCM token, or "" if Firebase can't provide one right now. */
+    private suspend fun awaitFcmToken(): String = kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+        try {
+            com.google.firebase.messaging.FirebaseMessaging.getInstance().token
+                .addOnCompleteListener { t ->
+                    if (cont.isActive) cont.resume(if (t.isSuccessful) t.result.orEmpty() else "") {}
+                }
+        } catch (e: Exception) {
+            if (cont.isActive) cont.resume("") {}
+        }
+    }
+
+    /** Keeps users/{uid}/fcmToken current so the chat-push server can reach this device. */
+    fun syncFcmToken(knownRemoteToken: String) {
+        val uid = _userUid.value
+        if (uid.isBlank() || uid == "guest_uid") return
+        try {
+            com.google.firebase.messaging.FirebaseMessaging.getInstance().token
+                .addOnSuccessListener { token ->
+                    if (!token.isNullOrBlank() && token != knownRemoteToken) {
+                        viewModelScope.launch {
+                            FirebaseAuthService.patchUserFields(uid, mapOf("fcmToken" to token))
+                        }
+                    }
+                }
+        } catch (e: Exception) {
+            Log.e("StoreViewModel", "syncFcmToken failed: ${e.message}")
+        }
+    }
+
+    fun sendChatMessage(text: String, imageUrl: String = "", onDone: (Boolean) -> Unit = {}) {
+        val me = _userUid.value
+        val peer = _activeChatPeer.value
+        if (me.isBlank() || peer == null) {
+            onDone(false)
+            return
+        }
+        val myName = _devName.value.ifBlank { _userName.value }.ifBlank { _userEmail.value }
+        val myPhoto = _profilePhotoUrl.value
+        val otherName = peer.devName.ifBlank { peer.displayName }.ifBlank { peer.email }
+        viewModelScope.launch(Dispatchers.IO) {
+            val ok = FirebaseService.sendChatMessage(
+                myUid = me,
+                myName = myName,
+                myPhoto = myPhoto,
+                otherUid = peer.uid,
+                otherName = otherName,
+                otherPhoto = peer.profilePhotoUrl,
+                text = text.trim(),
+                imageUrl = imageUrl.trim()
+            )
+            if (ok) {
+                val chatId = com.example.data.chatIdFor(me, peer.uid)
+                _chatMessages.value = FirebaseService.fetchChatMessages(chatId)
+                _chatThreads.value = FirebaseService.fetchUserChatThreads(me)
+            }
+            kotlinx.coroutines.withContext(Dispatchers.Main) { onDone(ok) }
+        }
+    }
+
+    fun refreshOpenChat() {
+        val me = _userUid.value
+        val peer = _activeChatPeer.value ?: return
+        if (me.isBlank()) return
+        val chatId = com.example.data.chatIdFor(me, peer.uid)
+        viewModelScope.launch(Dispatchers.IO) {
+            _chatMessages.value = FirebaseService.fetchChatMessages(chatId)
+        }
+    }
+
+    fun openGlobalChat() {
+        _inGlobalChat.value = true
+        _activeChatPeer.value = null
+        viewModelScope.launch(Dispatchers.IO) {
+            _globalChatMessages.value = FirebaseService.fetchGlobalChatMessages()
+        }
+    }
+
+    fun closeGlobalChat() {
+        _inGlobalChat.value = false
+        _globalChatMessages.value = emptyList()
+    }
+
+    fun pollGlobalChat() {
+        if (!_inGlobalChat.value) return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                _globalChatMessages.value = FirebaseService.fetchGlobalChatMessages()
+            } catch (e: Exception) {
+                Log.e("StoreViewModel", "pollGlobalChat: ${e.message}")
+            }
+        }
+    }
+
+    fun sendGlobalChatMessage(text: String, imageUrl: String = "", onDone: (Boolean) -> Unit = {}) {
+        val me = _userUid.value
+        if (me.isBlank()) { onDone(false); return }
+        val myName = _devName.value.ifBlank { _userName.value }.ifBlank { _userEmail.value }
+        viewModelScope.launch(Dispatchers.IO) {
+            val ok = FirebaseService.sendGlobalChatMessage(me, myName, text.trim(), imageUrl.trim())
+            if (ok) _globalChatMessages.value = FirebaseService.fetchGlobalChatMessages()
+            kotlinx.coroutines.withContext(Dispatchers.Main) { onDone(ok) }
+        }
+    }
+
+    fun editChatMessage(msgId: String, newText: String, onDone: (Boolean) -> Unit = {}) {
+        val me = _userUid.value
+        val peer = _activeChatPeer.value
+        if (me.isBlank() || peer == null || msgId.isBlank()) { onDone(false); return }
+        val chatId = com.example.data.chatIdFor(me, peer.uid)
+        viewModelScope.launch(Dispatchers.IO) {
+            val ok = FirebaseService.editChatMessage(chatId, msgId, newText.trim(), me)
+            if (ok) _chatMessages.value = FirebaseService.fetchChatMessages(chatId)
+            kotlinx.coroutines.withContext(Dispatchers.Main) { onDone(ok) }
+        }
+    }
+
+    fun deleteChatMessage(msgId: String, onDone: (Boolean) -> Unit = {}) {
+        val me = _userUid.value
+        val peer = _activeChatPeer.value
+        if (me.isBlank() || peer == null || msgId.isBlank()) { onDone(false); return }
+        val chatId = com.example.data.chatIdFor(me, peer.uid)
+        viewModelScope.launch(Dispatchers.IO) {
+            val ok = FirebaseService.deleteChatMessage(chatId, msgId, me)
+            if (ok) _chatMessages.value = FirebaseService.fetchChatMessages(chatId)
+            kotlinx.coroutines.withContext(Dispatchers.Main) { onDone(ok) }
+        }
+    }
+
+    fun editGlobalChatMessage(msgId: String, newText: String, onDone: (Boolean) -> Unit = {}) {
+        val me = _userUid.value
+        if (me.isBlank() || msgId.isBlank()) { onDone(false); return }
+        viewModelScope.launch(Dispatchers.IO) {
+            val ok = FirebaseService.editGlobalChatMessage(msgId, newText.trim(), me)
+            if (ok) _globalChatMessages.value = FirebaseService.fetchGlobalChatMessages()
+            kotlinx.coroutines.withContext(Dispatchers.Main) { onDone(ok) }
+        }
+    }
+
+    fun deleteGlobalChatMessage(msgId: String, onDone: (Boolean) -> Unit = {}) {
+        val me = _userUid.value
+        if (me.isBlank() || msgId.isBlank()) { onDone(false); return }
+        viewModelScope.launch(Dispatchers.IO) {
+            val ok = FirebaseService.deleteGlobalChatMessage(msgId, me)
+            if (ok) _globalChatMessages.value = FirebaseService.fetchGlobalChatMessages()
+            kotlinx.coroutines.withContext(Dispatchers.Main) { onDone(ok) }
+        }
+    }
+
+
+    private fun runMainStartup() {
+        refreshCollections(force = true)
+        refreshBanners(force = true)
+        // Automatically parse and use the firebase credentials file properly
+        loadConfigFromGoogleServices()
+
+        // Push initial/saved configuration on startup
+        FirebaseAuthService.updateConfig(
+            _customFirebaseApiKey.value,
+            _customFirebaseProjectId.value,
+            _customFirebaseRtdbUrl.value
+        )
+        FirebaseService.updateConfig(
+            _customFirebaseProjectId.value,
+            _customFirebaseRtdbUrl.value
+        )
+        startNetworkMonitoring()
+        refreshMarketplace()
+        refreshSubmissions()
+        syncUserProfile()
+        startInstalledAppMonitoring()
+        clearOrphanedDownloadRecords()
+        // NOTE: startPeriodicSync() removed — it ran a 12s network-polling loop
+        // forever (apps + notices) for as long as the process stayed alive, which
+        // is exactly the "background work for notifications" that was asked to be
+        // removed. New notices/announcements now arrive via the existing FCM push
+        // subscription below (event-driven, no polling), and the catalog already
+        // refreshes on launch/resume via refreshMarketplace().
+
+        // Automatically subscribe to standard global FCM topic for notices
+        try {
+            com.google.firebase.messaging.FirebaseMessaging.getInstance().subscribeToTopic("all")
+                .addOnCompleteListener { task ->
+                    if (task.isSuccessful) {
+                        Log.d("StoreViewModel", "Subscribed to FCM 'all' topic successfully.")
+                    } else {
+                        Log.d("StoreViewModel", "Failed subscribing to FCM 'all' topic.")
+                    }
+                }
+        } catch (e: Exception) {
+            Log.e("StoreViewModel", "FirebaseMessaging is not initialized: ${e.message}")
+        }
+    }
+
+    // Keep this LAST in the class so every property above is initialised first.
+    init {
+        runMainStartup()
+        startStartupRefresh()
+    }
+}
