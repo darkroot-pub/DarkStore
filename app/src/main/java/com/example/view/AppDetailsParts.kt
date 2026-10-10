@@ -38,6 +38,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 
 /** One of the four info boxes under the app title (Size · Version · Ads · Reviews). */
@@ -223,6 +228,8 @@ fun InlineVideoPlayer(
     var error by remember(url) { mutableStateOf<String?>(null) }
     var ready by remember(url) { mutableStateOf(false) }
     var slow by remember(url) { mutableStateOf(false) }
+    var posterGone by remember(url) { mutableStateOf(false) }
+    LaunchedEffect(url) { delay(5_000); posterGone = true }   // never hide the player behind the poster for long
 
     // Pre-resolve messages: the player callbacks aren't composable
     val msg153 = tr("vid_err_153")
@@ -242,6 +249,14 @@ fun InlineVideoPlayer(
         if (ytId != null) { delay(12_000); if (!ready && error == null) slow = true }
     }
 
+    // The player lives in its OWN window (a dialog), not inside the page's scrolling/clipping Compose tree:
+    // WebView video planes are not composited correctly under scroll/clip ancestors on many phones
+    // (audio plays, picture stays black). The banner on the page never changes, so nothing flashes black.
+    Dialog(
+        onDismissRequest = onClose,
+        properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false)
+    ) {
+    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.80f)).padding(16.dp), contentAlignment = Alignment.Center) {
     Column(Modifier.fillMaxWidth()) {
         // The glass frame is a SIBLING drawn behind the player. Clipping/shadowing the WebView itself
         // (rounded clip, graphicsLayer) breaks WebView's video surface: audio plays, picture stays black.
@@ -312,23 +327,35 @@ fun InlineVideoPlayer(
                     onRelease = { it.stopPlayback() }
                 )
             }
+            // Cover the not-yet-painted player with the video's own thumbnail + spinner (no black flash)
+            if (error == null && !ready && !posterGone) {
+                Box(Modifier.fillMaxSize().background(Color(0xFF111418)), contentAlignment = Alignment.Center) {
+                    if (ytId != null) {
+                        AsyncImage(
+                            model = "https://img.youtube.com/vi/$ytId/hqdefault.jpg", contentDescription = null,
+                            contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                    CircularProgressIndicator(color = Color.White, strokeWidth = 3.dp, modifier = Modifier.size(36.dp))
+                }
+            }
             }
         }
 
         // Controls under the player (never on top of it)
         Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Row(
-                Modifier.clip(RoundedCornerShape(20.dp)).glass(isDark, RoundedCornerShape(20.dp), 2.dp)
+                Modifier.clip(RoundedCornerShape(20.dp)).glass(true, RoundedCornerShape(20.dp), 2.dp)
                     .clickable(onClick = onClose).padding(horizontal = 14.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Default.Close, null, tint = textPrimary, modifier = Modifier.size(16.dp))
+                Icon(Icons.Default.Close, null, tint = Color.White, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
-                Text(tr("vid_close"), color = textPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text(tr("vid_close"), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             }
             Spacer(Modifier.weight(1f))
             Row(
-                Modifier.clip(RoundedCornerShape(20.dp)).glass(isDark, RoundedCornerShape(20.dp), 2.dp)
+                Modifier.clip(RoundedCornerShape(20.dp)).glass(true, RoundedCornerShape(20.dp), 2.dp)
                     .clickable { openExternally(context, url, ytId) }.padding(horizontal = 14.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -338,7 +365,9 @@ fun InlineVideoPlayer(
             }
         }
         if (slow && error == null) {
-            Text(tr("vid_slow"), color = textSecondary, fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp, start = 4.dp))
+            Text(tr("vid_slow"), color = Color.White.copy(alpha = 0.75f), fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp, start = 4.dp))
         }
+    }
+    }
     }
 }
