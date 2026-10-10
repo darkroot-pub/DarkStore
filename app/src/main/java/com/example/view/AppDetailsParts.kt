@@ -12,9 +12,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.widget.MediaController
 import android.widget.Toast
-import android.widget.VideoView
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -40,9 +38,18 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.common.Tracks
+import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
 
 /** One of the four info boxes under the app title (Size · Version · Ads · Reviews). */
@@ -208,9 +215,53 @@ private fun openExternally(context: android.content.Context, url: String, videoI
 }
 
 /**
- * Plays the app's promo video right inside the details page (16:9, no full-screen takeover).
+ * Direct-link video (mp4 / webm / m3u8 …) with Media3 ExoPlayer.
+ * Rendered on a TextureView (see res/layout/dark_player_view.xml) so it composites correctly inside the
+ * scrolling details page. Reports the first rendered frame, and any failure with a readable reason —
+ * including "audio plays but the phone cannot decode this video track" (unsupported codec).
+ */
+@Composable
+private fun DirectVideo(url: String, onFirstFrame: () -> Unit, onFail: (String) -> Unit) {
+    val context = LocalContext.current
+    val player = remember(url) {
+        ExoPlayer.Builder(context, DefaultRenderersFactory(context).setEnableDecoderFallback(true)).build().apply {
+            setMediaItem(MediaItem.fromUri(Uri.parse(url)))
+            playWhenReady = true
+            prepare()
+        }
+    }
+    DisposableEffect(player) {
+        val listener = object : Player.Listener {
+            override fun onRenderedFirstFrame() { onFirstFrame() }
+            override fun onPlayerError(error: PlaybackException) { onFail(error.errorCodeName) }
+            override fun onTracksChanged(tracks: Tracks) {
+                val video = tracks.groups.filter { it.type == C.TRACK_TYPE_VIDEO }
+                if (video.isNotEmpty() && video.none { it.isSupported }) onFail("video format not supported by this phone")
+            }
+        }
+        player.addListener(listener)
+        onDispose { player.removeListener(listener); player.release() }
+    }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, player) {
+        val obs = LifecycleEventObserver { _, e -> if (e == Lifecycle.Event.ON_PAUSE) player.pause() }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
+    }
+    AndroidView(
+        modifier = Modifier.fillMaxSize(),
+        factory = { ctx ->
+            (android.view.LayoutInflater.from(ctx).inflate(com.example.R.layout.dark_player_view, null) as PlayerView).also { it.player = player }
+        },
+        update = { it.player = player }
+    )
+}
+
+/**
+ * Plays the app's promo video right inside the details page, always in the same place (16:9).
+ * While the player is starting, the video's thumbnail + spinner cover it (no black flash).
  * Close / "Open in YouTube" sit BELOW the player — YouTube's rules forbid overlays on top of it.
- * YouTube links use the embedded player; any other link is played with the built-in video view.
+ * YouTube links use the embedded player; any other link is played by ExoPlayer.
  */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -229,7 +280,6 @@ fun InlineVideoPlayer(
     var ready by remember(url) { mutableStateOf(false) }
     var slow by remember(url) { mutableStateOf(false) }
     var posterGone by remember(url) { mutableStateOf(false) }
-    LaunchedEffect(url) { delay(5_000); posterGone = true }   // never hide the player behind the poster for long
 
     // Pre-resolve messages: the player callbacks aren't composable
     val msg153 = tr("vid_err_153")
@@ -246,116 +296,103 @@ fun InlineVideoPlayer(
     }
 
     LaunchedEffect(url) {
-        if (ytId != null) { delay(12_000); if (!ready && error == null) slow = true }
+        if (ytId != null) {
+            delay(5_000); posterGone = true          // never keep the poster over a working YouTube player
+            delay(7_000); if (!ready && error == null) slow = true
+        }
     }
 
-    // The player lives in its OWN window (a dialog), not inside the page's scrolling/clipping Compose tree:
-    // WebView video planes are not composited correctly under scroll/clip ancestors on many phones
-    // (audio plays, picture stays black). The banner on the page never changes, so nothing flashes black.
-    Dialog(
-        onDismissRequest = onClose,
-        properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false)
-    ) {
-    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.80f)).padding(16.dp), contentAlignment = Alignment.Center) {
     Column(Modifier.fillMaxWidth()) {
-        // The glass frame is a SIBLING drawn behind the player. Clipping/shadowing the WebView itself
-        // (rounded clip, graphicsLayer) breaks WebView's video surface: audio plays, picture stays black.
+        // The glass frame is a SIBLING drawn behind the player (clipping/shadowing the player view itself can blank its video).
         Box(Modifier.fillMaxWidth()) {
             Box(Modifier.matchParentSize().glass(isDark, RoundedCornerShape(24.dp), 5.dp).background(Color.Black.copy(alpha = 0.92f)))
             Box(Modifier.padding(8.dp).fillMaxWidth().aspectRatio(16f / 9f)) {
-            val err = error
-            if (err != null) {
-                Column(
-                    Modifier.fillMaxSize().background(Color(0xFF111418)).padding(18.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
-                ) {
-                    Icon(Icons.Default.ErrorOutline, null, tint = Color(0xFFFFB300), modifier = Modifier.size(30.dp))
-                    Text(err, color = Color.White, fontSize = 13.sp, lineHeight = 18.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        modifier = Modifier.padding(top = 8.dp))
-                    Text(
-                        tr("vid_open_yt"), color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(top = 12.dp).clip(RoundedCornerShape(20.dp))
-                            .background(accent).clickable { openExternally(context, url, ytId) }
-                            .padding(horizontal = 18.dp, vertical = 9.dp)
-                    )
-                }
-            } else if (ytId != null) {
-                AndroidView(
-                    modifier = Modifier.fillMaxSize(),
-                    factory = { ctx ->
-                        WebView(ctx).apply {
-                            setBackgroundColor(android.graphics.Color.BLACK)
-                            // NOTE: no setLayerType(...) here. Forcing a HARDWARE layer renders the WebView into an
-                            // offscreen texture, and on many phones (MIUI/Realme/Samsung) YouTube's video plane is
-                            // then left out: audio plays, picture stays black. The window is already GPU-accelerated.
-                            settings.javaScriptEnabled = true           // required by the YouTube player
-                            settings.domStorageEnabled = true
-                            settings.mediaPlaybackRequiresUserGesture = false
-                            settings.allowFileAccess = false            // hardening: this page needs no local files
-                            settings.allowContentAccess = false
-                            webChromeClient = WebChromeClient()
-                            webViewClient = object : WebViewClient() {
-                                override fun onReceivedError(view: WebView, request: WebResourceRequest, e: WebResourceError) {
-                                    if (request.isForMainFrame) error = messageFor(-1)
-                                }
-                            }
-                            addJavascriptInterface(
-                                YouTubeBridge(readyCallback = { ready = true; slow = false }, errorCallback = { code -> error = messageFor(code) }),
-                                "DarkStore"
-                            )
-                            // baseUrl https://<applicationId>/ → Referer for the embedded player (API client identity)
-                            loadDataWithBaseURL("$appOrigin/", youTubePlayerHtml(ytId, appOrigin), "text/html", "utf-8", null)
-                        }
-                    },
-                    onRelease = { it.removeJavascriptInterface("DarkStore"); it.stopLoading(); it.loadUrl("about:blank"); it.destroy() }
-                )
-            } else {
-                AndroidView(
-                    modifier = Modifier.fillMaxSize(),
-                    factory = { ctx ->
-                        VideoView(ctx).apply {
-                            // The video lives on a SurfaceView; inside a Dialog + scrolling Compose parent it can end up
-                            // behind the window (audio only). Keep it above the window background, below dialog content.
-                            setZOrderMediaOverlay(true)
-                            val controller = MediaController(ctx).also { it.setAnchorView(this) }
-                            setMediaController(controller)
-                            setVideoURI(Uri.parse(url))
-                            setOnPreparedListener { ready = true; start() }
-                            setOnErrorListener { _, _, _ -> error = msgGeneric; true }
-                        }
-                    },
-                    onRelease = { it.stopPlayback() }
-                )
-            }
-            // Cover the not-yet-painted player with the video's own thumbnail + spinner (no black flash)
-            if (error == null && !ready && !posterGone) {
-                Box(Modifier.fillMaxSize().background(Color(0xFF111418)), contentAlignment = Alignment.Center) {
-                    if (ytId != null) {
-                        AsyncImage(
-                            model = "https://img.youtube.com/vi/$ytId/hqdefault.jpg", contentDescription = null,
-                            contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()
+                val err = error
+                if (err != null) {
+                    Column(
+                        Modifier.fillMaxSize().background(Color(0xFF111418)).padding(18.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(Icons.Default.ErrorOutline, null, tint = Color(0xFFFFB300), modifier = Modifier.size(30.dp))
+                        Text(err, color = Color.White, fontSize = 13.sp, lineHeight = 18.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            modifier = Modifier.padding(top = 8.dp))
+                        Text(
+                            tr("vid_open_yt"), color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(top = 12.dp).clip(RoundedCornerShape(20.dp))
+                                .background(accent).clickable { openExternally(context, url, ytId) }
+                                .padding(horizontal = 18.dp, vertical = 9.dp)
                         )
                     }
-                    CircularProgressIndicator(color = Color.White, strokeWidth = 3.dp, modifier = Modifier.size(36.dp))
+                } else if (ytId != null) {
+                    AndroidView(
+                        modifier = Modifier.fillMaxSize(),
+                        factory = { ctx ->
+                            WebView(ctx).apply {
+                                setBackgroundColor(android.graphics.Color.BLACK)
+                                // No setLayerType(): a forced HARDWARE layer renders the WebView offscreen and can drop the video plane.
+                                settings.javaScriptEnabled = true           // required by the YouTube player
+                                settings.domStorageEnabled = true
+                                settings.mediaPlaybackRequiresUserGesture = false
+                                settings.allowFileAccess = false            // hardening: this page needs no local files
+                                settings.allowContentAccess = false
+                                android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+                                webChromeClient = WebChromeClient()
+                                webViewClient = object : WebViewClient() {
+                                    override fun onReceivedError(view: WebView, request: WebResourceRequest, e: WebResourceError) {
+                                        if (request.isForMainFrame) error = messageFor(-1)
+                                    }
+                                    override fun onRenderProcessGone(view: WebView, detail: android.webkit.RenderProcessGoneDetail): Boolean {
+                                        error = messageFor(-2)   // renderer crashed: show the message instead of taking the app down
+                                        return true
+                                    }
+                                }
+                                addJavascriptInterface(
+                                    YouTubeBridge(readyCallback = { ready = true; slow = false }, errorCallback = { code -> error = messageFor(code) }),
+                                    "DarkStore"
+                                )
+                                // baseUrl https://<applicationId>/ → Referer for the embedded player (API client identity)
+                                loadDataWithBaseURL("$appOrigin/", youTubePlayerHtml(ytId, appOrigin), "text/html", "utf-8", null)
+                            }
+                        },
+                        onRelease = { it.removeJavascriptInterface("DarkStore"); it.stopLoading(); it.loadUrl("about:blank"); it.destroy() }
+                    )
+                } else {
+                    DirectVideo(
+                        url = url,
+                        onFirstFrame = { ready = true },
+                        onFail = { why -> error = "$msgGeneric ($why)" }
+                    )
                 }
-            }
+
+                // Cover the not-yet-painted player with the video's own thumbnail + spinner (no black flash)
+                if (error == null && !ready && !(ytId != null && posterGone)) {
+                    Box(Modifier.fillMaxSize().background(Color(0xFF111418)), contentAlignment = Alignment.Center) {
+                        if (ytId != null) {
+                            AsyncImage(
+                                model = "https://img.youtube.com/vi/$ytId/hqdefault.jpg", contentDescription = null,
+                                contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                        CircularProgressIndicator(color = Color.White, strokeWidth = 3.dp, modifier = Modifier.size(36.dp))
+                    }
+                }
             }
         }
 
         // Controls under the player (never on top of it)
         Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Row(
-                Modifier.clip(RoundedCornerShape(20.dp)).glass(true, RoundedCornerShape(20.dp), 2.dp)
+                Modifier.clip(RoundedCornerShape(20.dp)).glass(isDark, RoundedCornerShape(20.dp), 2.dp)
                     .clickable(onClick = onClose).padding(horizontal = 14.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Default.Close, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                Icon(Icons.Default.Close, null, tint = textPrimary, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
-                Text(tr("vid_close"), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text(tr("vid_close"), color = textPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             }
             Spacer(Modifier.weight(1f))
             Row(
-                Modifier.clip(RoundedCornerShape(20.dp)).glass(true, RoundedCornerShape(20.dp), 2.dp)
+                Modifier.clip(RoundedCornerShape(20.dp)).glass(isDark, RoundedCornerShape(20.dp), 2.dp)
                     .clickable { openExternally(context, url, ytId) }.padding(horizontal = 14.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -365,9 +402,7 @@ fun InlineVideoPlayer(
             }
         }
         if (slow && error == null) {
-            Text(tr("vid_slow"), color = Color.White.copy(alpha = 0.75f), fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp, start = 4.dp))
+            Text(tr("vid_slow"), color = textSecondary, fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp, start = 4.dp))
         }
-    }
-    }
     }
 }

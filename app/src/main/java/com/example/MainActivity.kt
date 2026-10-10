@@ -11597,14 +11597,14 @@ fun AppDetailsDialog(
                             if (ytId != null) "https://img.youtube.com/vi/$ytId/hqdefault.jpg" else screenshotList.firstOrNull().orEmpty()
                         }
                         if (showVideo && hasVideo) {
-                            // Player opens in its own window on top; the banner below stays put (no black flash)
+                            // Plays right here in the page, same spot as the banner (no popup, no full-screen takeover)
                             com.example.view.InlineVideoPlayer(
                                 url = app.videoUrl, isDark = isDarkMode, accent = accentGreen,
                                 textPrimary = textPrimary, textSecondary = textSecondary,
                                 onClose = { showVideo = false }
                             )
-                        }
-                        if (bannerModel.isNotBlank() || hasVideo) {
+                            Spacer(Modifier.height(16.dp))
+                        } else if (bannerModel.isNotBlank() || hasVideo) {
                             Box(
                                 Modifier.fillMaxWidth().aspectRatio(16f / 9f)
                                     .glass(isDarkMode, RoundedCornerShape(24.dp), 5.dp)
