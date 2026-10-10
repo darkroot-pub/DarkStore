@@ -194,11 +194,11 @@ fun InlineVideoPlayer(
     LaunchedEffect(url) { delay(4_000); posterGone = true }   // never keep the cover over a working player
 
     Column(Modifier.fillMaxWidth()) {
+        // The player fills the whole 16:9 slot edge to edge (no frame / padding around it).
         Box(Modifier.fillMaxWidth()) {
-            Box(Modifier.matchParentSize().glass(isDark, RoundedCornerShape(24.dp), 5.dp).background(Color.Black.copy(alpha = 0.92f)))
             Box(
-                Modifier.padding(8.dp).fillMaxWidth().aspectRatio(16f / 9f)
-                    .clip(RoundedCornerShape(18.dp)).background(Color.Black)
+                Modifier.fillMaxWidth().aspectRatio(16f / 9f)
+                    .clip(RoundedCornerShape(24.dp)).background(Color.Black)
             ) {
                 val err = error
                 if (err != null) {

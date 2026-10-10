@@ -32,6 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -299,42 +300,20 @@ fun UserIdentityCard(
     var showEdit by remember { mutableStateOf(false) }
 
     val cardDark = textPrimary.luminance() > 0.5f
-    Box(Modifier.fillMaxWidth().padding(bottom = 16.dp).glass(cardDark, RoundedCornerShape(24.dp), 4.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(68.dp)
-                    .clip(CircleShape)
-                    .background(accent.copy(alpha = 0.15f))
-                    .clickable(enabled = photoUrl.isNotBlank()) { showViewer = true },
-                contentAlignment = Alignment.Center
-            ) {
-                if (photoUrl.isNotBlank()) {
-                    AsyncImage(
-                        model = photoUrl,
-                        contentDescription = "Profile photo",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
-                    Text(userName.take(1).uppercase().ifBlank { "?" }, color = accent, fontWeight = FontWeight.Bold, fontSize = 26.sp)
-                }
-            }
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text(userName.ifBlank { "Your account" }, color = textPrimary, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(userEmail, color = textSecondary, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            OutlinedButton(
-                onClick = { showEdit = true },
-                shape = RoundedCornerShape(12.dp),
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-            ) { Text("Edit", fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
-        }
-    }
+    val role by viewModel.userRole.collectAsStateWithLifecycle()
+    ProfileHeroCard(
+        name = userName,
+        handle = userEmail,
+        photoUrl = photoUrl,
+        isDark = cardDark,
+        accent = accent,
+        textPrimary = textPrimary,
+        textSecondary = textSecondary,
+        roleLabel = if (role.equals("admin", ignoreCase = true)) "Admin" else "Member",
+        onEdit = { showEdit = true },
+        onPhotoClick = { showViewer = true },
+        modifier = Modifier.padding(bottom = 16.dp)
+    )
 
     if (showViewer && photoUrl.isNotBlank()) {
         FullScreenPhotoViewer(photoUrl = photoUrl, title = userName, onDismiss = { showViewer = false })

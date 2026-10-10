@@ -12,6 +12,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -543,6 +545,7 @@ private fun ChatConversation(
     var actionTarget by remember { mutableStateOf<ChatMessageEntity?>(null) }
     var deleteTarget by remember { mutableStateOf<ChatMessageEntity?>(null) }
     var uploading by remember { mutableStateOf(false) }
+    var viewerUrl by remember { mutableStateOf<String?>(null) }
     var firstScroll by remember { mutableStateOf(true) }
 
     // The index of my newest message that the other person has seen (1:1 only)
@@ -604,7 +607,8 @@ private fun ChatConversation(
                             onLongPress = { if (!row.m.deleted) actionTarget = row.m },
                             onDoubleTap = { if (!row.m.deleted) onReact(row.m, "❤️") },
                             onReactClick = { e -> onReact(row.m, e) },
-                            onAvatar = { onAvatarClick(row.m) }
+                            onAvatar = { onAvatarClick(row.m) },
+                            onImageClick = { url -> viewerUrl = url }
                         )
                     }
                 }
@@ -682,6 +686,8 @@ private fun ChatConversation(
         }
     }
 
+    viewerUrl?.let { url -> ChatImageViewer(url = url, onDismiss = { viewerUrl = null }) }
+
     actionTarget?.let { m ->
         val mine = m.senderId == myUid
         MessageActionsDialog(
@@ -715,13 +721,50 @@ private fun ChatConversation(
     }
 }
 
+
+// ───────────────────────────── full-screen photo viewer ─────────────────────────────
+
+/** Full-screen photo: pinch to zoom, drag to pan, double-tap to zoom in/out, tap ✕ (or back) to close. */
+@Composable
+private fun ChatImageViewer(url: String, onDismiss: () -> Unit) {
+    var scale by remember { mutableStateOf(1f) }
+    var offX by remember { mutableStateOf(0f) }
+    var offY by remember { mutableStateOf(0f) }
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Box(Modifier.fillMaxSize().background(Color.Black)) {
+            AsyncImage(
+                model = url, contentDescription = "Photo", contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize()
+                    .pointerInput(Unit) {
+                        detectTransformGestures { _, pan, zoom, _ ->
+                            scale = (scale * zoom).coerceIn(1f, 5f)
+                            if (scale > 1f) { offX += pan.x; offY += pan.y } else { offX = 0f; offY = 0f }
+                        }
+                    }
+                    .pointerInput(Unit) {
+                        detectTapGestures(onDoubleTap = {
+                            if (scale > 1f) { scale = 1f; offX = 0f; offY = 0f } else scale = 2.5f
+                        })
+                    }
+                    .graphicsLayer { scaleX = scale; scaleY = scale; translationX = offX; translationY = offY }
+            )
+            Box(
+                Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(12.dp).size(40.dp).clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.18f)).clickable(onClick = onDismiss),
+                contentAlignment = Alignment.Center
+            ) { Icon(Icons.Default.Close, "Close", tint = Color.White, modifier = Modifier.size(22.dp)) }
+        }
+    }
+}
+
 // ───────────────────────────── message bubble ─────────────────────────────
 
 @Composable
 private fun MessageBubble(
     m: ChatMessageEntity, first: Boolean, last: Boolean, mine: Boolean, myUid: String, isGlobal: Boolean, isDark: Boolean,
     accent: Color, textPrimary: Color, textSecondary: Color, showTick: Boolean, seen: Boolean,
-    onLongPress: () -> Unit, onDoubleTap: () -> Unit, onReactClick: (String) -> Unit, onAvatar: () -> Unit
+    onLongPress: () -> Unit, onDoubleTap: () -> Unit, onReactClick: (String) -> Unit, onAvatar: () -> Unit,
+    onImageClick: (String) -> Unit
 ) {
     val shape = RoundedCornerShape(
         topStart = 20.dp, topEnd = 20.dp,
@@ -776,9 +819,25 @@ private fun MessageBubble(
                         }
                     }
                     if (m.imageUrl.isNotBlank()) {
+                        // Shown in its own aspect ratio (not cropped); tap opens the full-screen viewer.
+                        var ratio by remember(m.imageUrl) { mutableStateOf<Float?>(null) }
                         AsyncImage(
-                            model = m.imageUrl, contentDescription = "Photo", contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp).clip(RoundedCornerShape(14.dp))
+                            model = m.imageUrl, contentDescription = "Photo", contentScale = ContentScale.Fit,
+                            onSuccess = { st ->
+                                val d = st.result.drawable
+                                if (d.intrinsicWidth > 0 && d.intrinsicHeight > 0) ratio = d.intrinsicWidth.toFloat() / d.intrinsicHeight
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                                .aspectRatio((ratio ?: 1.25f).coerceIn(0.55f, 2.4f))
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(ink.copy(alpha = 0.06f))
+                                .pointerInput(m.id) {
+                                    detectTapGestures(
+                                        onTap = { onImageClick(m.imageUrl) },
+                                        onLongPress = { onLongPress() },
+                                        onDoubleTap = { onDoubleTap() }
+                                    )
+                                }
                         )
                         if (m.text.isNotBlank()) Spacer(Modifier.height(6.dp))
                     }

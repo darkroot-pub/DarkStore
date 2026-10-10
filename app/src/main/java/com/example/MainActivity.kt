@@ -4768,151 +4768,26 @@ fun ProfileTabContent(
                     var showOwnPhotoViewer by remember { mutableStateOf(false) }
                     var showFollowersFollowingDialog by remember { mutableStateOf(false) }
 
-                    // Cover + identity card
-                    Card(
-                        modifier = Modifier.fillMaxWidth().glass(isDarkMode, RoundedCornerShape(20.dp), 3.dp),
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-                        border = null
-                    ) {
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            // Gradient cover banner
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(96.dp)
-                                    .background(
-                                        Brush.linearGradient(
-                                            listOf(
-                                                accentGreen,
-                                                Color(0xFF6366F1),
-                                                Color(0xFF06B6D4).copy(alpha = 0.7f)
-                                            )
-                                        )
-                                    )
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Code,
-                                    contentDescription = null,
-                                    tint = Color.White.copy(alpha = 0.15f),
-                                    modifier = Modifier
-                                        .align(Alignment.CenterEnd)
-                                        .padding(end = 20.dp)
-                                        .size(64.dp)
-                                )
-                                // Edit chip on banner
-                                Box(
-                                    modifier = Modifier
-                                        .align(Alignment.TopEnd)
-                                        .padding(10.dp)
-                                        .clip(RoundedCornerShape(20.dp))
-                                        .background(Color.Black.copy(alpha = 0.35f))
-                                        .clickable { showEditProfile = true }
-                                        .padding(horizontal = 12.dp, vertical = 6.dp)
-                                ) {
-                                    Text("Edit", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                                }
-                            }
-
-                            // Avatar overlapping banner
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp)
-                                    .offset(y = (-28).dp),
-                                verticalAlignment = Alignment.Bottom
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(76.dp)
-                                        .clip(CircleShape)
-                                        .background(surfaceCol)
-                                        .border(3.dp, surfaceCol, CircleShape),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .clip(CircleShape)
-                                            .background(accentGreen.copy(alpha = 0.15f))
-                                            .clickable(enabled = profilePhotoUrl.isNotBlank()) { showOwnPhotoViewer = true },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        if (profilePhotoUrl.isNotBlank()) {
-                                            AsyncImage(
-                                                model = profilePhotoUrl,
-                                                contentDescription = "Avatar",
-                                                modifier = Modifier.fillMaxSize().clip(CircleShape),
-                                                contentScale = ContentScale.Crop
-                                            )
-                                        } else {
-                                            Text(
-                                                text = (devName.ifBlank { userName }).take(1).uppercase(),
-                                                color = accentGreen,
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 28.sp
-                                            )
-                                        }
-                                    }
-                                }
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column(modifier = Modifier.weight(1f).padding(bottom = 4.dp)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(
-                                            text = devName.ifBlank { userName },
-                                            color = textPrimaryCol,
-                                            fontWeight = FontWeight.ExtraBold,
-                                            fontSize = 18.sp,
-                                            maxLines = 1
-                                        )
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Icon(
-                                            Icons.Default.Verified,
-                                            contentDescription = "Verified",
-                                            tint = accentGreen,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                    Text(
-                                        text = if (devGithub.isNotBlank()) "@${devGithub.trim().removePrefix("@")}" else userEmail.substringBefore("@").let { "@$it" },
-                                        color = textSecondaryCol,
-                                        fontSize = 12.sp
-                                    )
-                                }
-                            }
-
-                            // Following / Followers under avatar row
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .offset(y = (-12).dp)
-                                    .padding(horizontal = 16.dp)
-                                    .clickable { showFollowersFollowingDialog = true },
-                                horizontalArrangement = Arrangement.spacedBy(20.dp)
-                            ) {
-                                Column {
-                                    Text(
-                                        text = "${followingIds.size}",
-                                        color = accentGreen,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 15.sp
-                                    )
-                                    Text("Following", color = textSecondaryCol, fontSize = 11.sp)
-                                }
-                                Column {
-                                    Text(
-                                        text = "${followerIds.size}",
-                                        color = accentGreen,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 15.sp
-                                    )
-                                    Text("Followers", color = textSecondaryCol, fontSize = 11.sp)
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(4.dp))
-                        }
-                    }
+                    // Liquid-glass profile hero (aurora banner, ringed avatar, role chips, stat pills)
+                    com.example.view.ProfileHeroCard(
+                        name = devName.ifBlank { userName },
+                        handle = if (devGithub.isNotBlank()) "@${devGithub.trim().removePrefix("@")}" else userEmail.substringBefore("@").let { "@$it" },
+                        photoUrl = profilePhotoUrl,
+                        isDark = isDarkMode,
+                        accent = accentGreen,
+                        textPrimary = textPrimaryCol,
+                        textSecondary = textSecondaryCol,
+                        roleLabel = "Developer",
+                        verified = true,
+                        location = devLocationVal,
+                        stats = listOf(
+                            com.example.view.ProfileStat("${followingIds.size}", "Following") { showFollowersFollowingDialog = true },
+                            com.example.view.ProfileStat("${followerIds.size}", "Followers") { showFollowersFollowingDialog = true },
+                            com.example.view.ProfileStat("${submissions.size}", "Apps")
+                        ),
+                        onEdit = { showEditProfile = true },
+                        onPhotoClick = { showOwnPhotoViewer = true }
+                    )
 
                     if (showFollowersFollowingDialog) {
                         FollowersFollowingDialog(

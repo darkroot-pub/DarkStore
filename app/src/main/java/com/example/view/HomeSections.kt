@@ -65,13 +65,13 @@ private fun StarRating(rating: String, textPrimary: Color) {
 fun SquareAppTile(app: AppEntity, isDark: Boolean, accent: Color, textPrimary: Color, textSecondary: Color, onClick: () -> Unit) {
     Column(
         modifier = Modifier
-            .width(116.dp).height(136.dp)
+            .size(136.dp)
             .glass(isDark, RoundedCornerShape(24.dp), elevation = 3.dp)
             .clickable(onClick = onClick).padding(12.dp),
         horizontalAlignment = Alignment.Start,
         verticalArrangement = Arrangement.SpaceBetween
     ) {
-        AppIcon(app, 62.dp, accent)
+        AppIcon(app, 66.dp, accent)
         Column {
             Text(app.name, color = textPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(app.size, color = textSecondary, fontSize = 11.sp, maxLines = 1)
@@ -105,12 +105,12 @@ fun PopularAppCard(app: AppEntity, rating: String, isDark: Boolean, accent: Colo
 fun CompactAppCard(app: AppEntity, rating: String, isDark: Boolean, accent: Color, textPrimary: Color, textSecondary: Color, onClick: () -> Unit) {
     Column(
         modifier = Modifier
-            .width(104.dp).height(124.dp)
+            .size(128.dp)
             .glass(isDark, RoundedCornerShape(22.dp), elevation = 3.dp)
             .clickable(onClick = onClick).padding(11.dp),
         verticalArrangement = Arrangement.SpaceBetween
     ) {
-        AppIcon(app, 50.dp, accent)
+        AppIcon(app, 56.dp, accent)
         Column {
             Text(app.name, color = textPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
