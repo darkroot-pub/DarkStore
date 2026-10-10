@@ -6,6 +6,12 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.view.View
+import android.view.ViewGroup
+import android.webkit.WebSettings
+import android.widget.FrameLayout
+import android.widget.MediaController
+import android.widget.VideoView
 import android.webkit.JavascriptInterface
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -39,17 +45,6 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.ui.layout.ContentScale
 import coil.compose.AsyncImage
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.compose.ui.platform.LocalLifecycleOwner
-import androidx.media3.common.C
-import androidx.media3.common.MediaItem
-import androidx.media3.common.PlaybackException
-import androidx.media3.common.Player
-import androidx.media3.common.Tracks
-import androidx.media3.exoplayer.DefaultRenderersFactory
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
 
 /** One of the four info boxes under the app title (Size · Version · Ads · Reviews). */
@@ -159,50 +154,6 @@ fun youTubeId(url: String): String? {
     return candidate?.takeIf { YT_ID.matches(it) }
 }
 
-/** https://www.youtube.com/embed/VIDEO_ID with the documented player parameters (no fullscreen button). */
-private fun embedUrl(videoId: String, appOrigin: String): String =
-    "https://www.youtube.com/embed/$videoId?enablejsapi=1&autoplay=1&playsinline=1&rel=0&fs=0" +
-        "&origin=" + java.net.URLEncoder.encode(appOrigin, "UTF-8")
-
-/**
- * Player page. It is loaded with loadDataWithBaseURL(baseUrl = https://<applicationId>/), which is the
- * documented way to give an app-bundled player its API-client identity: the iframe request then carries
- * Referer: https://<applicationId>/ . The iframe sets referrerpolicy explicitly (never "no-referrer") and
- * the IFrame API is attached to it only to report errors back to the app.
- */
-internal fun youTubePlayerHtml(videoId: String, appOrigin: String): String = """
-<!DOCTYPE html>
-<html><head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="referrer" content="strict-origin-when-cross-origin">
-<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}iframe{position:absolute;top:0;left:0;width:100%;height:100%;border:0}</style>
-</head><body>
-<iframe id="yt" src="${embedUrl(videoId, appOrigin)}"
-  referrerpolicy="strict-origin-when-cross-origin"
-  allow="autoplay; encrypted-media; picture-in-picture"></iframe>
-<script>
-  var tag = document.createElement('script');
-  tag.src = 'https://www.youtube.com/iframe_api';
-  tag.onerror = function () { DarkStore.onError(-1); };
-  document.head.appendChild(tag);
-  function onYouTubeIframeAPIReady() {
-    new YT.Player('yt', { events: {
-      onReady: function () { DarkStore.onReady(); },
-      onError: function (e) { DarkStore.onError(e.data); }
-    }});
-  }
-</script>
-</body></html>
-""".trimIndent()
-
-/** Receives the player's events. Harmless on purpose: it can only report "ready" or an error code. */
-private class YouTubeBridge(private val readyCallback: () -> Unit, private val errorCallback: (Int) -> Unit) {
-    private val main = Handler(Looper.getMainLooper())
-    @JavascriptInterface fun onReady() { main.post { readyCallback() } }
-    @JavascriptInterface fun onError(code: Int) { main.post { errorCallback(code) } }
-}
-
 private fun openExternally(context: android.content.Context, url: String, videoId: String?) {
     val tries = buildList {
         if (videoId != null) add(Intent(Intent.ACTION_VIEW, Uri.parse("vnd.youtube:$videoId")))   // YouTube app
@@ -215,53 +166,11 @@ private fun openExternally(context: android.content.Context, url: String, videoI
 }
 
 /**
- * Direct-link video (mp4 / webm / m3u8 …) with Media3 ExoPlayer.
- * Rendered on a TextureView (see res/layout/dark_player_view.xml) so it composites correctly inside the
- * scrolling details page. Reports the first rendered frame, and any failure with a readable reason —
- * including "audio plays but the phone cannot decode this video track" (unsupported codec).
- */
-@Composable
-private fun DirectVideo(url: String, onFirstFrame: () -> Unit, onFail: (String) -> Unit) {
-    val context = LocalContext.current
-    val player = remember(url) {
-        ExoPlayer.Builder(context, DefaultRenderersFactory(context).setEnableDecoderFallback(true)).build().apply {
-            setMediaItem(MediaItem.fromUri(Uri.parse(url)))
-            playWhenReady = true
-            prepare()
-        }
-    }
-    DisposableEffect(player) {
-        val listener = object : Player.Listener {
-            override fun onRenderedFirstFrame() { onFirstFrame() }
-            override fun onPlayerError(error: PlaybackException) { onFail(error.errorCodeName) }
-            override fun onTracksChanged(tracks: Tracks) {
-                val video = tracks.groups.filter { it.type == C.TRACK_TYPE_VIDEO }
-                if (video.isNotEmpty() && video.none { it.isSupported }) onFail("video format not supported by this phone")
-            }
-        }
-        player.addListener(listener)
-        onDispose { player.removeListener(listener); player.release() }
-    }
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner, player) {
-        val obs = LifecycleEventObserver { _, e -> if (e == Lifecycle.Event.ON_PAUSE) player.pause() }
-        lifecycleOwner.lifecycle.addObserver(obs)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
-    }
-    AndroidView(
-        modifier = Modifier.fillMaxSize(),
-        factory = { ctx ->
-            (android.view.LayoutInflater.from(ctx).inflate(com.example.R.layout.dark_player_view, null) as PlayerView).also { it.player = player }
-        },
-        update = { it.player = player }
-    )
-}
-
-/**
- * Plays the app's promo video right inside the details page, always in the same place (16:9).
- * While the player is starting, the video's thumbnail + spinner cover it (no black flash).
+ * Plays the app's promo video right inside the details page, always in the same 16:9 slot.
+ * Playing system: YouTube links load the official embed URL directly (no local HTML page) with the app id as the
+ * HTTPS Referer — the YouTube API-services requirement that avoids Error 153 — inside a MATCH_PARENT FrameLayout
+ * with a hardware layer (avoids black screen / audio-only). Any other link plays in a VideoView.
  * Close / "Open in YouTube" sit BELOW the player — YouTube's rules forbid overlays on top of it.
- * YouTube links use the embedded player; any other link is played by ExoPlayer.
  */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -277,36 +186,20 @@ fun InlineVideoPlayer(
     val ytId = remember(url) { youTubeId(url) }
     val appOrigin = remember { "https://" + context.packageName.lowercase() }
     var error by remember(url) { mutableStateOf<String?>(null) }
-    var ready by remember(url) { mutableStateOf(false) }
-    var slow by remember(url) { mutableStateOf(false) }
+    var started by remember(url) { mutableStateOf(false) }
     var posterGone by remember(url) { mutableStateOf(false) }
-
-    // Pre-resolve messages: the player callbacks aren't composable
-    val msg153 = tr("vid_err_153")
-    val msgBlocked = tr("vid_err_blocked")
-    val msgUnavailable = tr("vid_err_unavailable")
     val msgNet = tr("vid_err_net")
     val msgGeneric = tr("vid_err_generic")
-    fun messageFor(code: Int) = when (code) {
-        153 -> "$msg153 (153)"
-        101, 150 -> "$msgBlocked ($code)"
-        100 -> "$msgUnavailable (100)"
-        -1 -> msgNet
-        else -> "$msgGeneric ($code)"
-    }
 
-    LaunchedEffect(url) {
-        if (ytId != null) {
-            delay(5_000); posterGone = true          // never keep the poster over a working YouTube player
-            delay(7_000); if (!ready && error == null) slow = true
-        }
-    }
+    LaunchedEffect(url) { delay(4_000); posterGone = true }   // never keep the cover over a working player
 
     Column(Modifier.fillMaxWidth()) {
-        // The glass frame is a SIBLING drawn behind the player (clipping/shadowing the player view itself can blank its video).
         Box(Modifier.fillMaxWidth()) {
             Box(Modifier.matchParentSize().glass(isDark, RoundedCornerShape(24.dp), 5.dp).background(Color.Black.copy(alpha = 0.92f)))
-            Box(Modifier.padding(8.dp).fillMaxWidth().aspectRatio(16f / 9f)) {
+            Box(
+                Modifier.padding(8.dp).fillMaxWidth().aspectRatio(16f / 9f)
+                    .clip(RoundedCornerShape(18.dp)).background(Color.Black)
+            ) {
                 val err = error
                 if (err != null) {
                     Column(
@@ -327,45 +220,62 @@ fun InlineVideoPlayer(
                     AndroidView(
                         modifier = Modifier.fillMaxSize(),
                         factory = { ctx ->
-                            WebView(ctx).apply {
-                                setBackgroundColor(android.graphics.Color.BLACK)
-                                // No setLayerType(): a forced HARDWARE layer renders the WebView offscreen and can drop the video plane.
-                                settings.javaScriptEnabled = true           // required by the YouTube player
-                                settings.domStorageEnabled = true
-                                settings.mediaPlaybackRequiresUserGesture = false
-                                settings.allowFileAccess = false            // hardening: this page needs no local files
-                                settings.allowContentAccess = false
-                                android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-                                webChromeClient = WebChromeClient()
-                                webViewClient = object : WebViewClient() {
-                                    override fun onReceivedError(view: WebView, request: WebResourceRequest, e: WebResourceError) {
-                                        if (request.isForMainFrame) error = messageFor(-1)
+                            // Outer FrameLayout so the WebView always gets MATCH_PARENT size before it loads.
+                            FrameLayout(ctx).apply {
+                                layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                                val webView = WebView(ctx).apply {
+                                    layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                                    // Hardware layer avoids black screen + audio-only on many devices.
+                                    setLayerType(View.LAYER_TYPE_HARDWARE, null)
+                                    settings.apply {
+                                        javaScriptEnabled = true
+                                        domStorageEnabled = true
+                                        mediaPlaybackRequiresUserGesture = false
+                                        useWideViewPort = true
+                                        loadWithOverviewMode = true
+                                        cacheMode = WebSettings.LOAD_DEFAULT
                                     }
-                                    override fun onRenderProcessGone(view: WebView, detail: android.webkit.RenderProcessGoneDetail): Boolean {
-                                        error = messageFor(-2)   // renderer crashed: show the message instead of taking the app down
-                                        return true
+                                    setBackgroundColor(android.graphics.Color.BLACK)
+                                    webChromeClient = WebChromeClient()
+                                    webViewClient = object : WebViewClient() {
+                                        override fun onPageFinished(view: WebView?, u: String?) { started = true }
+                                        override fun onReceivedError(view: WebView, request: WebResourceRequest, e: WebResourceError) {
+                                            if (request.isForMainFrame) error = msgNet
+                                        }
                                     }
+                                    // Official embed URL; origin= + Referer header give the player its client identity.
+                                    val embed = "https://www.youtube.com/embed/$ytId?autoplay=1&playsinline=1&rel=0&modestbranding=1&fs=0&origin=${Uri.encode(appOrigin)}"
+                                    loadUrl(embed, mapOf("Referer" to appOrigin))
                                 }
-                                addJavascriptInterface(
-                                    YouTubeBridge(readyCallback = { ready = true; slow = false }, errorCallback = { code -> error = messageFor(code) }),
-                                    "DarkStore"
-                                )
-                                // baseUrl https://<applicationId>/ → Referer for the embedded player (API client identity)
-                                loadDataWithBaseURL("$appOrigin/", youTubePlayerHtml(ytId, appOrigin), "text/html", "utf-8", null)
+                                addView(webView)
+                                tag = webView   // for onRelease cleanup
                             }
                         },
-                        onRelease = { it.removeJavascriptInterface("DarkStore"); it.stopLoading(); it.loadUrl("about:blank"); it.destroy() }
+                        onRelease = { container ->
+                            val wv = container.tag as? WebView
+                            wv?.stopLoading(); wv?.loadUrl("about:blank"); wv?.destroy()
+                            container.removeAllViews()
+                        }
                     )
                 } else {
-                    DirectVideo(
-                        url = url,
-                        onFirstFrame = { ready = true },
-                        onFail = { why -> error = "$msgGeneric ($why)" }
+                    AndroidView(
+                        modifier = Modifier.fillMaxSize(),
+                        factory = { ctx ->
+                            VideoView(ctx).apply {
+                                layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                                val controller = MediaController(ctx).also { it.setAnchorView(this) }
+                                setMediaController(controller)
+                                setVideoURI(Uri.parse(url))
+                                setOnPreparedListener { started = true; start() }
+                                setOnErrorListener { _, _, _ -> error = msgGeneric; true }
+                            }
+                        },
+                        onRelease = { it.stopPlayback() }
                     )
                 }
 
-                // Cover the not-yet-painted player with the video's own thumbnail + spinner (no black flash)
-                if (error == null && !ready && !(ytId != null && posterGone)) {
+                // Cover the not-yet-loaded player with the video's thumbnail + spinner (no black flash)
+                if (error == null && !started && !posterGone) {
                     Box(Modifier.fillMaxSize().background(Color(0xFF111418)), contentAlignment = Alignment.Center) {
                         if (ytId != null) {
                             AsyncImage(
@@ -400,9 +310,6 @@ fun InlineVideoPlayer(
                 Spacer(Modifier.width(6.dp))
                 Text(tr("det_open_ext"), color = accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             }
-        }
-        if (slow && error == null) {
-            Text(tr("vid_slow"), color = textSecondary, fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp, start = 4.dp))
         }
     }
 }
