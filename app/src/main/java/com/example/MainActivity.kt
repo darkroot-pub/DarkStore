@@ -4216,7 +4216,7 @@ fun ProfileTabContent(
     // Liquid-glass palette (translucent fill + light-catching edge) — dialogs keep an opaque surface
     val surfaceCol = if (isDarkMode) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.70f)
     val borderCol = if (isDarkMode) Color.White.copy(alpha = 0.16f) else Color(0xFF334155).copy(alpha = 0.14f)
-    val dialogCol = if (isDarkMode) Color(0xFF1B1F27) else Color.White
+    val surfaceCol = if (isDarkMode) Color(0xFF1B1F27) else Color.White
     val textPrimaryCol = textPrimary
     val textSecondaryCol = textSecondary
 
@@ -5083,7 +5083,7 @@ fun ProfileTabContent(
                             Card(
                                 modifier = Modifier.fillMaxWidth(0.92f).heightIn(max = 620.dp),
                                 shape = RoundedCornerShape(24.dp),
-                                colors = CardDefaults.cardColors(containerColor = dialogCol),
+                                colors = CardDefaults.cardColors(containerColor = surfaceCol),
                                 border = BorderStroke(1.dp, borderCol)
                             ) {
                                 Column(modifier = Modifier.padding(20.dp)) {
@@ -5119,7 +5119,7 @@ fun ProfileTabContent(
                                             initial = devName.ifBlank { userName },
                                             accent = accentGreen,
                                             textSecondary = textSecondaryCol,
-                                            dialogColor = dialogCol
+                                            surfaceColor = surfaceCol
                                         )
                                         OutlinedTextField(
                                             value = editName,
@@ -5465,12 +5465,12 @@ fun ProfileTabContent(
                     ) {
                         Surface(
                             modifier = Modifier.fillMaxSize(),
-                            color = dialogCol
+                            color = surfaceCol
                         ) {
                             Column(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .background(dialogCol)
+                                    .background(surfaceCol)
                             ) {
                                 // Dynamic Navigation Header / App Bar
                                 Row(
@@ -5759,7 +5759,7 @@ fun ProfileTabContent(
                                                         label = "PACKAGE IDENTIFIER",
                                                         value = sub.packageName,
                                                         accentColor = accentGreen,
-                                                        dialogCol = if (isDarkMode) Color(0xFF1E293B).copy(alpha = 0.4f) else Color(0xFFF1F5F9).copy(alpha = 0.6f),
+                                                        surfaceCol = if (isDarkMode) Color(0xFF1E293B).copy(alpha = 0.4f) else Color(0xFFF1F5F9).copy(alpha = 0.6f),
                                                         borderCol = borderCol,
                                                         textPrimaryCol = textPrimaryCol,
                                                         textSecondaryCol = textSecondaryCol
@@ -5771,7 +5771,7 @@ fun ProfileTabContent(
                                                         label = "BUILD VERSION",
                                                         value = "v${sub.version}",
                                                         accentColor = accentGreen,
-                                                        dialogCol = if (isDarkMode) Color(0xFF1E293B).copy(alpha = 0.4f) else Color(0xFFF1F5F9).copy(alpha = 0.6f),
+                                                        surfaceCol = if (isDarkMode) Color(0xFF1E293B).copy(alpha = 0.4f) else Color(0xFFF1F5F9).copy(alpha = 0.6f),
                                                         borderCol = borderCol,
                                                         textPrimaryCol = textPrimaryCol,
                                                         textSecondaryCol = textSecondaryCol
@@ -5785,7 +5785,7 @@ fun ProfileTabContent(
                                                         label = "STORE CATEGORY",
                                                         value = sub.category,
                                                         accentColor = accentGreen,
-                                                        dialogCol = if (isDarkMode) Color(0xFF1E293B).copy(alpha = 0.4f) else Color(0xFFF1F5F9).copy(alpha = 0.6f),
+                                                        surfaceCol = if (isDarkMode) Color(0xFF1E293B).copy(alpha = 0.4f) else Color(0xFFF1F5F9).copy(alpha = 0.6f),
                                                         borderCol = borderCol,
                                                         textPrimaryCol = textPrimaryCol,
                                                         textSecondaryCol = textSecondaryCol
@@ -5797,7 +5797,7 @@ fun ProfileTabContent(
                                                         label = "MONETIZATION ADS",
                                                         value = if (sub.hasAds) "Contains Advertisements" else "Clean Build / No Ads",
                                                         accentColor = accentGreen,
-                                                        dialogCol = if (isDarkMode) Color(0xFF1E293B).copy(alpha = 0.4f) else Color(0xFFF1F5F9).copy(alpha = 0.6f),
+                                                        surfaceCol = if (isDarkMode) Color(0xFF1E293B).copy(alpha = 0.4f) else Color(0xFFF1F5F9).copy(alpha = 0.6f),
                                                         borderCol = borderCol,
                                                         textPrimaryCol = textPrimaryCol,
                                                         textSecondaryCol = textSecondaryCol
@@ -5810,7 +5810,7 @@ fun ProfileTabContent(
                                                     label = "DISTRIBUTION SOURCE URL (APK / TARGET)",
                                                     value = sub.apkUrl,
                                                     accentColor = Color(0xFF2563EB),
-                                                    dialogCol = if (isDarkMode) Color(0xFF1E293B).copy(alpha = 0.4f) else Color(0xFFF1F5F9).copy(alpha = 0.6f),
+                                                    surfaceCol = if (isDarkMode) Color(0xFF1E293B).copy(alpha = 0.4f) else Color(0xFFF1F5F9).copy(alpha = 0.6f),
                                                     borderCol = borderCol,
                                                     textPrimaryCol = textPrimaryCol,
                                                     textSecondaryCol = textSecondaryCol
@@ -5924,7 +5924,7 @@ fun ProfileTabContent(
                                 .fillMaxWidth(0.96f)
                                 .padding(vertical = 16.dp),
                             shape = RoundedCornerShape(24.dp),
-                            colors = CardDefaults.cardColors(containerColor = dialogCol),
+                            colors = CardDefaults.cardColors(containerColor = surfaceCol),
                             border = BorderStroke(1.dp, borderCol)
                         ) {
                             Column(
@@ -6055,7 +6055,7 @@ fun ProfileTabContent(
                                 .fillMaxWidth(0.96f)
                                 .padding(vertical = 12.dp),
                             shape = RoundedCornerShape(24.dp),
-                            colors = CardDefaults.cardColors(containerColor = dialogCol),
+                            colors = CardDefaults.cardColors(containerColor = surfaceCol),
                             border = BorderStroke(1.dp, borderCol)
                         ) {
                             Column(
@@ -6280,7 +6280,7 @@ fun ProfileTabContent(
                                 .fillMaxWidth(0.96f)
                                 .padding(vertical = 12.dp),
                             shape = RoundedCornerShape(24.dp),
-                            colors = CardDefaults.cardColors(containerColor = dialogCol),
+                            colors = CardDefaults.cardColors(containerColor = surfaceCol),
                             border = BorderStroke(1.dp, borderCol)
                         ) {
                             Column(
