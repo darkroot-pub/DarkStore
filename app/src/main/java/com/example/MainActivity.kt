@@ -4216,7 +4216,7 @@ fun ProfileTabContent(
     // Liquid-glass palette (translucent fill + light-catching edge) — dialogs keep an opaque surface
     val surfaceCol = if (isDarkMode) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.70f)
     val borderCol = if (isDarkMode) Color.White.copy(alpha = 0.16f) else Color(0xFF334155).copy(alpha = 0.14f)
-    val surfaceCol = if (isDarkMode) Color(0xFF1B1F27) else Color.White
+    val dialogCol = if (isDarkMode) Color(0xFF1B1F27) else Color.White
     val textPrimaryCol = textPrimary
     val textSecondaryCol = textSecondary
 
@@ -5083,7 +5083,7 @@ fun ProfileTabContent(
                             Card(
                                 modifier = Modifier.fillMaxWidth(0.92f).heightIn(max = 620.dp),
                                 shape = RoundedCornerShape(24.dp),
-                                colors = CardDefaults.cardColors(containerColor = surfaceCol),
+                                colors = CardDefaults.cardColors(containerColor = dialogCol),
                                 border = BorderStroke(1.dp, borderCol)
                             ) {
                                 Column(modifier = Modifier.padding(20.dp)) {
@@ -5119,7 +5119,7 @@ fun ProfileTabContent(
                                             initial = devName.ifBlank { userName },
                                             accent = accentGreen,
                                             textSecondary = textSecondaryCol,
-                                            surfaceColor = surfaceCol
+                                            surfaceColor = dialogCol
                                         )
                                         OutlinedTextField(
                                             value = editName,
@@ -5465,12 +5465,12 @@ fun ProfileTabContent(
                     ) {
                         Surface(
                             modifier = Modifier.fillMaxSize(),
-                            color = surfaceCol
+                            color = dialogCol
                         ) {
                             Column(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .background(surfaceCol)
+                                    .background(dialogCol)
                             ) {
                                 // Dynamic Navigation Header / App Bar
                                 Row(
@@ -5924,7 +5924,7 @@ fun ProfileTabContent(
                                 .fillMaxWidth(0.96f)
                                 .padding(vertical = 16.dp),
                             shape = RoundedCornerShape(24.dp),
-                            colors = CardDefaults.cardColors(containerColor = surfaceCol),
+                            colors = CardDefaults.cardColors(containerColor = dialogCol),
                             border = BorderStroke(1.dp, borderCol)
                         ) {
                             Column(
@@ -6055,7 +6055,7 @@ fun ProfileTabContent(
                                 .fillMaxWidth(0.96f)
                                 .padding(vertical = 12.dp),
                             shape = RoundedCornerShape(24.dp),
-                            colors = CardDefaults.cardColors(containerColor = surfaceCol),
+                            colors = CardDefaults.cardColors(containerColor = dialogCol),
                             border = BorderStroke(1.dp, borderCol)
                         ) {
                             Column(
@@ -6280,7 +6280,7 @@ fun ProfileTabContent(
                                 .fillMaxWidth(0.96f)
                                 .padding(vertical = 12.dp),
                             shape = RoundedCornerShape(24.dp),
-                            colors = CardDefaults.cardColors(containerColor = surfaceCol),
+                            colors = CardDefaults.cardColors(containerColor = dialogCol),
                             border = BorderStroke(1.dp, borderCol)
                         ) {
                             Column(
