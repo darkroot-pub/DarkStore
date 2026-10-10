@@ -270,7 +270,9 @@ fun InlineVideoPlayer(
                     factory = { ctx ->
                         WebView(ctx).apply {
                             setBackgroundColor(android.graphics.Color.BLACK)
-                            setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)   // video needs the GPU path
+                            // NOTE: no setLayerType(...) here. Forcing a HARDWARE layer renders the WebView into an
+                            // offscreen texture, and on many phones (MIUI/Realme/Samsung) YouTube's video plane is
+                            // then left out: audio plays, picture stays black. The window is already GPU-accelerated.
                             settings.javaScriptEnabled = true           // required by the YouTube player
                             settings.domStorageEnabled = true
                             settings.mediaPlaybackRequiresUserGesture = false
@@ -297,6 +299,9 @@ fun InlineVideoPlayer(
                     modifier = Modifier.fillMaxSize(),
                     factory = { ctx ->
                         VideoView(ctx).apply {
+                            // The video lives on a SurfaceView; inside a Dialog + scrolling Compose parent it can end up
+                            // behind the window (audio only). Keep it above the window background, below dialog content.
+                            setZOrderMediaOverlay(true)
                             val controller = MediaController(ctx).also { it.setAnchorView(this) }
                             setMediaController(controller)
                             setVideoURI(Uri.parse(url))
