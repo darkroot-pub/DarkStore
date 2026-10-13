@@ -1052,6 +1052,52 @@ object FirebaseAuthService {
         return try { client.newCall(request).execute().use { it.isSuccessful } } catch (e: Exception) { false }
     }
 
+
+    // ----------------------------------------------------
+    // DARKSTORE REPORTS (users -> admin)
+    // ----------------------------------------------------
+    suspend fun submitDarkstoreReport(r: DarkstoreReport): Boolean = withContext(Dispatchers.IO) {
+        val json = JSONObject()
+            .put("id", r.id).put("category", r.category).put("message", r.message)
+            .put("reporterUid", r.reporterUid).put("reporterEmail", r.reporterEmail)
+            .put("reporterName", r.reporterName).put("appVersion", r.appVersion)
+            .put("device", r.device).put("createdAt", r.createdAt)
+        val request = Request.Builder()
+            .url("${RTDB_URL}darkstoreReports/${r.id}.json${getTokenParam()}")
+            .put(json.toString().toRequestBody(mediaTypeJson)).build()
+        try { client.newCall(request).execute().use { it.isSuccessful } } catch (e: Exception) { false }
+    }
+
+    suspend fun fetchDarkstoreReports(): List<DarkstoreReport> = withContext(Dispatchers.IO) {
+        val request = Request.Builder().url("${RTDB_URL}darkstoreReports.json${getTokenParam()}").get().build()
+        try {
+            client.newCall(request).execute().use { resp ->
+                if (!resp.isSuccessful) return@withContext emptyList()
+                val body = resp.body?.string()
+                if (body.isNullOrBlank() || body == "null") return@withContext emptyList()
+                val outer = JSONObject(body)
+                val out = mutableListOf<DarkstoreReport>()
+                val keys = outer.keys()
+                while (keys.hasNext()) {
+                    val k = keys.next()
+                    val d = outer.optJSONObject(k) ?: continue
+                    out.add(DarkstoreReport(
+                        id = d.optString("id", k), category = d.optString("category"), message = d.optString("message"),
+                        reporterUid = d.optString("reporterUid"), reporterEmail = d.optString("reporterEmail"),
+                        reporterName = d.optString("reporterName"), appVersion = d.optString("appVersion"),
+                        device = d.optString("device"), createdAt = d.optLong("createdAt")
+                    ))
+                }
+                out.sortedByDescending { it.createdAt }
+            }
+        } catch (e: Exception) { emptyList() }
+    }
+
+    suspend fun deleteDarkstoreReport(id: String): Boolean = withContext(Dispatchers.IO) {
+        val request = Request.Builder().url("${RTDB_URL}darkstoreReports/${id.replace(Regex("[^A-Za-z0-9_-]"), "")}.json${getTokenParam()}").delete().build()
+        try { client.newCall(request).execute().use { it.isSuccessful } } catch (e: Exception) { false }
+    }
+
     suspend fun deleteSubmission(id: String): Boolean = withContext(Dispatchers.IO) {
         val request = Request.Builder()
             .url("${RTDB_URL}submissions/${id}.json${getTokenParam()}")

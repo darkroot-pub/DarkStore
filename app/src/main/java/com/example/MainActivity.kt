@@ -2,6 +2,7 @@
 
 package com.example
 
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.foundation.layout.statusBarsPadding
 import android.app.Application
 import android.os.Bundle
@@ -279,8 +280,10 @@ class MainActivity : ComponentActivity() {
             android.util.Log.e("MainActivity", "Failed to register package dynamic receiver: ${e.message}", e)
         }
 
-        // Force widget update with real storage figures on app startup
-        com.example.widget.DarkStoreWidget.updateAllWidgets(applicationContext)
+        // Widget refresh reads storage stats - keep it OFF the main thread so the first frame isn't delayed.
+        lifecycleScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+            try { com.example.widget.DarkStoreWidget.updateAllWidgets(applicationContext) } catch (_: Exception) {}
+        }
 
         setContent {
             val context = LocalContext.current
@@ -394,7 +397,7 @@ class MainActivity : ComponentActivity() {
 
             // Fade out splash shortly
             LaunchedEffect(Unit) {
-                kotlinx.coroutines.delay(2200)
+                kotlinx.coroutines.delay(900) // was 2200 ms: the splash itself was the biggest part of the "slow open"
                 showSplash = false
             }
 
@@ -7754,6 +7757,88 @@ fun SettingsTabContent(
         }
 
         // ----------------------------------------------------
+        // REPORT A PROBLEM ABOUT DARKSTORE (between account card and premium card)
+        // ----------------------------------------------------
+        item {
+            var showReportDialog by remember { mutableStateOf(false) }
+            val reportCategories = listOf("Bug", "Security", "Abuse / Content", "Suggestion", "Other")
+            var reportCategory by remember { mutableStateOf(reportCategories[0]) }
+            var reportText by remember { mutableStateOf("") }
+            var sendingReport by remember { mutableStateOf(false) }
+            val warn = Color(0xFFF59E0B)
+
+            Card(
+                modifier = Modifier.fillMaxWidth().clickable { showReportDialog = true }.testTag("report_darkstore_button"),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                border = BorderStroke(1.dp, warn.copy(alpha = 0.35f))
+            ) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier.size(42.dp).clip(RoundedCornerShape(12.dp)).background(warn.copy(alpha = 0.14f)),
+                        contentAlignment = Alignment.Center
+                    ) { Icon(Icons.Default.Flag, contentDescription = null, tint = warn) }
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Report a problem about DarkStore", color = textPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text("Bugs, security issues, abuse or suggestions go straight to the admin", color = textSecondary, fontSize = 11.sp)
+                    }
+                    Icon(Icons.Default.ChevronRight, contentDescription = null, tint = textSecondary)
+                }
+            }
+
+            if (showReportDialog) {
+                AlertDialog(
+                    onDismissRequest = { if (!sendingReport) showReportDialog = false },
+                    containerColor = cardBgColor,
+                    title = { Text("Report DarkStore", color = textPrimary, fontWeight = FontWeight.ExtraBold) },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                reportCategories.forEach { c ->
+                                    FilterChip(
+                                        selected = reportCategory == c,
+                                        onClick = { reportCategory = c },
+                                        label = { Text(c, fontSize = 12.sp) },
+                                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = accentGreen, selectedLabelColor = Color.White)
+                                    )
+                                }
+                            }
+                            OutlinedTextField(
+                                value = reportText,
+                                onValueChange = { if (it.length <= 1000) reportText = it },
+                                label = { Text("What happened?") },
+                                placeholder = { Text("Describe the problem or idea (min 10 characters)") },
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                supportingText = { Text("${reportText.length}/1000", fontSize = 10.sp) },
+                                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = accentGreen, cursorColor = accentGreen, focusedLabelColor = accentGreen)
+                            )
+                            Text("Your name, email, app version and device model are attached so the admin can follow up.", color = textSecondary, fontSize = 10.sp)
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            enabled = !sendingReport,
+                            colors = ButtonDefaults.buttonColors(containerColor = accentGreen),
+                            onClick = {
+                                sendingReport = true
+                                viewModel.submitDarkstoreReport(reportCategory, reportText) { ok, msg ->
+                                    sendingReport = false
+                                    Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                    if (ok) { reportText = ""; showReportDialog = false }
+                                }
+                            }
+                        ) { Text(if (sendingReport) "Sending..." else "Send report", color = Color.White) }
+                    },
+                    dismissButton = {
+                        TextButton(enabled = !sendingReport, onClick = { showReportDialog = false }) { Text("Cancel", color = textSecondary) }
+                    }
+                )
+            }
+        }
+
+        // ----------------------------------------------------
         // DARKSTORE PREMIUM SUBSCRIPTION CARD
         // ----------------------------------------------------
         item {
@@ -9055,7 +9140,8 @@ fun ConsoleTabContent(
                             Pair("Notify", Icons.Default.Notifications),
                             Pair("Collections", Icons.Default.Collections),
                             Pair("Banners", Icons.Default.ViewCarousel),
-                            Pair("Ads", Icons.Default.Campaign)
+                            Pair("Ads", Icons.Default.Campaign),
+                            Pair("Feedback", Icons.Default.Flag)
                         )
                         tabs.forEachIndexed { idx, (label, icon) ->
                             val selected = adminSegmentIndex == idx
@@ -9872,6 +9958,50 @@ fun ConsoleTabContent(
                         }
                     }
 
+                }
+            }
+
+            // ── DARKSTORE REPORTS (user feedback) TAB ──────────────────────────────
+            if (isAdmin && adminSegmentIndex == 10) {
+                item {
+                    val dsReports by viewModel.darkstoreReports.collectAsStateWithLifecycle()
+                    LaunchedEffect(Unit) { viewModel.refreshDarkstoreReports() }
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("DarkStore reports (${dsReports.size})", color = textPrimary, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
+                        if (dsReports.isEmpty()) {
+                            Text("No reports from users yet.", color = textSecondary, fontSize = 12.sp)
+                        }
+                        dsReports.forEach { r ->
+                            val catColor = when (r.category) {
+                                "Security" -> Color(0xFFEF4444); "Bug" -> Color(0xFFF59E0B)
+                                "Abuse / Content" -> Color(0xFFA855F7); "Suggestion" -> Color(0xFF3B82F6)
+                                else -> Color(0xFF64748B)
+                            }
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(containerColor = catColor.copy(alpha = 0.06f).compositeOver(cardBgColor)),
+                                border = BorderStroke(1.dp, catColor.copy(alpha = 0.45f))
+                            ) {
+                                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(r.category.uppercase(), color = catColor, fontWeight = FontWeight.ExtraBold, fontSize = 10.sp,
+                                            modifier = Modifier.background(catColor.copy(alpha = 0.14f), RoundedCornerShape(6.dp)).padding(horizontal = 8.dp, vertical = 3.dp))
+                                        Spacer(Modifier.weight(1f))
+                                        Text(java.text.SimpleDateFormat("dd MMM yyyy, HH:mm", java.util.Locale.getDefault()).format(java.util.Date(r.createdAt)), color = textSecondary, fontSize = 10.sp)
+                                    }
+                                    Text(r.message, color = textPrimary, fontSize = 13.sp)
+                                    Text("${r.reporterName.ifBlank { "User" }} • ${r.reporterEmail}", color = textSecondary, fontSize = 10.sp)
+                                    Text("v${r.appVersion} • ${r.device}", color = textSecondary.copy(alpha = 0.7f), fontSize = 10.sp)
+                                    TextButton(onClick = { viewModel.resolveDarkstoreReport(r.id) }, modifier = Modifier.align(Alignment.End)) {
+                                        Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF10B981), modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text("Mark resolved", color = Color(0xFF10B981), fontSize = 12.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -11140,13 +11270,33 @@ fun AdminSubmissionCard(
     onEdit: () -> Unit,
     onCardClick: () -> Unit = {}
 ) {
+    // Distinct look per request type so the admin can tell them apart at a glance:
+    // new-app request / update request / approved app / approved update / rejected.
+    val isUpd = sub.isUpdateSubmission
+    val stLow = sub.status.lowercase()
+    val kindColor: Color; val kindIcon: androidx.compose.ui.graphics.vector.ImageVector; val kindLabel: String
+    when {
+        stLow == "rejected" -> { kindColor = Color(0xFFEF4444); kindIcon = Icons.Default.Cancel; kindLabel = if (isUpd) "REJECTED UPDATE" else "REJECTED APP" }
+        stLow == "approved" || stLow == "live" -> if (isUpd) { kindColor = Color(0xFF06B6D4); kindIcon = Icons.Default.ArrowUpward; kindLabel = "APPROVED UPDATE" } else { kindColor = Color(0xFF10B981); kindIcon = Icons.Default.CheckCircle; kindLabel = "APPROVED APP" }
+        isUpd -> { kindColor = Color(0xFFF59E0B); kindIcon = Icons.Default.Refresh; kindLabel = "UPDATE REQUEST" }
+        else -> { kindColor = Color(0xFF3B82F6); kindIcon = Icons.Default.AddCircle; kindLabel = "NEW APP REQUEST" }
+    }
     Card(
         modifier = Modifier.fillMaxWidth().clickable { onCardClick() },
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = cardBgColor),
-        border = BorderStroke(1.dp, statusColor.copy(alpha = 0.25f))
+        colors = CardDefaults.cardColors(containerColor = kindColor.copy(alpha = 0.07f).compositeOver(cardBgColor)),
+        border = BorderStroke(1.5.dp, kindColor.copy(alpha = 0.55f))
     ) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            // Coloured request-type ribbon
+            Row(
+                modifier = Modifier.fillMaxWidth().background(kindColor.copy(alpha = 0.16f), RoundedCornerShape(8.dp)).padding(horizontal = 10.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(kindIcon, contentDescription = null, tint = kindColor, modifier = Modifier.size(14.dp))
+                Text(kindLabel, color = kindColor, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 0.8.sp)
+            }
             // Top row: icon + info + status badge
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Box(
@@ -11167,12 +11317,12 @@ fun AdminSubmissionCard(
                 // Status badge
                 Box(
                     modifier = Modifier
-                        .background(statusColor.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                        .background(kindColor.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Icon(statusIcon, contentDescription = null, tint = statusColor, modifier = Modifier.size(12.dp))
-                        Text(sub.status.uppercase(), color = statusColor, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
+                        Icon(kindIcon, contentDescription = null, tint = kindColor, modifier = Modifier.size(12.dp))
+                        Text(kindLabel, color = kindColor, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
                     }
                 }
             }

@@ -64,8 +64,48 @@ private val QUICK_REACTIONS = listOf("👍", "❤️", "😂", "😮", "😢", "
 
 // ───────────────────────────── top level ─────────────────────────────
 
+/** uids of admins - used to show the blue verified tick next to their name anywhere in chat. */
+private val LocalAdminUids = androidx.compose.runtime.compositionLocalOf { emptySet<String>() }
+
+@Composable
+private fun AdminTick(uid: String, size: androidx.compose.ui.unit.Dp = 15.dp) {
+    if (uid.isNotBlank() && uid in LocalAdminUids.current) {
+        Spacer(Modifier.width(3.dp))
+        Icon(Icons.Default.Verified, "Verified admin", tint = Color(0xFF3B82F6), modifier = Modifier.size(size))
+    }
+}
+
 @Composable
 fun ChatTabContent(
+    viewModel: StoreViewModel,
+    isLoggedIn: Boolean,
+    isDarkMode: Boolean,
+    accentGreen: Color,
+    textPrimary: Color,
+    textSecondary: Color,
+    cardBgColor: Color,
+    cardBorderColor: Color,
+    onAppClick: ((com.example.data.AppEntity) -> Unit)? = null
+) {
+    val users by viewModel.developers.collectAsStateWithLifecycle()
+    val adminUids = remember(users) { users.filter { it.role.equals("admin", true) }.map { it.uid }.toSet() }
+    androidx.compose.runtime.CompositionLocalProvider(LocalAdminUids provides adminUids) {
+        ChatTabContentInner(
+        viewModel = viewModel,
+        isLoggedIn = isLoggedIn,
+        isDarkMode = isDarkMode,
+        accentGreen = accentGreen,
+        textPrimary = textPrimary,
+        textSecondary = textSecondary,
+        cardBgColor = cardBgColor,
+        cardBorderColor = cardBorderColor,
+        onAppClick = onAppClick
+        )
+    }
+}
+
+@Composable
+private fun ChatTabContentInner(
     viewModel: StoreViewModel,
     isLoggedIn: Boolean,
     isDarkMode: Boolean,
@@ -80,6 +120,8 @@ fun ChatTabContent(
     val developers by viewModel.developers.collectAsStateWithLifecycle()
     val activePeer by viewModel.activeChatPeer.collectAsStateWithLifecycle()
     val myUid by viewModel.userUid.collectAsStateWithLifecycle()
+    val myRoleNow by viewModel.userRole.collectAsStateWithLifecycle()
+    val iAmAdmin = myRoleNow.equals("admin", true)
 
     var section by remember { mutableStateOf(0) } // 0 inbox · 1 global · 2 developers
     var search by remember { mutableStateOf("") }
@@ -123,7 +165,7 @@ fun ChatTabContent(
             Text(tr("chat_sub"), color = textSecondary, fontSize = 12.sp)
         }
         ChatTabs(
-            labels = listOf(tr("chat_inbox"), tr("chat_global"), tr("chat_developers")),
+            labels = listOf(tr("chat_inbox"), tr("chat_global"), if (iAmAdmin) "All users" else tr("chat_developers")),
             selected = section, isDark = isDarkMode, accent = accentGreen, textSecondary = textSecondary,
             onSelect = { section = it }
         )
@@ -141,6 +183,7 @@ fun ChatTabContent(
                     cardBgColor = cardBgColor, cardBorderColor = cardBorderColor, onAppClick = onAppClick
                 )
                 else -> DevelopersList(
+                    iAmAdmin = iAmAdmin,
                     developers = developers, myUid = myUid, search = search, onSearch = { search = it },
                     viewModel = viewModel, isDark = isDarkMode, accent = accentGreen,
                     textPrimary = textPrimary, textSecondary = textSecondary
@@ -226,8 +269,11 @@ private fun InboxList(
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(liveName.ifBlank { "User" }, color = textPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                            Text(liveName.ifBlank { "User" }, color = textPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                            AdminTick(thread.otherUid)
+                        }
                         Text(shortAgo(thread.updatedAt), color = if (thread.unread > 0) accent else textSecondary, fontSize = 11.sp)
                     }
                     Text(
@@ -255,12 +301,14 @@ private fun InboxList(
 
 @Composable
 private fun DevelopersList(
+    iAmAdmin: Boolean = false,
     developers: List<UserEntity>, myUid: String, search: String, onSearch: (String) -> Unit, viewModel: StoreViewModel,
     isDark: Boolean, accent: Color, textPrimary: Color, textSecondary: Color
 ) {
-    val list = remember(developers, search, myUid) {
+    val list = remember(developers, search, myUid, iAmAdmin) {
         developers
-            .filter { it.isDeveloper || it.role.equals("admin", true) }
+            // Admins can message ANY user; everyone else sees developers + admins.
+            .filter { iAmAdmin || it.isDeveloper || it.role.equals("admin", true) }
             .filter { it.uid != myUid }
             .filter {
                 search.isBlank() || it.devName.contains(search, true) || it.displayName.contains(search, true) ||
@@ -387,9 +435,12 @@ private fun ChatThreadScreen(
                 AvatarBubble(peer.profilePhotoUrl, peerName, accent, isDarkMode, 42.dp)
                 Spacer(Modifier.width(10.dp))
                 Column {
-                    Text(peerName, color = textPrimary, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(peerName, color = textPrimary, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                        AdminTick(peer.uid, 17.dp)
+                    }
                     Text(
-                        if (peerTyping) tr("chat_typing") else if (peer.isDeveloper) "Developer" else "Member",
+                        if (peerTyping) tr("chat_typing") else if (peer.role.equals("admin", true)) "DarkStore Admin" else if (peer.isDeveloper) "Developer" else "Member",
                         color = if (peerTyping) accent else textSecondary, fontSize = 11.sp,
                         fontWeight = if (peerTyping) FontWeight.SemiBold else FontWeight.Normal
                     )
@@ -792,8 +843,10 @@ private fun MessageBubble(
         }
         Column(horizontalAlignment = if (mine) Alignment.End else Alignment.Start) {
             if (!mine && isGlobal && first) {
-                Text(m.senderName.ifBlank { "User" }, color = accent, fontSize = 11.sp, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(start = 6.dp, bottom = 2.dp))
+                Row(Modifier.padding(start = 6.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(m.senderName.ifBlank { "User" }, color = accent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    AdminTick(m.senderId, 12.dp)
+                }
             }
             val bubbleMod = Modifier
                 .widthIn(max = 290.dp)

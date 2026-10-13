@@ -590,6 +590,58 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // ---------------- DarkStore reports (user feedback -> admin) ----------------
+    private val _darkstoreReports = MutableStateFlow<List<com.example.data.DarkstoreReport>>(emptyList())
+    val darkstoreReports: StateFlow<List<com.example.data.DarkstoreReport>> = _darkstoreReports.asStateFlow()
+    private var lastReportAt = 0L
+
+    fun refreshDarkstoreReports() {
+        viewModelScope.launch(Dispatchers.IO) {
+            FirebaseAuthService.refreshIdTokenIfNeeded(getApplication())
+            _darkstoreReports.value = FirebaseAuthService.fetchDarkstoreReports()
+        }
+    }
+
+    fun submitDarkstoreReport(category: String, message: String, onFinished: (Boolean, String) -> Unit) {
+        val text = message.trim()
+        val uid = userUid.value
+        if (!isLoggedIn.value || uid.isBlank()) { onFinished(false, "Please sign in to send a report."); return }
+        if (text.length < 10) { onFinished(false, "Please describe the problem in at least 10 characters."); return }
+        val now = System.currentTimeMillis()
+        if (now - lastReportAt < 60_000L) { onFinished(false, "Please wait a minute before sending another report."); return }
+        lastReportAt = now
+        viewModelScope.launch(Dispatchers.IO) {
+            FirebaseAuthService.refreshIdTokenIfNeeded(getApplication())
+            val app = getApplication<Application>()
+            val ver = try { app.packageManager.getPackageInfo(app.packageName, 0).versionName ?: "" } catch (e: Exception) { "" }
+            val report = com.example.data.DarkstoreReport(
+                id = "rep_${now}_${(1000..9999).random()}",
+                category = category,
+                message = text.take(1000),
+                reporterUid = uid,
+                reporterEmail = userEmail.value,
+                reporterName = userName.value,
+                appVersion = ver,
+                device = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} / Android ${android.os.Build.VERSION.RELEASE}",
+                createdAt = now
+            )
+            val ok = FirebaseAuthService.submitDarkstoreReport(report)
+            if (!ok) lastReportAt = 0L
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                onFinished(ok, if (ok) "Report sent. Thank you for helping improve DarkStore!" else "Could not send the report. Check your connection and try again.")
+            }
+        }
+    }
+
+    fun resolveDarkstoreReport(id: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            FirebaseAuthService.refreshIdTokenIfNeeded(getApplication())
+            if (FirebaseAuthService.deleteDarkstoreReport(id)) {
+                _darkstoreReports.value = _darkstoreReports.value.filterNot { it.id == id }
+            }
+        }
+    }
+
     fun refreshAuditLog() {
         viewModelScope.launch(Dispatchers.IO) {
             _auditLog.value = FirebaseService.fetchAuditLog(150)
@@ -3224,7 +3276,8 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         )
         startNetworkMonitoring()
         refreshMarketplace()
-        refreshSubmissions()
+        // Only developers/admins ever need the submissions list - skip the download for everyone else.
+        if (_isLoggedIn.value && (_isDeveloper.value || _userRole.value.equals("admin", true))) refreshSubmissions()
         syncUserProfile()
         startInstalledAppMonitoring()
         clearOrphanedDownloadRecords()
