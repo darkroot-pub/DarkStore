@@ -45,33 +45,45 @@
   @keyframes r{to{transform:rotate(360deg)}}
   @media (prefers-reduced-motion: reduce){ .spin{animation:none; border-top-color:var(--line); border-right-color:var(--blue)} }
   .hint{font-size:14px; margin:16px 0 0}
+  .appicon{width:112px; height:112px; margin:0 auto 14px; border-radius:28px; background:var(--blue-soft); display:grid; place-items:center; overflow:hidden; border:1px solid var(--line)}
+  .appicon img{width:100%; height:100%; object-fit:cover; display:block}
+  .appicon.fallback{background:#fff}
+  .appicon.fallback img{width:86%; height:86%; object-fit:contain}
+  .meta{display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin:2px 0 6px}
+  .chip{font-size:13.5px; padding:4px 11px; border-radius:999px; background:var(--blue-soft); color:var(--blue); font-weight:500}
+  .by{font-size:15px; margin:0 0 14px}
+  .shared{font-size:13px; letter-spacing:.06em; text-transform:uppercase; color:var(--steel); margin:0 0 10px; font-weight:600}
+  .skel{display:inline-block; width:150px; height:26px; border-radius:8px; background:var(--line); vertical-align:middle}
+  .sep{margin:22px 0 2px; font-size:14px; color:var(--steel)}
+  .brandmini{display:flex; align-items:center; justify-content:center; gap:8px; margin-top:20px; font-size:13px; color:var(--steel)}
+  .brandmini img{width:20px; height:20px; border-radius:6px; background:#fff}
   [hidden]{display:none !important}
 </style>
 </head>
 <body>
 <main class="card" aria-live="polite">
-  <div class="logo"><img src="icon.png" alt="DarkRoot Store"></div>
 
-  <!-- state 1: trying to open the app -->
-  <section id="opening" hidden>
-    <div class="spin" role="status" aria-label="Opening"></div>
-    <h1>Opening DarkRoot Store…</h1>
-    <p>If nothing happens, DarkRoot Store may not be installed yet.</p>
-  </section>
+  <!-- shared app preview (name + icon are loaded from the store) -->
+  <section id="app" hidden>
+    <p class="shared">Shared with you</p>
+    <div class="appicon" id="appicon"><img id="applogo" alt="" referrerpolicy="no-referrer"></div>
+    <h1 id="appname"><span class="skel"></span></h1>
+    <p class="by" id="appby"></p>
+    <div class="meta" id="appmeta"></div>
 
-  <!-- state 2: app not found / desktop / fallback -->
-  <section id="install" hidden>
-    <h1 id="t-install">Get DarkRoot Store to view this app</h1>
-    <p id="p-install">Someone shared an app with you. Install DarkRoot Store, then open this link again.</p>
-    <span class="appid" id="appid" hidden></span>
-    <a class="btn primary" id="dl" href="#" rel="noopener">Download DarkRoot Store</a>
-    <a class="btn ghost" id="openagain" href="#" hidden>I already have it, open the app</a>
+    <a class="btn primary" id="open" href="#">Open in DarkRoot Store</a>
+    <p class="hint" id="status" role="status"></p>
+
+    <div id="getbox" hidden>
+      <p class="sep" id="getlabel">Don't have DarkRoot Store yet?</p>
+      <a class="btn ghost" id="dl" href="#" rel="noopener">Download DarkRoot Store</a>
+    </div>
     <button class="btn ghost" id="copy" type="button">Copy link</button>
-    <p class="hint" id="hint-android" hidden>After installing, open this link again and the app will open straight to the shared app.</p>
+    <div class="brandmini"><img src="favicon.png" alt="">DarkRoot Store</div>
   </section>
 
-  <!-- state 3: bad link -->
   <section id="bad" hidden>
+    <div class="logo"><img src="icon.png" alt="DarkRoot Store"></div>
     <h1>This link isn't valid</h1>
     <p>Ask the person who sent it to share the app again.</p>
     <a class="btn primary" href="./">Go to DarkRoot Store</a>
@@ -82,28 +94,52 @@
 (function(){
   // ---- CHANGE THESE if needed ----
   var DOWNLOAD_URL = "https://drive.google.com/file/d/1NB05sktsGJD8h4Hyv6ciVeUuITukQ1-X/view?usp=drivesdk";
-  var PACKAGE = "com.darkstore.darkroot";   // Android package of the app
-  var SCHEME  = "darkstore";                // link scheme the app listens for
+  var PACKAGE = "com.darkstore.darkroot";
+  var SCHEME  = "darkstore";
+  var RTDB    = "https://dark-store-6836d-default-rtdb.asia-southeast1.firebasedatabase.app/";
 
   var $ = function(id){ return document.getElementById(id); };
-  function show(id){ ["opening","install","bad"].forEach(function(s){ $(s).hidden = (s !== id); }); }
-
   var q = new URLSearchParams(location.search);
   var id = (q.get("id") || "").trim();
-  // Only simple ids are allowed - nothing else is ever put into a URL.
-  if (!/^[A-Za-z0-9_.\-]{1,120}$/.test(id)) { show("bad"); return; }
+  if (!/^[A-Za-z0-9_.\-]{1,120}$/.test(id)) { $("bad").hidden = false; return; }
+  $("app").hidden = false;
 
   var isAndroid = /Android/i.test(navigator.userAgent);
-  var cameBack  = q.get("fb") === "1";            // Chrome sent us back: app not installed
+  var notInstalled = q.get("fb") === "1";   // Chrome sent us back here: the app isn't installed
+  var shareUrl = location.origin + location.pathname + "?id=" + encodeURIComponent(id);
+  var fallback = shareUrl + "&fb=1";
+  var intent = "intent://app/" + encodeURIComponent(id) + "#Intent;scheme=" + SCHEME + ";package=" + PACKAGE +
+               ";S.browser_fallback_url=" + encodeURIComponent(fallback) + ";end";
 
   $("dl").href = DOWNLOAD_URL;
-  $("appid").textContent = id; $("appid").hidden = false;
+  $("open").href = isAndroid ? intent : SCHEME + "://app/" + encodeURIComponent(id);
 
-  var deep = SCHEME + "://app/" + encodeURIComponent(id);
-  $("openagain").href = deep;
+  // ---- 1. show the shared app (name, icon, developer) ----
+  var logoEl = $("applogo"), iconBox = $("appicon");
+  function genericIcon(){ iconBox.classList.add("fallback"); logoEl.src = "icon.png"; logoEl.alt = "DarkRoot Store"; }
+  function chip(t){ var s = document.createElement("span"); s.className = "chip"; s.textContent = t; $("appmeta").appendChild(s); }
+  function unknownApp(){ $("appname").textContent = "An app on DarkRoot Store"; genericIcon(); }
 
-  // Link shown when the user taps "Copy link": the page they are on, without the fallback flag.
-  var shareUrl = location.origin + location.pathname + "?id=" + encodeURIComponent(id);
+  var ctrl = ("AbortController" in window) ? new AbortController() : null;
+  var timer = setTimeout(function(){ if (ctrl) ctrl.abort(); }, 7000);
+  fetch(RTDB + "apps/" + encodeURIComponent(id) + ".json", ctrl ? {signal: ctrl.signal} : {})
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(a){
+      clearTimeout(timer);
+      if (!a || a.isApproved === false || a.isSuspended === true || !a.name) { unknownApp(); return; }
+      document.title = a.name + " on DarkRoot Store";
+      $("appname").textContent = a.name;
+      if (a.developer) $("appby").textContent = "by " + a.developer;
+      if (a.category) chip(a.category);
+      if (a.rating && parseFloat(a.rating) > 0) chip("★ " + parseFloat(a.rating).toFixed(1));
+      if (a.version) chip("v" + a.version);
+      if (typeof a.logo === "string" && /^https:\/\//i.test(a.logo)) {
+        logoEl.onerror = genericIcon; logoEl.alt = a.name + " icon"; logoEl.src = a.logo;
+      } else genericIcon();
+    })
+    .catch(function(){ clearTimeout(timer); unknownApp(); });
+
+  // ---- 2. copy link ----
   $("copy").addEventListener("click", function(){
     var b = this;
     function done(){ b.textContent = "Link copied"; setTimeout(function(){ b.textContent = "Copy link"; }, 1800); }
@@ -111,28 +147,36 @@
     else { var t = document.createElement("textarea"); t.value = shareUrl; document.body.appendChild(t); t.select(); try{document.execCommand("copy");}catch(e){} t.remove(); done(); }
   });
 
-  function showInstall(){
-    show("install");
-    if (isAndroid) { $("openagain").hidden = false; $("hint-android").hidden = false; }
-    else {
-      $("t-install").textContent = "DarkRoot Store is an Android app";
-      $("p-install").textContent = "Open this link on your Android phone to view the shared app, or download the APK here.";
-    }
+  // ---- 3. open automatically when DarkStore is installed ----
+  var status = $("status");
+  function showGet(label){ $("getbox").hidden = false; if (label) $("getlabel").textContent = label; }
+
+  if (!isAndroid) {
+    $("open").hidden = true;
+    status.textContent = "DarkRoot Store is an Android app. Open this link on your Android phone to view the app.";
+    showGet("Get DarkRoot Store for Android");
+    return;
+  }
+  if (notInstalled) {
+    status.textContent = "DarkRoot Store doesn't seem to be installed on this phone.";
+    showGet("Install DarkRoot Store first");
+    return;
   }
 
-  if (!isAndroid || cameBack) { showInstall(); return; }
+  status.textContent = "Opening DarkRoot Store…";
+  var opened = false;
+  document.addEventListener("visibilitychange", function(){ if (document.hidden) opened = true; });
+  window.addEventListener("pagehide", function(){ opened = true; });
 
-  // Android: ask Chrome to open the app. If it isn't installed, Chrome loads the fallback URL
-  // (this same page with fb=1), which shows the download card.
-  var fallback = location.origin + location.pathname + "?id=" + encodeURIComponent(id) + "&fb=1";
-  var intent = "intent://app/" + encodeURIComponent(id) +
-    "#Intent;scheme=" + SCHEME + ";package=" + PACKAGE +
-    ";S.browser_fallback_url=" + encodeURIComponent(fallback) + ";end";
+  // Chrome opens the app straight away when it is installed (no tap needed).
+  setTimeout(function(){ location.replace(intent); }, 200);
 
-  show("opening");
-  setTimeout(function(){ location.href = intent; }, 350);
-  // Browsers that ignore intent links: show the download card after a moment.
-  setTimeout(function(){ if (!document.hidden) showInstall(); }, 2600);
+  setTimeout(function(){
+    if (opened) { status.textContent = "Opened in DarkRoot Store."; return; }
+    // Still here: some in-app browsers block automatic opening - one tap on the button always works.
+    status.textContent = "Tap “Open in DarkRoot Store”. If your browser blocks it, use the ⋮ menu → Open in Chrome.";
+    showGet();
+  }, 2600);
 })();
 </script>
 </body>
