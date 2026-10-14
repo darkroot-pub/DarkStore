@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Open in DarkRoot Store</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#f4f7fb">
+<meta property="og:title" content="Open this app in DarkRoot Store">
+<meta property="og:description" content="Someone shared an app with you.">
+<meta property="og:image" content="icon.png">
+<link rel="icon" href="favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#f4f7fb; --plate:#ffffff; --ink:#0b1020; --steel:#586274; --line:#dbe3ef;
+    --blue:#1f6feb; --blue-ink:#ffffff; --blue-soft:#e3eeff;
+    --display:'Bricolage Grotesque','Segoe UI',system-ui,sans-serif;
+    --body:'IBM Plex Sans','Segoe UI',system-ui,sans-serif;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --paper:#080b12; --ink:#eef2f9; --steel:#9aa6ba; --line:#1c2433; --blue:#3b8bff; --blue-ink:#06101f; --blue-soft:#0f1d36; color-scheme: dark; }
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; min-height:100vh; background:var(--paper); color:var(--ink); font:400 17px/1.55 var(--body);
+    display:grid; place-items:center;
+    padding:calc(24px + env(safe-area-inset-top)) calc(20px + env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) calc(20px + env(safe-area-inset-left));
+  }
+  :focus-visible{outline:3px solid var(--blue); outline-offset:3px; border-radius:8px}
+  .card{width:100%; max-width:440px; background:color-mix(in srgb, var(--paper) 70%, var(--plate) 30%); border:1px solid var(--line); border-radius:28px; padding:30px 26px 26px; text-align:center; box-shadow:0 30px 60px -36px rgba(10,20,50,.5)}
+  .logo{width:104px; height:104px; margin:0 auto 14px; border-radius:26px; background:#fff; display:grid; place-items:center; border:1px solid var(--line)}
+  .logo img{width:88%; height:88%; object-fit:contain}
+  h1{font:800 26px/1.15 var(--display); letter-spacing:-.01em; margin:0 0 8px}
+  p{margin:0 0 18px; color:var(--steel)}
+  .appid{display:inline-block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:500 14px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--blue-soft); color:var(--blue); padding:5px 12px; border-radius:999px; margin-bottom:18px}
+  .btn{display:flex; width:100%; align-items:center; justify-content:center; gap:10px; font:600 17px var(--body); padding:15px 18px; border-radius:14px; text-decoration:none; border:0; cursor:pointer; margin-top:12px}
+  .primary{background:var(--blue); color:var(--blue-ink)}
+  .ghost{background:transparent; color:var(--ink); border:1.5px solid var(--line)}
+  .ghost:hover{border-color:var(--blue)}
+  .spin{width:30px; height:30px; margin:6px auto 14px; border-radius:50%; border:3px solid var(--line); border-top-color:var(--blue); animation:r .8s linear infinite}
+  @keyframes r{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion: reduce){ .spin{animation:none; border-top-color:var(--line); border-right-color:var(--blue)} }
+  .hint{font-size:14px; margin:16px 0 0}
+  [hidden]{display:none !important}
+</style>
+</head>
+<body>
+<main class="card" aria-live="polite">
+  <div class="logo"><img src="icon.png" alt="DarkRoot Store"></div>
+
+  <!-- state 1: trying to open the app -->
+  <section id="opening" hidden>
+    <div class="spin" role="status" aria-label="Opening"></div>
+    <h1>Opening DarkRoot Store…</h1>
+    <p>If nothing happens, DarkRoot Store may not be installed yet.</p>
+  </section>
+
+  <!-- state 2: app not found / desktop / fallback -->
+  <section id="install" hidden>
+    <h1 id="t-install">Get DarkRoot Store to view this app</h1>
+    <p id="p-install">Someone shared an app with you. Install DarkRoot Store, then open this link again.</p>
+    <span class="appid" id="appid" hidden></span>
+    <a class="btn primary" id="dl" href="#" rel="noopener">Download DarkRoot Store</a>
+    <a class="btn ghost" id="openagain" href="#" hidden>I already have it, open the app</a>
+    <button class="btn ghost" id="copy" type="button">Copy link</button>
+    <p class="hint" id="hint-android" hidden>After installing, open this link again and the app will open straight to the shared app.</p>
+  </section>
+
+  <!-- state 3: bad link -->
+  <section id="bad" hidden>
+    <h1>This link isn't valid</h1>
+    <p>Ask the person who sent it to share the app again.</p>
+    <a class="btn primary" href="./">Go to DarkRoot Store</a>
+  </section>
+</main>
+
+<script>
+(function(){
+  // ---- CHANGE THESE if needed ----
+  var DOWNLOAD_URL = "https://drive.google.com/file/d/1NB05sktsGJD8h4Hyv6ciVeUuITukQ1-X/view?usp=drivesdk";
+  var PACKAGE = "com.darkstore.darkroot";   // Android package of the app
+  var SCHEME  = "darkstore";                // link scheme the app listens for
+
+  var $ = function(id){ return document.getElementById(id); };
+  function show(id){ ["opening","install","bad"].forEach(function(s){ $(s).hidden = (s !== id); }); }
+
+  var q = new URLSearchParams(location.search);
+  var id = (q.get("id") || "").trim();
+  // Only simple ids are allowed - nothing else is ever put into a URL.
+  if (!/^[A-Za-z0-9_.\-]{1,120}$/.test(id)) { show("bad"); return; }
+
+  var isAndroid = /Android/i.test(navigator.userAgent);
+  var cameBack  = q.get("fb") === "1";            // Chrome sent us back: app not installed
+
+  $("dl").href = DOWNLOAD_URL;
+  $("appid").textContent = id; $("appid").hidden = false;
+
+  var deep = SCHEME + "://app/" + encodeURIComponent(id);
+  $("openagain").href = deep;
+
+  // Link shown when the user taps "Copy link": the page they are on, without the fallback flag.
+  var shareUrl = location.origin + location.pathname + "?id=" + encodeURIComponent(id);
+  $("copy").addEventListener("click", function(){
+    var b = this;
+    function done(){ b.textContent = "Link copied"; setTimeout(function(){ b.textContent = "Copy link"; }, 1800); }
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(shareUrl).then(done, done);
+    else { var t = document.createElement("textarea"); t.value = shareUrl; document.body.appendChild(t); t.select(); try{document.execCommand("copy");}catch(e){} t.remove(); done(); }
+  });
+
+  function showInstall(){
+    show("install");
+    if (isAndroid) { $("openagain").hidden = false; $("hint-android").hidden = false; }
+    else {
+      $("t-install").textContent = "DarkRoot Store is an Android app";
+      $("p-install").textContent = "Open this link on your Android phone to view the shared app, or download the APK here.";
+    }
+  }
+
+  if (!isAndroid || cameBack) { showInstall(); return; }
+
+  // Android: ask Chrome to open the app. If it isn't installed, Chrome loads the fallback URL
+  // (this same page with fb=1), which shows the download card.
+  var fallback = location.origin + location.pathname + "?id=" + encodeURIComponent(id) + "&fb=1";
+  var intent = "intent://app/" + encodeURIComponent(id) +
+    "#Intent;scheme=" + SCHEME + ";package=" + PACKAGE +
+    ";S.browser_fallback_url=" + encodeURIComponent(fallback) + ";end";
+
+  show("opening");
+  setTimeout(function(){ location.href = intent; }, 350);
+  // Browsers that ignore intent links: show the download card after a moment.
+  setTimeout(function(){ if (!document.hidden) showInstall(); }, 2600);
+})();
+</script>
+</body>
+</html>
