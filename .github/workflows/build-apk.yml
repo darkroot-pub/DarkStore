@@ -59,6 +59,15 @@ jobs:
       - name: Build debug APK
         run: gradle assembleDebug --stacktrace
 
+      - name: Show APK signing fingerprints (needed for assetlinks.json)
+        run: |
+          for apk in app/build/outputs/apk/debug/*.apk; do
+            echo "### Signing certificate of $(basename "$apk")" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            keytool -printcert -jarfile "$apk" | grep -E "Owner|SHA1|SHA256" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          done
+
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:

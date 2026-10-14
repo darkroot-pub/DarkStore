@@ -105,11 +105,8 @@
   $("app").hidden = false;
 
   var isAndroid = /Android/i.test(navigator.userAgent);
-  var notInstalled = q.get("fb") === "1";   // Chrome sent us back here: the app isn't installed
   var shareUrl = location.origin + location.pathname + "?id=" + encodeURIComponent(id);
-  var fallback = shareUrl + "&fb=1";
-  var intent = "intent://app/" + encodeURIComponent(id) + "#Intent;scheme=" + SCHEME + ";package=" + PACKAGE +
-               ";S.browser_fallback_url=" + encodeURIComponent(fallback) + ";end";
+  var intent = "intent://app/" + encodeURIComponent(id) + "#Intent;scheme=" + SCHEME + ";package=" + PACKAGE + ";end";
 
   $("dl").href = DOWNLOAD_URL;
   $("open").href = isAndroid ? intent : SCHEME + "://app/" + encodeURIComponent(id);
@@ -147,36 +144,21 @@
     else { var t = document.createElement("textarea"); t.value = shareUrl; document.body.appendChild(t); t.select(); try{document.execCommand("copy");}catch(e){} t.remove(); done(); }
   });
 
-  // ---- 3. open automatically when DarkStore is installed ----
+  // ---- 3. open the app ----
+  // The page always shows the shared app and an "Open in DarkRoot Store" button.
+  // People who don't have the app yet see the download button below it.
   var status = $("status");
-  function showGet(label){ $("getbox").hidden = false; if (label) $("getlabel").textContent = label; }
+  $("getbox").hidden = false;
 
   if (!isAndroid) {
     $("open").hidden = true;
-    status.textContent = "DarkRoot Store is an Android app. Open this link on your Android phone to view the app.";
-    showGet("Get DarkRoot Store for Android");
+    status.textContent = "DarkRoot Store is an Android app. Open this link on your Android phone.";
     return;
   }
-  if (notInstalled) {
-    status.textContent = "DarkRoot Store doesn't seem to be installed on this phone.";
-    showGet("Install DarkRoot Store first");
-    return;
-  }
+  status.textContent = "";
 
-  status.textContent = "Opening DarkRoot Store…";
-  var opened = false;
-  document.addEventListener("visibilitychange", function(){ if (document.hidden) opened = true; });
-  window.addEventListener("pagehide", function(){ opened = true; });
-
-  // Chrome opens the app straight away when it is installed (no tap needed).
-  setTimeout(function(){ location.replace(intent); }, 200);
-
-  setTimeout(function(){
-    if (opened) { status.textContent = "Opened in DarkRoot Store."; return; }
-    // Still here: some in-app browsers block automatic opening - one tap on the button always works.
-    status.textContent = "Tap “Open in DarkRoot Store”. If your browser blocks it, use the ⋮ menu → Open in Chrome.";
-    showGet();
-  }, 2600);
+  // Best effort: when the browser allows it, open the app straight away.
+  setTimeout(function(){ location.href = intent; }, 250);
 })();
 </script>
 </body>

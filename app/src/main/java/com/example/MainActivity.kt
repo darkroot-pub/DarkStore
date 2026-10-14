@@ -9998,6 +9998,30 @@ fun ConsoleTabContent(
                     val dsReports by viewModel.darkstoreReports.collectAsStateWithLifecycle()
                     LaunchedEffect(Unit) { viewModel.refreshDarkstoreReports() }
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        // ── Signing fingerprint + share-link verification (for assetlinks.json) ──
+                        val fpCtx = LocalContext.current
+                        val fp = remember { com.example.utils.SigningInfo.fingerprints(fpCtx) }
+                        val linkStatus = remember { com.example.utils.SigningInfo.linkState(fpCtx, "darkrootstore.vercel.app") }
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                            border = BorderStroke(1.dp, accentGreen.copy(alpha = 0.4f))
+                        ) {
+                            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text("Share link check", color = textPrimary, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+                                Text("Link status: $linkStatus", color = textSecondary, fontSize = 12.sp)
+                                Text("This build is signed with (SHA-256):", color = textSecondary, fontSize = 11.sp)
+                                Text(fp?.sha256 ?: "unavailable", color = textPrimary, fontSize = 11.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                                Text("SHA-1: ${fp?.sha1 ?: "unavailable"}", color = textSecondary, fontSize = 10.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                                Text("Put the SHA-256 in website/.well-known/assetlinks.json, redeploy the site, then reinstall the app.", color = textSecondary, fontSize = 11.sp)
+                                TextButton(onClick = {
+                                    val cm = fpCtx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                    cm.setPrimaryClip(android.content.ClipData.newPlainText("SHA-256", fp?.sha256 ?: ""))
+                                    Toast.makeText(fpCtx, "SHA-256 copied", Toast.LENGTH_SHORT).show()
+                                }) { Text("Copy SHA-256", color = accentGreen, fontSize = 12.sp) }
+                            }
+                        }
                         Text("DarkStore reports (${dsReports.size})", color = textPrimary, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
                         if (dsReports.isEmpty()) {
                             Text("No reports from users yet.", color = textSecondary, fontSize = 12.sp)
