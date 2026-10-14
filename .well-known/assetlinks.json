@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.darkstore.darkroot",
+      "sha256_cert_fingerprints": [
+        "DF:45:EE:CD:F3:B9:26:36:29:22:FC:DE:61:66:12:4F:24:6F:46:DA:AD:20:A3:08:3B:82:5D:02:3C:67:57:63"
+      ]
+    }
+  }
+]
