@@ -642,6 +642,12 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // ---------------- Share links: app id waiting to be opened ----------------
+    private val _pendingAppLink = MutableStateFlow<String?>(null)
+    val pendingAppLink: StateFlow<String?> = _pendingAppLink.asStateFlow()
+    fun setPendingAppLink(id: String?) { _pendingAppLink.value = id }
+    fun consumePendingAppLink() { _pendingAppLink.value = null }
+
     fun refreshAuditLog() {
         viewModelScope.launch(Dispatchers.IO) {
             _auditLog.value = FirebaseService.fetchAuditLog(150)

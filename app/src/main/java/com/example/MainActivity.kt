@@ -171,8 +171,22 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleShareLink(intent)
+    }
+
+    /** darkstore://app/<id> (or the website link) -> remember the app id; the dashboard opens it. */
+    private fun handleShareLink(intent: Intent?) {
+        val id = com.example.utils.ShareLinks.parseAppId(intent?.data) ?: return
+        viewModel.setPendingAppLink(id)
+        intent?.data = null // don't re-process on the next onCreate
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (savedInstanceState == null) handleShareLink(intent)
         
         // Optimize Coil Image Loading cache to maximize interface smoothness
         try {
@@ -1069,6 +1083,23 @@ fun PlayStoreMainDashboard(
     }
 
     // Refresh installed app info from PackageManager when details dialog is shown
+    // Open an app that was shared with a link (darkstore://app/<id>)
+    val pendingAppLink by viewModel.pendingAppLink.collectAsStateWithLifecycle()
+    val linkContext = LocalContext.current
+    LaunchedEffect(pendingAppLink, apps) {
+        val wanted = pendingAppLink ?: return@LaunchedEffect
+        val match = apps.find { it.id.equals(wanted, true) || it.packageName.equals(wanted, true) }
+        if (match != null) {
+            showDetailsApp = match
+            viewModel.consumePendingAppLink()
+        } else {
+            // The catalog may still be loading - give it a few seconds before giving up.
+            kotlinx.coroutines.delay(5000)
+            Toast.makeText(linkContext, "That app isn't available in DarkStore (it may have been removed).", Toast.LENGTH_LONG).show()
+            viewModel.consumePendingAppLink()
+        }
+    }
+
     LaunchedEffect(showDetailsApp) {
         if (showDetailsApp != null) {
             viewModel.refreshInstalledApps()
@@ -11719,7 +11750,7 @@ fun AppDetailsDialog(
             color = Color.Transparent
         ) {
             Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
-                // ── Top bar: glass back button + category chip (no share button) ──
+                // ── Top bar: glass back button + share button + category chip ──
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -11729,6 +11760,14 @@ fun AppDetailsDialog(
                         contentAlignment = Alignment.Center
                     ) { Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = textPrimary, modifier = Modifier.size(21.dp)) }
                     Spacer(Modifier.weight(1f))
+                    val shareCtx = LocalContext.current
+                    Box(
+                        Modifier.size(42.dp).glass(isDarkMode, CircleShape, 3.dp).clickable {
+                            com.example.utils.ShareLinks.share(shareCtx, app.id, app.packageName, app.name)
+                        }.testTag("share_app_button"),
+                        contentAlignment = Alignment.Center
+                    ) { Icon(Icons.Default.Share, contentDescription = "Share app", tint = textPrimary, modifier = Modifier.size(20.dp)) }
+                    Spacer(Modifier.width(10.dp))
                     Box(
                         Modifier.clip(RoundedCornerShape(14.dp)).background(accentGreen.copy(alpha = 0.14f))
                             .border(1.dp, accentGreen.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
