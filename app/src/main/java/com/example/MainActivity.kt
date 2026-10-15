@@ -1100,6 +1100,23 @@ fun PlayStoreMainDashboard(
         }
     }
 
+    // Shown when the security system (or the admin) suspended this account
+    val suspendedNotice by viewModel.suspendedNotice.collectAsStateWithLifecycle()
+    suspendedNotice?.let { why ->
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissSuspendedNotice() },
+            icon = { Icon(Icons.Default.Block, contentDescription = null, tint = Color(0xFFEF4444)) },
+            title = { Text("Your account is suspended", fontWeight = FontWeight.ExtraBold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(why, fontSize = 14.sp)
+                    Text("You have been signed out. If you think this is a mistake, contact the DarkStore admin.", fontSize = 12.sp)
+                }
+            },
+            confirmButton = { TextButton(onClick = { viewModel.dismissSuspendedNotice() }) { Text("OK") } }
+        )
+    }
+
     LaunchedEffect(showDetailsApp) {
         if (showDetailsApp != null) {
             viewModel.refreshInstalledApps()
@@ -7893,6 +7910,132 @@ fun SettingsTabContent(
         }
 
         // ----------------------------------------------------
+        // REFERRAL CARD: invite friends -> unlock Premium (admin controls it)
+        // ----------------------------------------------------
+        item {
+            val refCfg by viewModel.referralConfig.collectAsStateWithLifecycle()
+            val refCode by viewModel.myReferralCode.collectAsStateWithLifecycle()
+            val refStats by viewModel.myReferralStats.collectAsStateWithLifecycle()
+            val usedRef by viewModel.usedReferral.collectAsStateWithLifecycle()
+            val refPremium by viewModel.isPremiumMember.collectAsStateWithLifecycle()
+            val refFreeMode by viewModel.isPremiumFreeMode.collectAsStateWithLifecycle()
+            val refRole by viewModel.userRole.collectAsStateWithLifecycle()
+            val refLoggedIn by viewModel.isLoggedIn.collectAsStateWithLifecycle()
+            LaunchedEffect(refLoggedIn) { viewModel.loadReferralData() }
+
+            if (refCfg.enabled && !refFreeMode && !refRole.equals("admin", true) && refLoggedIn) {
+                val gold = if (isDarkMode) Color(0xFFFBBF24) else Color(0xFFD97706)
+                var codeInput by remember { mutableStateOf("") }
+                var busy by remember { mutableStateOf(false) }
+                val rewardsReady = refStats.count >= (refStats.claimed + 1) * refCfg.required
+                val progressNow = (refStats.count - refStats.claimed * refCfg.required).coerceIn(0, refCfg.required)
+                val durationText = if (refCfg.rewardDays <= 0) "lifetime Premium" else "${refCfg.rewardDays} days of Premium"
+
+                Card(
+                    modifier = Modifier.fillMaxWidth().testTag("referral_card"),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                    border = BorderStroke(1.5.dp, gold.copy(alpha = 0.6f))
+                ) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Default.Share, null, tint = gold)
+                            Text("INVITE FRIENDS, GET PREMIUM", color = textPrimary, fontWeight = FontWeight.Black, fontSize = 13.sp, letterSpacing = 0.5.sp)
+                        }
+                        Text(
+                            "Invite ${refCfg.required} friend${if (refCfg.required > 1) "s" else ""} to DarkStore and unlock $durationText. Your friend enters your code after signing up.",
+                            color = textSecondary, fontSize = 12.sp, lineHeight = 16.sp
+                        )
+
+                        Text("$progressNow / ${refCfg.required} friends joined with your code", color = textPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        LinearProgressIndicator(
+                            progress = if (refCfg.required == 0) 0f else progressNow.toFloat() / refCfg.required,
+                            modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
+                            color = gold, trackColor = gold.copy(alpha = 0.15f)
+                        )
+
+                        Row(
+                            Modifier.fillMaxWidth().background(gold.copy(alpha = 0.08f), RoundedCornerShape(12.dp)).padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Your referral code", color = textSecondary, fontSize = 10.sp)
+                                Text(
+                                    if (refCode.isBlank()) "..." else refCode, color = textPrimary, fontSize = 20.sp, fontWeight = FontWeight.Black,
+                                    letterSpacing = 3.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                )
+                            }
+                            TextButton(enabled = refCode.isNotBlank(), onClick = {
+                                val cm = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                cm.setPrimaryClip(android.content.ClipData.newPlainText("referral", refCode))
+                                Toast.makeText(context, "Code copied", Toast.LENGTH_SHORT).show()
+                            }) { Text("Copy", color = gold) }
+                            TextButton(enabled = refCode.isNotBlank(), onClick = {
+                                val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(
+                                        android.content.Intent.EXTRA_TEXT,
+                                        "Join me on DarkRoot Store! After signing up, open Settings and enter my referral code $refCode.\nDownload: ${com.example.utils.ShareLinks.SHARE_BASE_URL}"
+                                    )
+                                }
+                                context.startActivity(android.content.Intent.createChooser(send, "Invite friends").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                            }) { Text("Share", color = gold, fontWeight = FontWeight.Bold) }
+                        }
+
+                        if (rewardsReady) {
+                            Button(
+                                enabled = !busy,
+                                modifier = Modifier.fillMaxWidth().testTag("claim_referral_premium"),
+                                colors = ButtonDefaults.buttonColors(containerColor = gold),
+                                onClick = {
+                                    busy = true
+                                    viewModel.claimReferralPremium { _, msg -> busy = false; Toast.makeText(context, msg, Toast.LENGTH_LONG).show() }
+                                }
+                            ) { Text(if (refPremium) "Claim another reward ($durationText)" else "Claim Premium ($durationText)", color = Color.White, fontWeight = FontWeight.Bold) }
+                        }
+                        if (refPremium && refStats.claimed > 0) {
+                            Text(
+                                if (refStats.premiumUntil > 0) "Premium active until " + java.text.SimpleDateFormat("dd MMM yyyy", java.util.Locale.getDefault()).format(java.util.Date(refStats.premiumUntil))
+                                else "Premium unlocked for life with referrals.",
+                                color = gold, fontSize = 12.sp, fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        Divider(color = cardBorderColor.copy(alpha = 0.5f))
+                        if (usedRef) {
+                            Text("You joined with a friend's code. Thank you!", color = textSecondary, fontSize = 12.sp)
+                        } else {
+                            Text("Were you invited? Enter your friend's code (new accounts only, within ${refCfg.accountWindowDays} days of signing up):", color = textSecondary, fontSize = 11.sp)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedTextField(
+                                    value = codeInput,
+                                    onValueChange = { codeInput = it.uppercase().filter { c -> c.isLetterOrDigit() }.take(8) },
+                                    singleLine = true,
+                                    placeholder = { Text("8-character code") },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = gold, cursorColor = gold)
+                                )
+                                Button(
+                                    enabled = !busy && codeInput.length == 8,
+                                    colors = ButtonDefaults.buttonColors(containerColor = gold),
+                                    onClick = {
+                                        busy = true
+                                        viewModel.redeemReferralCode(codeInput) { ok, msg ->
+                                            busy = false
+                                            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                            if (ok) codeInput = ""
+                                        }
+                                    }
+                                ) { Text("Apply", color = Color.White) }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ----------------------------------------------------
         // DARKSTORE PREMIUM SUBSCRIPTION CARD
         // ----------------------------------------------------
         item {
@@ -7986,6 +8129,8 @@ fun SettingsTabContent(
                             "Thank you for being a Premium member! Your badge and highlighted reviews are now visible to everyone."
                         } else if (isPremiumFreeMode) {
                             "Free while we build this out — enable Premium to unlock a custom theme, a badge on your name, and highlighted reviews."
+                        } else if (viewModel.referralConfig.value.enabled) {
+                            "Premium is unlocked by inviting friends - see the invite card above."
                         } else {
                             "DarkStore Premium now requires a subscription. Real payment support is coming soon."
                         },
@@ -8045,7 +8190,9 @@ fun SettingsTabContent(
                             onCheckedChange = { isChecked ->
                                 val allowed = viewModel.setPremiumMember(isChecked)
                                 if (!allowed) {
-                                    showPremiumComingSoonDialog = true
+                                    if (viewModel.referralConfig.value.enabled) {
+                                        Toast.makeText(context, "Invite ${viewModel.referralConfig.value.required} friends to unlock Premium (see the invite card above).", Toast.LENGTH_LONG).show()
+                                    } else showPremiumComingSoonDialog = true
                                 } else {
                                     Toast.makeText(
                                         context,
@@ -9857,6 +10004,206 @@ fun ConsoleTabContent(
                         }
                     }
 
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // ---------------- REFERRAL REWARDS (admin) ----------------
+                    run {
+                        val cfgNow by viewModel.referralConfig.collectAsStateWithLifecycle()
+                        val topRef by viewModel.adminReferralCounts.collectAsStateWithLifecycle()
+                        val allUsers by viewModel.developers.collectAsStateWithLifecycle()
+                        LaunchedEffect(Unit) { viewModel.loadReferralData(); viewModel.refreshAdminReferralCounts() }
+                        var enabledS by remember(cfgNow) { mutableStateOf(cfgNow.enabled) }
+                        var requiredS by remember(cfgNow) { mutableStateOf(cfgNow.required) }
+                        var daysS by remember(cfgNow) { mutableStateOf(cfgNow.rewardDays) }
+                        var windowS by remember(cfgNow) { mutableStateOf(cfgNow.accountWindowDays) }
+                        var savingRef by remember { mutableStateOf(false) }
+
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                            border = BorderStroke(1.dp, cardBorderColor)
+                        ) {
+                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text("REFERRAL REWARDS", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = textSecondary, letterSpacing = 1.sp)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(if (enabledS) "Referrals are ON" else "Referrals are OFF", color = textPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                        Text(
+                                            if (isPremiumFreeModeAdmin) "Premium is currently free for everyone. Switch Premium above to 'Requires subscription' so users must invite friends."
+                                            else "Users unlock Premium by inviting friends with their code.",
+                                            color = textSecondary, fontSize = 11.sp, lineHeight = 15.sp
+                                        )
+                                    }
+                                    Switch(checked = enabledS, onCheckedChange = { enabledS = it })
+                                }
+
+                                Text("Friends needed per reward", color = textSecondary, fontSize = 11.sp)
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    OutlinedButton(onClick = { if (requiredS > 1) requiredS-- }) { Text("-") }
+                                    Text("$requiredS", color = textPrimary, fontWeight = FontWeight.Black, fontSize = 18.sp)
+                                    OutlinedButton(onClick = { if (requiredS < 50) requiredS++ }) { Text("+") }
+                                }
+
+                                Text("Premium length per reward", color = textSecondary, fontSize = 11.sp)
+                                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    listOf(0 to "Lifetime", 7 to "7 days", 30 to "30 days", 90 to "90 days", 365 to "1 year").forEach { (d, label) ->
+                                        FilterChip(
+                                            selected = daysS == d, onClick = { daysS = d }, label = { Text(label, fontSize = 12.sp) },
+                                            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = accentGreen, selectedLabelColor = Color.White)
+                                        )
+                                    }
+                                }
+
+                                Text("A friend can use a code only within this many days of creating their account", color = textSecondary, fontSize = 11.sp)
+                                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    listOf(1, 3, 7, 14, 30).forEach { d ->
+                                        FilterChip(
+                                            selected = windowS == d, onClick = { windowS = d }, label = { Text("$d day${if (d > 1) "s" else ""}", fontSize = 12.sp) },
+                                            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = accentGreen, selectedLabelColor = Color.White)
+                                        )
+                                    }
+                                }
+
+                                Button(
+                                    enabled = !savingRef,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.buttonColors(containerColor = accentGreen),
+                                    onClick = {
+                                        savingRef = true
+                                        viewModel.saveReferralConfigAsAdmin(
+                                            com.example.data.FirebaseAuthService.ReferralConfig(enabledS, requiredS, daysS, windowS)
+                                        ) { ok ->
+                                            savingRef = false
+                                            Toast.makeText(context, if (ok) "Referral settings saved." else "Couldn't save (admin only).", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                ) { Text(if (savingRef) "Saving..." else "Save referral settings", color = Color.White, fontWeight = FontWeight.Bold) }
+
+                                if (topRef.isNotEmpty()) {
+                                    Divider(color = cardBorderColor.copy(alpha = 0.5f))
+                                    Text("Top referrers", color = textSecondary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    topRef.take(8).forEach { (uid, n) ->
+                                        val who = allUsers.firstOrNull { it.uid == uid }
+                                        Row(Modifier.fillMaxWidth()) {
+                                            Text(
+                                                who?.displayName?.ifBlank { null } ?: who?.email ?: uid.take(8),
+                                                color = textPrimary, fontSize = 12.sp, modifier = Modifier.weight(1f), maxLines = 1
+                                            )
+                                            Text("$n invited", color = accentGreen, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // ---------------- ANTI-CHEAT & FAKE ACCOUNTS (admin) ----------------
+                    run {
+                        val fcfg by viewModel.fraudConfig.collectAsStateWithLifecycle()
+                        val alerts by viewModel.fraudAlerts.collectAsStateWithLifecycle()
+                        val scanning by viewModel.fraudScanBusy.collectAsStateWithLifecycle()
+                        LaunchedEffect(Unit) { viewModel.refreshFraudAlerts() }
+                        var autoS by remember(fcfg) { mutableStateOf(fcfg.autoSuspend) }
+                        var devS by remember(fcfg) { mutableStateOf(fcfg.maxAccountsPerDevice) }
+                        var burstS by remember(fcfg) { mutableStateOf(fcfg.burstLimit) }
+                        var strikeS by remember(fcfg) { mutableStateOf(fcfg.strikeLimit) }
+                        val openAlerts = alerts.filter { it.status == "open" }
+                        val danger = Color(0xFFEF4444)
+
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = if (openAlerts.isNotEmpty()) danger.copy(alpha = 0.05f).compositeOver(cardBgColor) else cardBgColor),
+                            border = BorderStroke(if (openAlerts.isNotEmpty()) 1.5.dp else 1.dp, if (openAlerts.isNotEmpty()) danger.copy(alpha = 0.6f) else cardBorderColor)
+                        ) {
+                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("ANTI-CHEAT & FAKE ACCOUNTS", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = textSecondary, letterSpacing = 1.sp, modifier = Modifier.weight(1f))
+                                    if (openAlerts.isNotEmpty()) {
+                                        Text("${openAlerts.size} open", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.background(danger, RoundedCornerShape(8.dp)).padding(horizontal = 8.dp, vertical = 3.dp))
+                                    }
+                                }
+                                Text(
+                                    "Detects invites between accounts on the same phone, many accounts on one phone, referral bursts and temporary emails. The admin app scans automatically every time you open it.",
+                                    color = textSecondary, fontSize = 11.sp, lineHeight = 15.sp
+                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text("Suspend cheaters automatically", color = textPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                        Text("Off = only alert me and let me decide.", color = textSecondary, fontSize = 11.sp)
+                                    }
+                                    Switch(checked = autoS, onCheckedChange = { autoS = it })
+                                }
+                                AdminStepper("Max accounts per phone", devS, 1..10, textPrimary, textSecondary) { devS = it }
+                                AdminStepper("Referrals per hour before it looks like a burst", burstS, 2..20, textPrimary, textSecondary) { burstS = it }
+                                AdminStepper("Blocked cheating attempts before self-suspension", strikeS, 1..5, textPrimary, textSecondary) { strikeS = it }
+
+                                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    Button(
+                                        modifier = Modifier.weight(1f),
+                                        colors = ButtonDefaults.buttonColors(containerColor = accentGreen),
+                                        onClick = {
+                                            viewModel.saveFraudConfigAsAdmin(com.example.data.FirebaseAuthService.FraudConfig(autoS, devS, burstS, strikeS)) { ok ->
+                                                Toast.makeText(context, if (ok) "Anti-cheat settings saved." else "Couldn't save (admin only).", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    ) { Text("Save", color = Color.White, fontWeight = FontWeight.Bold) }
+                                    OutlinedButton(
+                                        modifier = Modifier.weight(1f),
+                                        enabled = !scanning,
+                                        onClick = {
+                                            viewModel.runFraudScan(manual = true) { n, s ->
+                                                Toast.makeText(context, if (n == 0) "Scan finished: nothing suspicious." else "Scan finished: $n new alert(s), $s suspended.", Toast.LENGTH_LONG).show()
+                                            }
+                                        }
+                                    ) { Text(if (scanning) "Scanning..." else "Scan now") }
+                                }
+
+                                if (openAlerts.isEmpty()) {
+                                    Text("No open alerts.", color = textSecondary, fontSize = 12.sp)
+                                }
+                                openAlerts.take(10).forEach { a ->
+                                    val sev = if (a.severity == "HIGH") danger else Color(0xFFF59E0B)
+                                    val label = when (a.type) {
+                                        "SAME_DEVICE_REFERRAL" -> "Same phone referral"
+                                        "DEVICE_FARM" -> "Too many accounts on one phone"
+                                        "REFERRAL_BURST" -> "Referral burst"
+                                        "DISPOSABLE_EMAIL" -> "Temporary email"
+                                        "REFERRAL_FARMING" -> "Referral farming"
+                                        else -> a.type
+                                    }
+                                    Column(
+                                        Modifier.fillMaxWidth().background(sev.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
+                                            .border(1.dp, sev.copy(alpha = 0.4f), RoundedCornerShape(12.dp)).padding(12.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(label.uppercase(), color = sev, fontWeight = FontWeight.ExtraBold, fontSize = 10.sp, modifier = Modifier.weight(1f))
+                                            Text(
+                                                when (a.autoAction) { "suspended" -> "AUTO-SUSPENDED"; "strike" -> "STRIKE"; else -> "FLAGGED" },
+                                                color = sev, fontSize = 9.sp, fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                        Text("${a.name.ifBlank { "User" }} • ${a.email}", color = textPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        Text(a.details, color = textSecondary, fontSize = 11.sp)
+                                        Text(java.text.SimpleDateFormat("dd MMM, HH:mm", java.util.Locale.getDefault()).format(java.util.Date(a.createdAt)), color = textSecondary.copy(alpha = 0.7f), fontSize = 10.sp)
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            val suspendedAlready = a.autoAction == "suspended"
+                                            TextButton(onClick = {
+                                                viewModel.setSuspectSuspended(a, !suspendedAlready) { ok ->
+                                                    Toast.makeText(context, if (ok) (if (suspendedAlready) "Account restored." else "Account suspended.") else "Couldn't update the account.", Toast.LENGTH_SHORT).show()
+                                                }
+                                            }) { Text(if (suspendedAlready) "Restore account" else "Suspend", color = if (suspendedAlready) Color(0xFF10B981) else danger, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+                                            TextButton(onClick = { viewModel.dismissFraudAlert(a.id) }) { Text("Dismiss", color = textSecondary, fontSize = 12.sp) }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                     Spacer(modifier = Modifier.height(16.dp))
 
                     // Maintenance mode — take the whole store offline for users
@@ -16682,5 +17029,15 @@ fun DeveloperAppGroupCard(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun AdminStepper(label: String, value: Int, range: IntRange, textPrimary: Color, textSecondary: Color, onChange: (Int) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(label, color = textSecondary, fontSize = 11.sp, modifier = Modifier.weight(1f))
+        OutlinedButton(onClick = { if (value > range.first) onChange(value - 1) }) { Text("-") }
+        Text("$value", color = textPrimary, fontWeight = FontWeight.Black, fontSize = 16.sp, modifier = Modifier.padding(horizontal = 10.dp))
+        OutlinedButton(onClick = { if (value < range.last) onChange(value + 1) }) { Text("+") }
     }
 }

@@ -133,4 +133,29 @@ object NotificationHelper {
             Log.e(TAG, "Failed to show installation success notification", e)
         }
     }
+
+    private const val SECURITY_CHANNEL_ID = "dark_store_security"
+
+    /** High-priority alert for the admin when the anti-cheat scan finds something. */
+    fun showSecurityAlert(context: Context, title: String, text: String, notificationId: Int) {
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+                nm.createNotificationChannel(
+                    NotificationChannel(SECURITY_CHANNEL_ID, "Security alerts", android.app.NotificationManager.IMPORTANCE_HIGH)
+                        .apply { description = "Referral cheating and fake account alerts" }
+                )
+            }
+            val builder = NotificationCompat.Builder(context, SECURITY_CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_dialog_alert)
+                .setContentTitle(title)
+                .setContentText(text)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+            androidx.core.app.NotificationManagerCompat.from(context).notify(notificationId, builder.build())
+        } catch (e: SecurityException) {
+            // notification permission not granted - the in-app alert list still shows it
+        } catch (e: Exception) { }
+    }
 }
