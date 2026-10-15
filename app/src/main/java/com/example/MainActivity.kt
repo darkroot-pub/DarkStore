@@ -4263,6 +4263,8 @@ fun ProfileTabContent(
     var selectedSubTab by remember { mutableStateOf("Live") }
     var activeDetailSubmission by remember { mutableStateOf<com.example.data.SubmissionEntity?>(null) }
     val catalogApps by viewModel.unfilteredApps.collectAsStateWithLifecycle()
+    // Pull the latest catalog when the profile opens, so a suspension done by the admin shows immediately.
+    LaunchedEffect(Unit) { viewModel.refreshMarketplace() }
     var editOptionsForApp by remember { mutableStateOf<com.example.data.SubmissionEntity?>(null) }
     var showUpdateScreenshotsFormFor by remember { mutableStateOf<com.example.data.SubmissionEntity?>(null) }
     var showPushUpdateFormFor by remember { mutableStateOf<com.example.data.SubmissionEntity?>(null) }
@@ -5368,7 +5370,7 @@ fun ProfileTabContent(
                             rowGroups.forEach { group ->
                                 Box(modifier = Modifier.weight(1f)) {
                                     DeveloperAppGroupCard(
-                                        liveApp = catalogApps.firstOrNull { it.packageName.equals(group.packageName, ignoreCase = true) },
+                                        liveApp = findCatalogApp(catalogApps, group.packageName),
                                         group = group,
                                         surfaceCol = surfaceCol,
                                         borderCol = borderCol,
@@ -5491,7 +5493,7 @@ fun ProfileTabContent(
                                     verticalArrangement = Arrangement.spacedBy(20.dp)
                                 ) {
                                     // Suspension notice (the submission itself stays "approved")
-                                    val suspendedLive = catalogApps.firstOrNull { it.packageName.equals(sub.packageName, ignoreCase = true) }?.takeIf { it.isSuspended }
+                                    val suspendedLive = findCatalogApp(catalogApps, sub.packageName)?.takeIf { it.isSuspended }
                                     if (suspendedLive != null) {
                                         Card(
                                             modifier = Modifier.fillMaxWidth(),
@@ -16457,6 +16459,16 @@ data class DeveloperAppGroup(
     val rejectedSub: com.example.data.SubmissionEntity?,
     val latestSub: com.example.data.SubmissionEntity
 )
+
+/**
+ * Finds the live catalog entry for a developer's package. If the catalog holds more than one
+ * entry for the same package (e.g. approved twice), a SUSPENDED one wins - so a suspension can
+ * never be hidden by a duplicate that is still active.
+ */
+fun findCatalogApp(apps: List<com.example.data.AppEntity>, packageName: String): com.example.data.AppEntity? {
+    val matches = apps.filter { it.packageName.trim().equals(packageName.trim(), ignoreCase = true) }
+    return matches.firstOrNull { it.isSuspended } ?: matches.firstOrNull()
+}
 
 fun buildDeveloperAppGroups(submissions: List<com.example.data.SubmissionEntity>): List<DeveloperAppGroup> {
     return submissions.groupBy { it.packageName }.map { (packageName, list) ->
