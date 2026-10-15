@@ -171,6 +171,26 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
+    private var clipboardChecked = false
+
+    /** After installing from an invite page, the page leaves "DSREF:<CODE>" in the clipboard - pick it up once. */
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (!hasFocus || clipboardChecked) return
+        clipboardChecked = true
+        try {
+            val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            if (!cm.hasPrimaryClip() || cm.primaryClipDescription?.hasMimeType("text/plain") != true) return
+            val code = com.example.utils.ShareLinks.parseClipboardInvite(cm.primaryClip?.getItemAt(0)?.text?.toString()) ?: return
+            viewModel.setPendingInvite(code)
+            if (android.os.Build.VERSION.SDK_INT >= 28) cm.clearPrimaryClip()
+            else cm.setPrimaryClip(android.content.ClipData.newPlainText("", ""))
+            if (!viewModel.isLoggedIn.value) {
+                Toast.makeText(this, "Invite found! Sign up or log in to join your friend's DarkStore invite.", Toast.LENGTH_LONG).show()
+            }
+        } catch (_: Exception) { }
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -179,6 +199,15 @@ class MainActivity : ComponentActivity() {
 
     /** darkstore://app/<id> (or the website link) -> remember the app id; the dashboard opens it. */
     private fun handleShareLink(intent: Intent?) {
+        // Invite (referral) link: remember the code; the app applies it as soon as the user is signed in.
+        com.example.utils.ShareLinks.parseInviteCode(intent?.data)?.let { code ->
+            viewModel.setPendingInvite(code)
+            intent?.data = null
+            if (!viewModel.isLoggedIn.value) {
+                Toast.makeText(this, "Invite saved! Sign up or log in to join your friend's DarkStore invite.", Toast.LENGTH_LONG).show()
+            }
+            return
+        }
         val id = com.example.utils.ShareLinks.parseAppId(intent?.data) ?: return
         viewModel.setPendingAppLink(id)
         intent?.data = null // don't re-process on the next onCreate
@@ -7943,7 +7972,7 @@ fun SettingsTabContent(
                             Text("INVITE FRIENDS, GET PREMIUM", color = textPrimary, fontWeight = FontWeight.Black, fontSize = 13.sp, letterSpacing = 0.5.sp)
                         }
                         Text(
-                            "Invite ${refCfg.required} friend${if (refCfg.required > 1) "s" else ""} to DarkStore and unlock $durationText. Your friend enters your code after signing up.",
+                            "Invite ${refCfg.required} friend${if (refCfg.required > 1) "s" else ""} to DarkStore and unlock $durationText. Your friend taps your invite link (or enters your code) after signing up.",
                             color = textSecondary, fontSize = 12.sp, lineHeight = 16.sp
                         )
 
@@ -7975,7 +8004,7 @@ fun SettingsTabContent(
                                     type = "text/plain"
                                     putExtra(
                                         android.content.Intent.EXTRA_TEXT,
-                                        "Join me on DarkRoot Store! After signing up, open Settings and enter my referral code $refCode.\nDownload: ${com.example.utils.ShareLinks.SHARE_BASE_URL}"
+                                        "Join me on DarkRoot Store! Tap to accept my invite:\n${com.example.utils.ShareLinks.inviteLink(refCode)}\n\nOr sign up and enter my referral code $refCode in Settings."
                                     )
                                 }
                                 context.startActivity(android.content.Intent.createChooser(send, "Invite friends").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -10127,7 +10156,7 @@ fun ConsoleTabContent(
                                     }
                                 }
                                 Text(
-                                    "Detects invites between accounts on the same phone, many accounts on one phone, referral bursts and temporary emails. The admin app scans automatically every time you open it.",
+                                    "Detects invites between accounts on the same phone, many accounts on one phone, referral bursts and temporary emails. The DarkStore server scans automatically every 2 minutes, even when you are offline.",
                                     color = textSecondary, fontSize = 11.sp, lineHeight = 15.sp
                                 )
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -10156,7 +10185,7 @@ fun ConsoleTabContent(
                                         enabled = !scanning,
                                         onClick = {
                                             viewModel.runFraudScan(manual = true) { n, s ->
-                                                Toast.makeText(context, if (n == 0) "Scan finished: nothing suspicious." else "Scan finished: $n new alert(s), $s suspended.", Toast.LENGTH_LONG).show()
+                                                Toast.makeText(context, if (n < 0) "Can't reach the DarkStore server." else if (n == 0) "Scan finished: nothing suspicious." else "Scan finished: $n new alert(s), $s suspended.", Toast.LENGTH_LONG).show()
                                             }
                                         }
                                     ) { Text(if (scanning) "Scanning..." else "Scan now") }

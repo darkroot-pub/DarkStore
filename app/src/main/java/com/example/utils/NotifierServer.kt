@@ -26,7 +26,7 @@ object NotifierServer {
     var baseUrl: String = DEFAULT_BASE_URL
         private set
 
-    private val TRUSTED_HOST_SUFFIXES = listOf("bot-keep.xyz")
+    private val TRUSTED_HOST_SUFFIXES = listOf("bot-keep.xyz", "wisp.uno")
 
     private fun isTrustedHost(url: String): Boolean {
         val u = try { java.net.URI(url) } catch (e: Exception) { return false }

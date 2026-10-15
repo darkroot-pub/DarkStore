@@ -46,6 +46,13 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="darkstore" android:host="app" />
             </intent-filter>
+            <!-- Invite links: darkstore://invite/<CODE> -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="darkstore" android:host="invite" />
+            </intent-filter>
             <!-- Verified App Link: https://darkrootstore.vercel.app/app.html?id=<appId> opens the app
                  directly (no browser page) once /.well-known/assetlinks.json is live on the site. -->
             <intent-filter android:autoVerify="true">
@@ -53,6 +60,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" android:host="darkrootstore.vercel.app" android:pathPrefix="/app.html" />
+                <data android:scheme="https" android:host="darkrootstore.vercel.app" android:pathPrefix="/invite.html" />
             </intent-filter>
         </activity>
 

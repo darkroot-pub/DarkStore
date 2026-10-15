@@ -77,7 +77,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 loadFollowingIds()
                 loadFollowerIds()
                 loadPremiumFreeMode()
-                runFraudScan(manual = false)
+                if (_userRole.value.equals("admin", true)) refreshFraudAlerts()
                 val myUid = _userUid.value
                 if (_isLoggedIn.value && myUid.isNotBlank() && myUid != "guest_uid" && !_userRole.value.equals("admin", true)) runDeviceChecks(myUid)
                 loadMaintenanceConfig()
@@ -680,46 +680,16 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.Main) { logout() }
     }
 
-    /** This phone's own anti-cheat duties: register the device and catch "too many accounts on one phone". */
-    private suspend fun runDeviceChecks(uid: String) {
-        val cfg = FirebaseAuthService.fetchFraudConfig()
-        _fraudConfig.value = cfg
-        val accounts = FirebaseAuthService.registerDevice(getApplication(), uid)
-        val myIndex = accounts.indexOfFirst { it.first == uid }
-        if (accounts.size > cfg.maxAccountsPerDevice && myIndex >= cfg.maxAccountsPerDevice) {
-            selfReportFraud(
-                "DEVICE_FARM",
-                "${accounts.size} accounts on one phone (limit ${cfg.maxAccountsPerDevice}); this is account #${myIndex + 1}.",
-                "", suspendNow = true
-            )
-        }
-    }
+    /** One-way fingerprint of this phone; the real Android ID never leaves the device. */
+    private val deviceHashValue: String by lazy { com.example.utils.FraudRules.deviceHash(getApplication()) }
 
-    /**
-     * This account tried something blocked (or was created beyond the per-phone limit): write an alert for the
-     * admin, add a strike, and suspend itself when the strike limit is reached (or immediately for fake accounts).
-     */
-    private suspend fun selfReportFraud(type: String, details: String, relatedUid: String, suspendNow: Boolean = false) {
-        val uid = _userUid.value
-        if (uid.isBlank() || uid == "guest_uid") return
-        val now = System.currentTimeMillis()
-        FirebaseAuthService.reportFraudAlert(
-            FirebaseAuthService.FraudAlert(
-                id = "fa_${now}_${(1000..9999).random()}", type = type, severity = "HIGH", uid = uid,
-                email = _userEmail.value, name = _userName.value, relatedUid = relatedUid, details = details,
-                createdAt = now, status = "open", autoAction = if (suspendNow) "suspended" else "strike"
-            )
-        )
-        val strikes = FirebaseAuthService.addFraudStrike(uid)
-        val cfg = _fraudConfig.value
-        if (cfg.autoSuspend && (suspendNow || (strikes >= cfg.strikeLimit && strikes > 0))) {
-            val reason = "Automatic security check: " + when (type) {
-                "DEVICE_FARM" -> "too many accounts were created on one phone."
-                "SAME_DEVICE_REFERRAL" -> "repeated referral attempts between accounts on the same phone."
-                "DISPOSABLE_EMAIL" -> "repeated referral attempts with a temporary email address."
-                else -> "suspicious referral activity."
-            } + " If this is a mistake, contact the DarkStore admin."
-            FirebaseAuthService.selfSuspend(uid, reason)
+    /** Asks the DarkStore server to register this phone for the account. The SERVER suspends fake accounts. */
+    private suspend fun runDeviceChecks(uid: String) {
+        val res = com.example.utils.NotifierServer.postJson(
+            "/device/register", FirebaseService.activeToken, org.json.JSONObject().put("deviceHash", deviceHashValue)
+        ) ?: return
+        if (res.optBoolean("suspended", false)) {
+            val reason = res.optString("reason")
             kotlinx.coroutines.withContext(Dispatchers.Main) { enforceSuspension(reason) }
         }
     }
@@ -775,129 +745,70 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * ADMIN watchdog. Looks at every referral + every phone/account pair and automatically:
-     *  - flags same-phone referrals, phones with too many accounts, referral bursts, temporary emails
-     *  - suspends obvious cheaters (if auto-suspend is on) and takes back the referral credit
-     *  - alerts the admin (in-app list, audit log, system notification)
-     * Runs on its own when the admin opens the app (at most every 10 minutes) or from "Scan now".
+     * The watchdog itself runs on the DarkStore server (every 2 minutes, no admin needs to be online).
+     * This asks it to scan right now and then reloads the alert list. onDone(-1, 0) = server unreachable.
      */
     fun runFraudScan(manual: Boolean, onDone: ((newAlerts: Int, suspended: Int) -> Unit)? = null) {
         if (!_userRole.value.equals("admin", true) || _fraudScanBusy.value) return
-        val last = sharedPrefs.getLong("last_fraud_scan", 0L)
-        if (!manual && System.currentTimeMillis() - last < 10 * 60_000L) return
         viewModelScope.launch(Dispatchers.IO) {
             _fraudScanBusy.value = true
-            var newAlerts = 0
-            var suspendedCount = 0
+            var n = -1
+            var s = 0
             try {
                 FirebaseAuthService.refreshIdTokenIfNeeded(getApplication())
-                val cfg = FirebaseAuthService.fetchFraudConfig(); _fraudConfig.value = cfg
-                val refCfg = FirebaseAuthService.fetchReferralConfig(); _referralConfig.value = refCfg
-                val users = FirebaseAuthService.fetchDevelopers(); _developers.value = users
-                val byUid = users.associateBy { it.uid }
-                val referrals = FirebaseAuthService.fetchAllReferrals()
-                val registry = FirebaseAuthService.fetchDeviceRegistry()
-                val existing = FirebaseAuthService.fetchFraudAlerts()
-                val seen = existing.map { "${it.type}|${it.uid}" }.toMutableSet()
-
-                val hashesOf = HashMap<String, MutableSet<String>>()
-                registry.forEach { (hash, accts) -> accts.keys.forEach { u -> hashesOf.getOrPut(u) { mutableSetOf() }.add(hash) } }
-
-                class Hit(val uid: String, val type: String, val severity: String, val details: String, val related: String)
-                val hits = mutableListOf<Hit>()
-                val live = referrals.filter { !it.revoked }
-
-                // 1) inviter and invited person used the same phone
-                live.forEach { r ->
-                    val shared = hashesOf[r.uid].orEmpty().intersect(hashesOf[r.referrerUid].orEmpty())
-                    if (shared.isNotEmpty()) hits += Hit(r.uid, "SAME_DEVICE_REFERRAL", "HIGH", "Referred account and inviter used the same phone.", r.referrerUid)
-                }
-                // 2) one phone with too many accounts: everything after the allowed number is fake
-                registry.forEach { (_, accts) ->
-                    if (accts.size > cfg.maxAccountsPerDevice) {
-                        accts.entries.sortedBy { it.value }.drop(cfg.maxAccountsPerDevice).forEach {
-                            hits += Hit(it.key, "DEVICE_FARM", "HIGH", "${accts.size} accounts on one phone (limit ${cfg.maxAccountsPerDevice}).", "")
-                        }
-                    }
-                }
-                // 3) too many referrals for one person inside an hour
-                live.groupBy { it.referrerUid }.forEach { (ref, list) ->
-                    val sorted = list.sortedBy { it.createdAt }
-                    for (i in sorted.indices) {
-                        val window = sorted.filter { it.createdAt >= sorted[i].createdAt && it.createdAt <= sorted[i].createdAt + 3_600_000L }
-                        if (window.size >= cfg.burstLimit) {
-                            hits += Hit(ref, "REFERRAL_BURST", "MEDIUM", "${window.size} referrals within one hour.", "")
-                            window.forEach { hits += Hit(it.uid, "REFERRAL_BURST", "MEDIUM", "Joined in a burst of ${window.size} referrals for the same inviter.", ref) }
-                            break
-                        }
-                    }
-                }
-                // 4) temporary email addresses
-                live.forEach { r ->
-                    val u = byUid[r.uid]
-                    if (u != null && com.example.utils.FraudRules.isDisposableEmail(u.email)) hits += Hit(r.uid, "DISPOSABLE_EMAIL", "HIGH", "Referred account uses a temporary email address.", r.referrerUid)
-                }
-
-                suspend fun revokeCredit(redeemerUid: String) {
-                    val r = referrals.firstOrNull { it.uid == redeemerUid && !it.revoked } ?: return
-                    if (!FirebaseAuthService.markReferralRevoked(redeemerUid)) return
-                    val stats = FirebaseAuthService.fetchReferralStats(r.referrerUid)
-                    val newCount = (stats.count - 1).coerceAtLeast(0)
-                    FirebaseAuthService.setReferralCount(r.referrerUid, newCount)
-                    // The inviter no longer deserves a reward they already claimed -> take it back.
-                    if (stats.claimed > 0 && newCount < stats.claimed * refCfg.required) {
-                        FirebaseAuthService.expireReferralPremium(r.referrerUid)
-                        FirebaseAuthService.getUserProfile(r.referrerUid)?.let {
-                            if (!it.role.equals("admin", true)) FirebaseAuthService.saveUserInRealtimeDatabase(it.copy(isPremiumMember = false))
-                        }
-                    }
-                }
-
-                suspend fun handle(h: Hit) {
-                    val key = "${h.type}|${h.uid}"
-                    if (!seen.add(key)) return
-                    val user = byUid[h.uid] ?: return
-                    if (user.role.equals("admin", true)) return
-                    val auto = cfg.autoSuspend && h.severity == "HIGH" && !user.isSuspended
-                    val now = System.currentTimeMillis()
-                    FirebaseAuthService.reportFraudAlert(
-                        FirebaseAuthService.FraudAlert(
-                            id = "fa_${now}_${(1000..9999).random()}", type = h.type, severity = h.severity, uid = h.uid,
-                            email = user.email, name = user.displayName, relatedUid = h.related, details = h.details,
-                            createdAt = now, status = "open", autoAction = if (auto) "suspended" else "flagged"
-                        )
-                    )
-                    newAlerts++
-                    if (h.severity == "HIGH") revokeCredit(h.uid)
-                    if (auto) {
-                        val reason = "Automatic security check: ${h.details} If this is a mistake, contact the DarkStore admin."
-                        if (FirebaseAuthService.saveUserInRealtimeDatabase(user.copy(isSuspended = true, suspensionReason = reason))) suspendedCount++
-                    }
-                }
-                hits.forEach { handle(it) }
-
-                // 5) an inviter whose invited accounts keep turning out fake is farming referrals
-                hits.filter { it.severity == "HIGH" && it.related.isNotBlank() && it.type != "DEVICE_FARM" }
-                    .groupBy { it.related }.filter { it.value.map { h -> h.uid }.distinct().size >= 2 }.forEach { (ref, list) ->
-                        handle(Hit(ref, "REFERRAL_FARMING", "HIGH", "${list.map { it.uid }.distinct().size} of this account's invited friends were fake or on the same phone.", ""))
-                    }
-
+                val res = com.example.utils.NotifierServer.postJson("/admin/fraud-scan", FirebaseService.activeToken, org.json.JSONObject())
+                if (res != null && res.optBoolean("ok")) { n = res.optInt("newAlerts"); s = res.optInt("suspended") }
                 _fraudAlerts.value = FirebaseAuthService.fetchFraudAlerts()
-                if (newAlerts > 0) {
-                    logAdminAction("FRAUD_SCAN", "security", "referrals", "Anti-cheat scan", "$newAlerts new alert(s), $suspendedCount account(s) suspended")
-                    com.example.utils.NotificationHelper.showSecurityAlert(
-                        getApplication(), "DarkStore security alert",
-                        "$newAlerts suspicious referral activity alert(s); $suspendedCount account(s) suspended automatically. Open Admin > Overview to review.",
-                        9001
-                    )
-                }
-                sharedPrefs.edit().putLong("last_fraud_scan", System.currentTimeMillis()).apply()
-            } catch (e: Exception) {
-                Log.e("StoreViewModel", "Fraud scan failed: ${e.message}")
             } finally {
                 _fraudScanBusy.value = false
             }
-            kotlinx.coroutines.withContext(Dispatchers.Main) { onDone?.invoke(newAlerts, suspendedCount) }
+            kotlinx.coroutines.withContext(Dispatchers.Main) { onDone?.invoke(n, s) }
+        }
+    }
+
+    // ---------------- Invite links: code waiting to be applied ----------------
+    private val _pendingInviteCode = MutableStateFlow(
+        sharedPrefs.getString("pending_invite_code", null)?.takeIf {
+            System.currentTimeMillis() - sharedPrefs.getLong("pending_invite_at", 0L) < 14L * 86_400_000L
+        }
+    )
+    val pendingInviteCode: StateFlow<String?> = _pendingInviteCode.asStateFlow()
+    private var inviteBusy = false
+
+    /** Remember an invite code (from a tapped link or the clipboard) until the user is signed in. */
+    fun setPendingInvite(code: String?) {
+        if (code == null) sharedPrefs.edit().remove("pending_invite_code").remove("pending_invite_at").apply()
+        else sharedPrefs.edit().putString("pending_invite_code", code).putLong("pending_invite_at", System.currentTimeMillis()).apply()
+        _pendingInviteCode.value = code
+    }
+
+    /** Signed in + a waiting invite code -> ask the server to apply it (it does every cheating check). */
+    private fun applyPendingInvite(code: String) {
+        if (inviteBusy) return
+        inviteBusy = true
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                FirebaseAuthService.refreshIdTokenIfNeeded(getApplication())
+                val res = com.example.utils.NotifierServer.postJson(
+                    "/referral/redeem", FirebaseService.activeToken,
+                    org.json.JSONObject().put("code", code).put("deviceHash", deviceHashValue).put("source", "link")
+                )
+                if (res != null) {                       // any answer from the server settles it; only a network failure retries
+                    setPendingInvite(null)
+                    if (res.optBoolean("ok")) _usedReferral.value = true
+                    val msg = res.optString("message")
+                    if (res.optBoolean("suspended")) {
+                        val reason = res.optString("reason")
+                        kotlinx.coroutines.withContext(Dispatchers.Main) { enforceSuspension(reason) }
+                    } else if (msg.isNotBlank()) {
+                        kotlinx.coroutines.withContext(Dispatchers.Main) {
+                            android.widget.Toast.makeText(getApplication(), msg, android.widget.Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            } finally {
+                inviteBusy = false
+            }
         }
     }
 
@@ -906,15 +817,20 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
             FirebaseAuthService.refreshIdTokenIfNeeded(getApplication())
             val cfg = FirebaseAuthService.fetchReferralConfig()
             _referralConfig.value = cfg
+            _fraudConfig.value = FirebaseAuthService.fetchFraudConfig()
             val uid = _userUid.value
             if (uid.isBlank() || uid == "guest_uid" || !_isLoggedIn.value) return@launch
             if (!_userRole.value.equals("admin", true)) runDeviceChecks(uid)
-            if (cfg.enabled) {
-                FirebaseAuthService.ensureReferralCode(uid)?.let { _myReferralCode.value = it }
-                _usedReferral.value = FirebaseAuthService.hasUsedReferral(uid)
+            // The server owns codes + counters: ask it (falls back to a direct read if it is unreachable).
+            val me = if (cfg.enabled) com.example.utils.NotifierServer.postJson("/referral/me", FirebaseService.activeToken, org.json.JSONObject()) else null
+            if (me != null && me.optBoolean("ok")) {
+                _myReferralCode.value = me.optString("code")
+                _usedReferral.value = me.optBoolean("used")
+                _myReferralStats.value = FirebaseAuthService.ReferralStats(me.optInt("count"), me.optInt("claimed"), me.optLong("premiumUntil"))
+            } else {
+                _myReferralStats.value = FirebaseAuthService.fetchReferralStats(uid)
             }
-            val stats = FirebaseAuthService.fetchReferralStats(uid)
-            _myReferralStats.value = stats
+            val stats = _myReferralStats.value
             // A time-limited referral reward ran out: switch Premium off (never touches admins or free mode).
             if (_isPremiumMember.value && !_isPremiumFreeMode.value && !_userRole.value.equals("admin", true) &&
                 stats.claimed > 0 && stats.premiumUntil > 0 && System.currentTimeMillis() > stats.premiumUntil) {
@@ -926,40 +842,42 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     fun redeemReferralCode(code: String, onFinished: (Boolean, String) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
             FirebaseAuthService.refreshIdTokenIfNeeded(getApplication())
-            val res = FirebaseAuthService.redeemReferralCode(getApplication(), code, _userUid.value, _userEmail.value, _referralConfig.value.accountWindowDays)
-            if (res.ok) _usedReferral.value = true
-            var message = res.message
-            if (res.fraudType != null) {
-                // Blocked cheating attempt: log it, count a strike, suspend at the limit.
-                val cfg = FirebaseAuthService.fetchFraudConfig(); _fraudConfig.value = cfg
-                selfReportFraud(res.fraudType, res.message, res.relatedUid)
-                if (cfg.autoSuspend) message += "  Warning: repeating this will suspend your account."
+            val res = com.example.utils.NotifierServer.postJson(
+                "/referral/redeem", FirebaseService.activeToken,
+                org.json.JSONObject().put("code", code).put("deviceHash", deviceHashValue).put("source", "code")
+            )
+            val ok = res?.optBoolean("ok") == true
+            var message = res?.optString("message").orEmpty()
+            if (res == null) message = "Can't reach the DarkStore server right now. Please try again later."
+            else if (message.isBlank()) message = if (ok) "Code applied!" else "Couldn't apply this code."
+            if (ok) _usedReferral.value = true
+            if (res != null && res.optBoolean("suspended")) {
+                val reason = res.optString("reason")
+                kotlinx.coroutines.withContext(Dispatchers.Main) { enforceSuspension(reason) }
+            } else if (res != null && res.optString("fraud").isNotEmpty()) {
+                message += "  Warning: repeating this will suspend your account."
             }
-            kotlinx.coroutines.withContext(Dispatchers.Main) { onFinished(res.ok, message) }
+            kotlinx.coroutines.withContext(Dispatchers.Main) { onFinished(ok, message) }
         }
     }
 
     fun claimReferralPremium(onFinished: (Boolean, String) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
             FirebaseAuthService.refreshIdTokenIfNeeded(getApplication())
-            val cfg = _referralConfig.value
-            val uid = _userUid.value
-            val stats = FirebaseAuthService.fetchReferralStats(uid)
-            _myReferralStats.value = stats
-            var ok = false
-            var msg = "Not enough referrals yet."
-            if (cfg.enabled && stats.count >= (stats.claimed + 1) * cfg.required) {
-                val until = if (cfg.rewardDays <= 0) 0L else System.currentTimeMillis() + cfg.rewardDays * 86_400_000L
-                if (FirebaseAuthService.claimReferralReward(uid, stats.claimed, until)) {
-                    sharedPrefs.edit().putBoolean("is_premium_member", true).apply()
-                    _isPremiumMember.value = true
-                    FirebaseAuthService.getUserProfile(uid)?.let { FirebaseAuthService.saveUserInRealtimeDatabase(it.copy(isPremiumMember = true)) }
-                    _myReferralStats.value = FirebaseAuthService.fetchReferralStats(uid)
-                    ok = true
-                    msg = "Premium unlocked! Thanks for inviting friends."
-                } else msg = "Couldn't claim the reward. Please try again."
+            val res = com.example.utils.NotifierServer.postJson("/referral/claim", FirebaseService.activeToken, org.json.JSONObject())
+            val ok = res?.optBoolean("ok") == true
+            var message = res?.optString("message").orEmpty()
+            if (res == null) message = "Can't reach the DarkStore server right now. Please try again later."
+            if (ok) {
+                // The SERVER switched Premium on in the database; mirror it locally.
+                sharedPrefs.edit().putBoolean("is_premium_member", true).apply()
+                _isPremiumMember.value = true
+                _myReferralStats.value = FirebaseAuthService.fetchReferralStats(_userUid.value)
+            } else if (res != null && res.optBoolean("suspended")) {
+                val reason = res.optString("reason")
+                kotlinx.coroutines.withContext(Dispatchers.Main) { enforceSuspension(reason) }
             }
-            kotlinx.coroutines.withContext(Dispatchers.Main) { onFinished(ok, msg) }
+            kotlinx.coroutines.withContext(Dispatchers.Main) { onFinished(ok, message) }
         }
     }
 
@@ -3658,5 +3576,11 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     init {
         runMainStartup()
         startStartupRefresh()
+        viewModelScope.launch {
+            kotlinx.coroutines.flow.combine(isLoggedIn, pendingInviteCode, userUid) { logged, code, uid -> Triple(logged, code, uid) }
+                .collect { (logged, code, uid) ->
+                    if (logged && !code.isNullOrBlank() && uid.isNotBlank() && uid != "guest_uid") applyPendingInvite(code)
+                }
+        }
     }
 }

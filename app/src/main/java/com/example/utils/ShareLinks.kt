@@ -35,6 +35,29 @@ object ShareLinks {
         return id?.takeIf { SAFE_ID.matches(it) }
     }
 
+    // ---------------- invite (referral) links ----------------
+    private val INVITE_CODE = Regex("^[A-Z0-9]{8}$")
+    private val CLIP_INVITE = Regex("^DSREF:([A-Z0-9]{8})$")
+
+    /** What people SEND to invite friends. */
+    fun inviteLink(code: String): String =
+        SHARE_BASE_URL.trimEnd('/') + "/invite.html?ref=" + Uri.encode(code)
+
+    /** darkstore://invite/<CODE>  or  https://<site>/invite.html?ref=<CODE>  ->  the referral code (validated). */
+    fun parseInviteCode(uri: Uri?): String? {
+        uri ?: return null
+        val raw = when {
+            uri.scheme.equals(SCHEME, true) && uri.host.equals("invite", true) -> uri.pathSegments.firstOrNull()
+            uri.scheme.equals("https", true) && uri.host.equals(Uri.parse(SHARE_BASE_URL).host, true) &&
+                uri.path.orEmpty().startsWith("/invite.html") -> uri.getQueryParameter("ref")
+            else -> null
+        }?.trim()?.uppercase()
+        return raw?.takeIf { INVITE_CODE.matches(it) }
+    }
+
+    /** The invite page copies "DSREF:<CODE>" to the clipboard so a brand-new install can still find the code. */
+    fun parseClipboardInvite(text: String?): String? = CLIP_INVITE.matchEntire(text.orEmpty().trim())?.groupValues?.get(1)
+
     fun share(context: Context, appId: String, packageName: String, appName: String) {
         val id = if (SAFE_ID.matches(appId)) appId else packageName
         val text = "Check out $appName on DarkRoot Store:\n${webLink(id)}"

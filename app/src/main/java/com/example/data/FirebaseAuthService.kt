@@ -1153,20 +1153,6 @@ object FirebaseAuthService {
         rtdbPutRaw("premiumConfig/referral", j.toString())
     }
 
-    /** Returns this user's referral code, creating (registering) it on first use. */
-    suspend fun ensureReferralCode(uid: String): String? = withContext(Dispatchers.IO) {
-        for (salt in 0..4) {
-            val code = referralCodeFor(uid, salt)
-            val raw = rtdbGetRaw("referralCodes/$code") ?: return@withContext null
-            if (raw == "null") {
-                if (rtdbPutRaw("referralCodes/$code", JSONObject.quote(uid))) return@withContext code
-            } else if (raw.trim('"') == uid) {
-                return@withContext code
-            }
-        }
-        null
-    }
-
     suspend fun fetchReferralStats(uid: String): ReferralStats = withContext(Dispatchers.IO) {
         val raw = rtdbGetRaw("referralStats/$uid")
         if (raw == null || raw == "null") return@withContext ReferralStats()
@@ -1174,11 +1160,6 @@ object FirebaseAuthService {
             val j = JSONObject(raw)
             ReferralStats(j.optInt("count", 0), j.optInt("claimed", 0), j.optLong("premiumUntil", 0L))
         } catch (e: Exception) { ReferralStats() }
-    }
-
-    suspend fun hasUsedReferral(uid: String): Boolean = withContext(Dispatchers.IO) {
-        val raw = rtdbGetRaw("referrals/$uid")
-        raw != null && raw != "null"
     }
 
     /** Admin: referrer uid -> count, highest first. */
@@ -1193,51 +1174,6 @@ object FirebaseAuthService {
             out.filter { it.second > 0 }.sortedByDescending { it.second }
         } catch (e: Exception) { emptyList() }
     }
-
-    /** The new user enters a friend's code. Count update + referral record are ONE atomic write. */
-    suspend fun redeemReferralCode(context: Context, rawCode: String, myUid: String, myEmail: String, windowDays: Int): RedeemResult = withContext(Dispatchers.IO) {
-        val code = rawCode.trim().uppercase().filter { it.isLetterOrDigit() }
-        if (code.length != 8) return@withContext RedeemResult(false, "Enter the 8-character code your friend shared.")
-        val ownerRaw = rtdbGetRaw("referralCodes/$code") ?: return@withContext RedeemResult(false, "No connection. Please try again.")
-        if (ownerRaw == "null") return@withContext RedeemResult(false, "That code doesn't exist.")
-        val referrer = ownerRaw.trim('"')
-        if (referrer == myUid) return@withContext RedeemResult(false, "You can't use your own code.")
-        if (hasUsedReferral(myUid)) return@withContext RedeemResult(false, "You already used a referral code.")
-
-        // --- anti-cheat 1: throw-away email addresses can't take part ---
-        if (com.example.utils.FraudRules.isDisposableEmail(myEmail)) {
-            return@withContext RedeemResult(false, "Accounts made with temporary email addresses can't use referral codes.", "DISPOSABLE_EMAIL", referrer)
-        }
-        // --- anti-cheat 2: the inviter and the new account must not share a phone ---
-        val deviceHash = com.example.utils.FraudRules.deviceHash(context)
-        registerDevice(context, myUid)
-        val sameDevice = rtdbGetRaw("deviceRegistry/$deviceHash/$referrer")
-        if (sameDevice != null && sameDevice != "null") {
-            return@withContext RedeemResult(false, "This code belongs to an account used on this same phone, so it can't be applied.", "SAME_DEVICE_REFERRAL", referrer)
-        }
-
-        repeat(2) {
-            val n = rtdbGetRaw("referralStats/$referrer/count")?.toIntOrNull() ?: 0
-            val body = JSONObject()
-                .put("referrals/$myUid", JSONObject().put("referrerUid", referrer).put("code", code)
-                    .put("deviceHash", deviceHash).put("createdAt", System.currentTimeMillis()))
-                .put("referralStats/$referrer/count", n + 1)
-            val req = Request.Builder().url("${RTDB_URL}.json${getTokenParam()}")
-                .patch(body.toString().toRequestBody(mediaTypeJson)).build()
-            val ok = try { client.newCall(req).execute().use { it.isSuccessful } } catch (e: Exception) { false }
-            if (ok) return@withContext RedeemResult(true, "Code applied! Your friend gets credit for inviting you.")
-        }
-        RedeemResult(false, "Couldn't apply this code. Referral codes only work for accounts created in the last $windowDays days, while referrals are switched on.")
-    }
-
-    /** Spend one reward: bumps `claimed` and sets the expiry in a single write (rules check the math). */
-    suspend fun claimReferralReward(uid: String, currentClaimed: Int, premiumUntil: Long): Boolean = withContext(Dispatchers.IO) {
-        val body = JSONObject().put("claimed", currentClaimed + 1).put("premiumUntil", premiumUntil)
-        val req = Request.Builder().url("${RTDB_URL}referralStats/$uid.json${getTokenParam()}")
-            .patch(body.toString().toRequestBody(mediaTypeJson)).build()
-        try { client.newCall(req).execute().use { it.isSuccessful } } catch (e: Exception) { false }
-    }
-
 
     // ----------------------------------------------------
     // ANTI-CHEAT (same device, fake accounts, farming)
@@ -1263,9 +1199,6 @@ object FirebaseAuthService {
         val autoAction: String   // suspended / flagged / strike
     )
 
-    data class ReferralRecord(val uid: String, val referrerUid: String, val createdAt: Long, val revoked: Boolean)
-
-    data class RedeemResult(val ok: Boolean, val message: String, val fraudType: String? = null, val relatedUid: String = "")
 
     suspend fun fetchFraudConfig(): FraudConfig = withContext(Dispatchers.IO) {
         val raw = rtdbGetRaw("premiumConfig/fraud")
@@ -1285,68 +1218,6 @@ object FirebaseAuthService {
         rtdbPutRaw("premiumConfig/fraud", JSONObject().put("autoSuspend", c.autoSuspend)
             .put("maxAccountsPerDevice", c.maxAccountsPerDevice).put("burstLimit", c.burstLimit)
             .put("strikeLimit", c.strikeLimit).toString())
-    }
-
-    /**
-     * Registers this phone for [uid] (first time only, keeps the original date) and returns all accounts
-     * that have ever been used on it, oldest first: list of (uid, firstSeenMillis).
-     */
-    suspend fun registerDevice(context: Context, uid: String): List<Pair<String, Long>> = withContext(Dispatchers.IO) {
-        val h = com.example.utils.FraudRules.deviceHash(context)
-        val mine = rtdbGetRaw("deviceRegistry/$h/$uid")
-        if (mine == "null") rtdbPutRaw("deviceRegistry/$h/$uid", System.currentTimeMillis().toString())
-        val raw = rtdbGetRaw("deviceRegistry/$h")
-        if (raw == null || raw == "null") return@withContext emptyList()
-        try {
-            val o = JSONObject(raw)
-            val out = mutableListOf<Pair<String, Long>>()
-            val it = o.keys()
-            while (it.hasNext()) { val k = it.next(); out.add(k to o.optLong(k, 0L)) }
-            out.sortedBy { it.second }
-        } catch (e: Exception) { emptyList() }
-    }
-
-    /** Admin: every device -> its accounts. */
-    suspend fun fetchDeviceRegistry(): Map<String, Map<String, Long>> = withContext(Dispatchers.IO) {
-        val raw = rtdbGetRaw("deviceRegistry")
-        if (raw == null || raw == "null") return@withContext emptyMap()
-        try {
-            val o = JSONObject(raw)
-            val out = HashMap<String, Map<String, Long>>()
-            val it = o.keys()
-            while (it.hasNext()) {
-                val hash = it.next()
-                val accts = o.optJSONObject(hash) ?: continue
-                val m = HashMap<String, Long>()
-                val ak = accts.keys()
-                while (ak.hasNext()) { val u = ak.next(); m[u] = accts.optLong(u, 0L) }
-                out[hash] = m
-            }
-            out
-        } catch (e: Exception) { emptyMap() }
-    }
-
-    suspend fun fetchAllReferrals(): List<ReferralRecord> = withContext(Dispatchers.IO) {
-        val raw = rtdbGetRaw("referrals")
-        if (raw == null || raw == "null") return@withContext emptyList()
-        try {
-            val o = JSONObject(raw)
-            val out = mutableListOf<ReferralRecord>()
-            val it = o.keys()
-            while (it.hasNext()) {
-                val k = it.next(); val d = o.optJSONObject(k) ?: continue
-                out.add(ReferralRecord(k, d.optString("referrerUid"), d.optLong("createdAt"), d.optBoolean("revoked", false)))
-            }
-            out
-        } catch (e: Exception) { emptyList() }
-    }
-
-    suspend fun reportFraudAlert(a: FraudAlert): Boolean = withContext(Dispatchers.IO) {
-        rtdbPutRaw("fraudAlerts/${a.id}", JSONObject()
-            .put("id", a.id).put("type", a.type).put("severity", a.severity).put("uid", a.uid)
-            .put("email", a.email).put("name", a.name).put("relatedUid", a.relatedUid)
-            .put("details", a.details.take(300)).put("createdAt", a.createdAt)
-            .put("status", a.status).put("autoAction", a.autoAction).toString())
     }
 
     suspend fun fetchFraudAlerts(): List<FraudAlert> = withContext(Dispatchers.IO) {
@@ -1370,32 +1241,6 @@ object FirebaseAuthService {
 
     suspend fun setFraudAlertStatus(id: String, status: String): Boolean = withContext(Dispatchers.IO) {
         rtdbPutRaw("fraudAlerts/${id.replace(Regex("[^A-Za-z0-9_-]"), "")}/status", JSONObject.quote(status))
-    }
-
-    /** Adds one strike to this account and returns the new total (-1 = failed). */
-    suspend fun addFraudStrike(uid: String): Int = withContext(Dispatchers.IO) {
-        val raw = rtdbGetRaw("fraudStrikes/$uid") ?: return@withContext -1
-        val n = (if (raw == "null") 0 else raw.toIntOrNull() ?: 0) + 1
-        if (rtdbPutRaw("fraudStrikes/$uid", n.toString())) n else -1
-    }
-
-    /** An account may suspend ITSELF (never un-suspend: the rules only let the admin do that). */
-    suspend fun selfSuspend(uid: String, reason: String): Boolean = withContext(Dispatchers.IO) {
-        val body = JSONObject().put("isSuspended", true).put("suspensionReason", reason.take(300))
-        val req = Request.Builder().url("${RTDB_URL}users/$uid.json${getTokenParam()}")
-            .patch(body.toString().toRequestBody(mediaTypeJson)).build()
-        try { client.newCall(req).execute().use { it.isSuccessful } } catch (e: Exception) { false }
-    }
-
-    // ---- admin clean-up helpers ----
-    suspend fun markReferralRevoked(redeemerUid: String): Boolean = withContext(Dispatchers.IO) {
-        rtdbPutRaw("referrals/$redeemerUid/revoked", "true")
-    }
-    suspend fun setReferralCount(referrerUid: String, count: Int): Boolean = withContext(Dispatchers.IO) {
-        rtdbPutRaw("referralStats/$referrerUid/count", count.coerceAtLeast(0).toString())
-    }
-    suspend fun expireReferralPremium(uid: String): Boolean = withContext(Dispatchers.IO) {
-        rtdbPutRaw("referralStats/$uid/premiumUntil", "1")
     }
 
     suspend fun deleteSubmission(id: String): Boolean = withContext(Dispatchers.IO) {
