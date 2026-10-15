@@ -183,6 +183,13 @@
         ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.email === 'davidstha900@gmail.com' || (!data.exists() && newData.val() === auth.token.email) || (data.exists() && !newData.exists() && data.val() === auth.token.email))",
         ".validate": "newData.isString()"
       }
+    },
+    "darkstoreReports": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.email === 'davidstha900@gmail.com')",
+      "$reportId": {
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.email === 'davidstha900@gmail.com' || (!data.exists() && newData.child('reporterUid').val() === auth.uid))",
+        ".validate": "newData.hasChildren(['id','category','message','reporterUid','createdAt']) && newData.child('message').isString() && newData.child('message').val().length >= 10 && newData.child('message').val().length <= 1000 && newData.child('category').isString() && newData.child('category').val().length <= 30 && newData.child('createdAt').isNumber() && newData.child('createdAt').val() <= now + 300000"
+      }
     }
   }
 }

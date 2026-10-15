@@ -4262,6 +4262,7 @@ fun ProfileTabContent(
 
     var selectedSubTab by remember { mutableStateOf("Live") }
     var activeDetailSubmission by remember { mutableStateOf<com.example.data.SubmissionEntity?>(null) }
+    val catalogApps by viewModel.unfilteredApps.collectAsStateWithLifecycle()
     var editOptionsForApp by remember { mutableStateOf<com.example.data.SubmissionEntity?>(null) }
     var showUpdateScreenshotsFormFor by remember { mutableStateOf<com.example.data.SubmissionEntity?>(null) }
     var showPushUpdateFormFor by remember { mutableStateOf<com.example.data.SubmissionEntity?>(null) }
@@ -5367,6 +5368,7 @@ fun ProfileTabContent(
                             rowGroups.forEach { group ->
                                 Box(modifier = Modifier.weight(1f)) {
                                     DeveloperAppGroupCard(
+                                        liveApp = catalogApps.firstOrNull { it.packageName.equals(group.packageName, ignoreCase = true) },
                                         group = group,
                                         surfaceCol = surfaceCol,
                                         borderCol = borderCol,
@@ -5488,6 +5490,25 @@ fun ProfileTabContent(
                                         .padding(18.dp),
                                     verticalArrangement = Arrangement.spacedBy(20.dp)
                                 ) {
+                                    // Suspension notice (the submission itself stays "approved")
+                                    val suspendedLive = catalogApps.firstOrNull { it.packageName.equals(sub.packageName, ignoreCase = true) }?.takeIf { it.isSuspended }
+                                    if (suspendedLive != null) {
+                                        Card(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            shape = RoundedCornerShape(16.dp),
+                                            colors = CardDefaults.cardColors(containerColor = Color(0xFFEF4444).copy(alpha = 0.10f)),
+                                            border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.5f))
+                                        ) {
+                                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                Text("This app is suspended", color = Color(0xFFEF4444), fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
+                                                Text("It is hidden from DarkRoot Store and users can't install it.", color = textSecondaryCol, fontSize = 12.sp)
+                                                Text("Reason", color = textSecondaryCol, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                Text(suspendedLive.suspensionReason.ifBlank { "No reason was given. Contact the admin from Chat." }, color = textPrimaryCol, fontSize = 13.sp)
+                                                Text("What to do: fix the problem, then send an update for review (app menu > Fix & resubmit for review). The admin will check it and can bring the app back.", color = textSecondaryCol, fontSize = 12.sp)
+                                            }
+                                        }
+                                    }
+
                                     // 1. Hero / App Identity Panel
                                     Card(
                                         modifier = Modifier.fillMaxWidth(),
@@ -16465,12 +16486,17 @@ fun DeveloperAppGroupCard(
     onRequestUpdate: (com.example.data.SubmissionEntity) -> Unit,
     onEditOptions: (com.example.data.SubmissionEntity) -> Unit,
     onClick: () -> Unit,
-    onWithdraw: (com.example.data.SubmissionEntity) -> Unit = {}
+    onWithdraw: (com.example.data.SubmissionEntity) -> Unit = {},
+    liveApp: com.example.data.AppEntity? = null
 ) {
     var expanded by remember { mutableStateOf(false) }
     val mainAppSub = group.liveSub ?: group.latestSub
     // While a submission is in review the app is locked: no second update can be queued.
     val inReview = group.pendingSub != null
+    // The admin can suspend a live app. The submission stays "approved", so the real state
+    // has to come from the catalog entry - otherwise a suspended app still looked "Published".
+    val isSuspendedApp = group.liveSub != null && liveApp?.isSuspended == true
+    val suspendedColor = Color(0xFFEF4444)
 
     Card(
         modifier = Modifier
@@ -16479,8 +16505,8 @@ fun DeveloperAppGroupCard(
             .clickable { onClick() }
             .testTag("dev_app_group_card_" + group.packageName),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = surfaceCol),
-        border = BorderStroke(1.dp, borderCol)
+        colors = CardDefaults.cardColors(containerColor = if (isSuspendedApp) suspendedColor.copy(alpha = 0.06f).compositeOver(surfaceCol) else surfaceCol),
+        border = BorderStroke(if (isSuspendedApp) 1.5.dp else 1.dp, if (isSuspendedApp) suspendedColor.copy(alpha = 0.6f) else borderCol)
     ) {
         Column(
             modifier = Modifier.padding(16.dp)
@@ -16522,7 +16548,7 @@ fun DeveloperAppGroupCard(
                         onDismissRequest = { expanded = false }
                     ) {
                         DropdownMenuItem(
-                            text = { Text(if (inReview) "Update locked - in review" else "Update App Form", fontSize = 12.sp) },
+                            text = { Text(if (inReview) "Update locked - in review" else if (isSuspendedApp) "Fix & resubmit for review" else "Update App Form", fontSize = 12.sp) },
                             enabled = !inReview,
                             onClick = {
                                 expanded = false
@@ -16579,26 +16605,70 @@ fun DeveloperAppGroupCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Text("5.0", fontSize = 12.sp, color = textPrimaryCol, fontWeight = FontWeight.Bold)
+                    Text(liveApp?.rating?.takeIf { it.isNotBlank() } ?: "-", fontSize = 12.sp, color = textPrimaryCol, fontWeight = FontWeight.Bold)
                     Icon(imageVector = Icons.Default.Star, contentDescription = "Rating", tint = Color(0xFFF59E0B), modifier = Modifier.size(12.dp))
                 }
-                Text("23M", fontSize = 12.sp, color = textPrimaryCol, fontWeight = FontWeight.Bold)
+                Text(liveApp?.size?.takeIf { it.isNotBlank() } ?: "-", fontSize = 12.sp, color = textPrimaryCol, fontWeight = FontWeight.Bold)
             }
             
             Spacer(modifier = Modifier.height(12.dp))
             
             val (statusLabel, statusColor) = when {
+                isSuspendedApp -> Pair("Suspended", suspendedColor)
                 group.liveSub != null -> Pair("Published", Color(0xFF10B981))
                 group.pendingSub != null -> Pair("Pending", Color(0xFFF59E0B))
                 else -> Pair("Rejected", Color(0xFFEF4444))
             }
-            
+
             Text(
                 text = statusLabel,
                 color = statusColor,
                 fontWeight = FontWeight.Bold,
                 fontSize = 12.sp
             )
+
+            // Why it is not live + what to do next
+            val reasonText = when {
+                isSuspendedApp -> liveApp?.suspensionReason.orEmpty()
+                group.liveSub == null && group.pendingSub == null -> group.rejectedSub?.feedback.orEmpty()
+                else -> ""
+            }.trim()
+            if (isSuspendedApp || (group.liveSub == null && group.pendingSub == null)) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(statusColor.copy(alpha = 0.10f), RoundedCornerShape(10.dp))
+                        .padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = if (isSuspendedApp) "Hidden from the store by the admin" else "Not approved",
+                        color = statusColor, fontSize = 11.sp, fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = if (reasonText.isNotBlank()) "Reason: $reasonText" else "No reason was given. Contact the admin from Chat.",
+                        color = textPrimaryCol, fontSize = 11.sp, maxLines = 4,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
+                    if (!inReview) {
+                        Text(
+                            text = "Fix the problem, then resubmit it for review.",
+                            color = textSecondaryCol, fontSize = 10.sp
+                        )
+                        Text(
+                            text = "Resubmit for review",
+                            color = accentGreen, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .padding(top = 2.dp)
+                                .clickable { onRequestUpdate(mainAppSub) }
+                                .testTag("resubmit_" + group.packageName)
+                        )
+                    } else {
+                        Text(text = "Your resubmission is in review.", color = textSecondaryCol, fontSize = 10.sp)
+                    }
+                }
+            }
         }
     }
 }

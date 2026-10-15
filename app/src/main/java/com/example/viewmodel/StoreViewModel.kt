@@ -2529,7 +2529,10 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                         versionCode = if (submission.isUpdateSubmission) submission.versionCode else existingApp.versionCode,
                         changelog = submission.changelog,
                         videoUrl = submission.videoUrl.ifBlank { existingApp.videoUrl },
-                        versionHistoryJson = updatedHistoryJson
+                        versionHistoryJson = updatedHistoryJson,
+                        // The admin just reviewed the developer's fix: a suspended app comes back live.
+                        isSuspended = false,
+                        suspensionReason = ""
                     )
                 } else {
                     AppEntity(
