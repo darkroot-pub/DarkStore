@@ -105,7 +105,9 @@ fun AuthScreen(
                 fallbackName = account.displayName ?: ""
             ) { success, msg ->
                 isLoading = false
-                Toast.makeText(context, msg ?: if (success) "Signed in with Google!" else "Google sign-in failed.", Toast.LENGTH_SHORT).show()
+                if (msg?.startsWith("Account suspended") != true) {
+                    Toast.makeText(context, msg ?: if (success) "Signed in with Google!" else "Google sign-in failed.", Toast.LENGTH_SHORT).show()
+                }
             }
         } catch (e: ApiException) {
             isLoading = false
@@ -303,7 +305,9 @@ fun AuthScreen(
                                 "LOGIN" -> {
                                     viewModel.signInWithEmail(email, password) { success, msg ->
                                         isLoading = false
-                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                        if (msg?.startsWith("Account suspended") != true) {
+                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                        }
                                     }
                                 }
                                 "SIGNUP" -> {
@@ -474,6 +478,63 @@ fun AuthScreen(
                     }
                 )
             }
+        }
+
+        // "Your account is suspended" popup. Shown here, on the login page, the moment a suspended account
+        // is refused - and the remembered account is already forgotten, so the person can pick another one.
+        val suspendedNotice by viewModel.suspendedNotice.collectAsState()
+        suspendedNotice?.let { n ->
+            AlertDialog(
+                onDismissRequest = { viewModel.dismissSuspendedNotice() },
+                icon = { Icon(Icons.Default.Block, contentDescription = null, tint = Color(0xFFEF4444)) },
+                title = { Text("Account suspended", fontWeight = FontWeight.ExtraBold) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        if (n.yourMasked.isNotBlank()) {
+                            Text("The account ${n.yourMasked} was suspended.", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        }
+                        Text("Reason: ${n.reason}", fontSize = 13.sp)
+                        if (n.canContinue) {
+                            Text(
+                                "You can keep using DarkStore with your first account ${n.primaryMasked}. " +
+                                    "Tap \"Choose my first account\" and pick that Gmail address.",
+                                fontSize = 13.sp
+                            )
+                        } else {
+                            Text("If you think this is a mistake, please contact the DarkStore admin.", fontSize = 12.sp)
+                        }
+                    }
+                },
+                confirmButton = {
+                    if (n.canContinue) {
+                        TextButton(onClick = {
+                            viewModel.dismissSuspendedNotice()
+                            email = ""; password = ""; authMode = "LOGIN"
+                            if (webClientId.isNullOrBlank()) {
+                                Toast.makeText(context, "Google configuration is missing. Please contact support.", Toast.LENGTH_LONG).show()
+                            } else {
+                                isLoading = true
+                                // Forget the remembered account first, so Google shows the account chooser again.
+                                googleSignInClient.signOut().addOnCompleteListener {
+                                    googleSignInClient.revokeAccess().addOnCompleteListener {
+                                        googleSignInLauncher.launch(googleSignInClient.signInIntent)
+                                    }
+                                }
+                            }
+                        }) { Text("Choose my first account", fontWeight = FontWeight.Bold) }
+                    } else {
+                        TextButton(onClick = { viewModel.dismissSuspendedNotice() }) { Text("OK") }
+                    }
+                },
+                dismissButton = {
+                    if (n.canContinue) {
+                        TextButton(onClick = {
+                            viewModel.dismissSuspendedNotice()
+                            email = ""; password = ""; authMode = "LOGIN"
+                        }) { Text("Use email & password") }
+                    }
+                }
+            )
         }
 
         if (showResetEmailSentDialog) {

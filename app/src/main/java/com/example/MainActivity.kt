@@ -1129,23 +1129,6 @@ fun PlayStoreMainDashboard(
         }
     }
 
-    // Shown when the security system (or the admin) suspended this account
-    val suspendedNotice by viewModel.suspendedNotice.collectAsStateWithLifecycle()
-    suspendedNotice?.let { why ->
-        AlertDialog(
-            onDismissRequest = { viewModel.dismissSuspendedNotice() },
-            icon = { Icon(Icons.Default.Block, contentDescription = null, tint = Color(0xFFEF4444)) },
-            title = { Text("Your account is suspended", fontWeight = FontWeight.ExtraBold) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(why, fontSize = 14.sp)
-                    Text("You have been signed out. If you think this is a mistake, contact the DarkStore admin.", fontSize = 12.sp)
-                }
-            },
-            confirmButton = { TextButton(onClick = { viewModel.dismissSuspendedNotice() }) { Text("OK") } }
-        )
-    }
-
     LaunchedEffect(showDetailsApp) {
         if (showDetailsApp != null) {
             viewModel.refreshInstalledApps()

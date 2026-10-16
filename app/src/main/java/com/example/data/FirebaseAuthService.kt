@@ -243,7 +243,7 @@ object FirebaseAuthService {
                     val (suspended, suspReason) = checkAccountSuspended(user.uid, user.email)
                     if (user.isSuspended || suspended) {
                         val reason = user.suspensionReason.ifBlank { suspReason }.ifBlank { "Please contact support." }
-                        return@use Triple(false, "Account suspended: $reason", null)
+                        return@use suspendedLogin(reason, user.email, idToken)
                     }
 
                     saveLocalUser(context, user, idToken, refreshToken)
@@ -412,7 +412,7 @@ object FirebaseAuthService {
         if (suspended || finalUser.isSuspended) {
             val msg = (if (finalUser.suspensionReason.isNotBlank()) finalUser.suspensionReason else reason)
                 .ifBlank { "Please contact support." }
-            return@withContext Triple(false, "Account suspended: $msg", null)
+            return@withContext suspendedLogin(msg, finalUser.email, "")
         }
         saveUserInRealtimeDatabase(finalUser)
         saveLocalUser(context, finalUser, "google_oauth_token_$uid")
@@ -487,7 +487,7 @@ object FirebaseAuthService {
                     if (suspended || finalUser.isSuspended) {
                         val msg = (if (finalUser.suspensionReason.isNotBlank()) finalUser.suspensionReason else reason)
                             .ifBlank { "Please contact support." }
-                        return@use Triple(false, "Account suspended: $msg", null)
+                        return@use suspendedLogin(msg, finalUser.email, token)
                     }
                     saveUserInRealtimeDatabase(finalUser)
                     saveLocalUser(context, finalUser, token, refreshToken)
@@ -526,7 +526,7 @@ object FirebaseAuthService {
                     if (suspended || finalUser.isSuspended) {
                         val msg = (if (finalUser.suspensionReason.isNotBlank()) finalUser.suspensionReason else reason)
                             .ifBlank { "Please contact support." }
-                        return@use Triple(false, "Account suspended: $msg", null)
+                        return@use suspendedLogin(msg, finalUser.email, token)
                     }
                     saveUserInRealtimeDatabase(finalUser)
                     saveLocalUser(context, finalUser, "fake_token_$uid")
@@ -569,7 +569,7 @@ object FirebaseAuthService {
             if (suspended || finalUser.isSuspended) {
                 val msg = (if (finalUser.suspensionReason.isNotBlank()) finalUser.suspensionReason else reason)
                     .ifBlank { "Please contact support." }
-                return@withContext Triple(false, "Account suspended: $msg", null)
+                return@withContext suspendedLogin(msg, finalUser.email, "")
             }
             saveUserInRealtimeDatabase(finalUser)
             saveLocalUser(context, finalUser, "fake_token_$uid")
@@ -1243,6 +1243,53 @@ object FirebaseAuthService {
 
     suspend fun setFraudAlertStatus(id: String, status: String): Boolean = withContext(Dispatchers.IO) {
         rtdbPutRaw("fraudAlerts/${id.replace(Regex("[^A-Za-z0-9_-]"), "")}/status", JSONObject.quote(status))
+    }
+
+
+    // ----------------------------------------------------
+    // SUSPENDED ACCOUNT AT LOGIN (popup on the login page)
+    // ----------------------------------------------------
+    data class SuspensionInfo(val reason: String, val yourMasked: String, val primaryMasked: String, val canContinue: Boolean)
+
+    /** Set when a sign-in is refused because the account is suspended; the ViewModel shows the popup. */
+    val suspensionEvents = kotlinx.coroutines.flow.MutableStateFlow<SuspensionInfo?>(null)
+
+    /** da***e@gmail.com - never show a full address on the login screen. */
+    fun maskEmail(e: String): String {
+        val t = e.trim()
+        val at = t.lastIndexOf('@')
+        if (at <= 0) return ""
+        val local = t.substring(0, at)
+        val masked = when {
+            local.length <= 2 -> local.take(1) + "***"
+            local.length <= 4 -> local.take(1) + "***" + local.takeLast(1)
+            else -> local.take(2) + "***" + local.takeLast(1)
+        }
+        return masked + t.substring(at)
+    }
+
+    /**
+     * A suspended account tried to sign in: forget its session right now (it must not stay "remembered"),
+     * ask the server for the masked addresses + the FIRST account on this phone, and raise the popup event.
+     */
+    private suspend fun suspendedLogin(reason: String, email: String, idToken: String): Triple<Boolean, String?, UserEntity?> {
+        var info = SuspensionInfo(reason, maskEmail(email), "", false)
+        val realToken = idToken.isNotBlank() && !idToken.startsWith("google_oauth_token_") && !idToken.startsWith("fake_token_")
+        if (realToken) {
+            val res = com.example.utils.NotifierServer.postJson("/account/suspension-info", idToken, JSONObject())
+            if (res != null && res.optBoolean("ok") && res.optBoolean("suspended")) {
+                info = SuspensionInfo(
+                    res.optString("reason").ifBlank { reason },
+                    res.optString("yourMasked").ifBlank { maskEmail(email) },
+                    res.optString("primaryMasked"),
+                    res.optBoolean("canContinue")
+                )
+            }
+        }
+        activeToken = ""
+        activeRefreshToken = ""
+        suspensionEvents.value = info
+        return Triple(false, "Account suspended: $reason", null)
     }
 
     suspend fun deleteSubmission(id: String): Boolean = withContext(Dispatchers.IO) {

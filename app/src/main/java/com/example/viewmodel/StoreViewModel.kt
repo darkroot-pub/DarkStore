@@ -656,18 +656,56 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     val fraudAlerts: StateFlow<List<FirebaseAuthService.FraudAlert>> = _fraudAlerts.asStateFlow()
     private val _fraudScanBusy = MutableStateFlow(false)
     val fraudScanBusy: StateFlow<Boolean> = _fraudScanBusy.asStateFlow()
-    private val _suspendedNotice = MutableStateFlow<String?>(null)
-    val suspendedNotice: StateFlow<String?> = _suspendedNotice.asStateFlow()
+    private val _suspendedNotice = MutableStateFlow<com.example.data.SuspendedNotice?>(null)
+    val suspendedNotice: StateFlow<com.example.data.SuspendedNotice?> = _suspendedNotice.asStateFlow()
     fun dismissSuspendedNotice() { _suspendedNotice.value = null }
 
-    /** Signs the user out and shows them why their account is suspended. */
-    private fun enforceSuspension(reason: String) {
-        _suspendedNotice.value = reason.ifBlank { "Your account was suspended by DarkStore's security checks. Please contact the DarkStore admin." }
-        viewModelScope.launch(Dispatchers.Main) { logout() }
+    /**
+     * Wipes every "remembered" account so the person can CHOOSE which one to sign in with:
+     * the Google account picker is forced to show again (sign-out + revoke) and all stored sessions are cleared.
+     */
+    fun forgetRememberedAccounts() {
+        try {
+            val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                .requestIdToken(_customGoogleWebClientId.value)
+                .requestEmail()
+                .build()
+            val client = GoogleSignIn.getClient(getApplication<Application>(), gso)
+            client.signOut().addOnCompleteListener { client.revokeAccess() }
+        } catch (_: Exception) { }
+        logout()
     }
 
-    /** One-way fingerprint of this phone; the real Android ID never leaves the device. */
-    private val deviceHashValue: String by lazy { com.example.utils.FraudRules.deviceHash(getApplication()) }
+    /**
+     * Signs the user out and shows them why their account is suspended (the popup appears on the login
+     * page, which is where they land). Asks the server first for the masked addresses of this account and of
+     * the FIRST account on the phone - it has to happen before the sign-out clears the token.
+     */
+    private fun enforceSuspension(reason: String) {
+        val base = reason.ifBlank { "Your account was suspended by DarkStore's security checks. Please contact the DarkStore admin." }
+        val myEmail = _userEmail.value
+        viewModelScope.launch(Dispatchers.IO) {
+            var notice = com.example.data.SuspendedNotice(base, FirebaseAuthService.maskEmail(myEmail))
+            try {
+                val res = com.example.utils.NotifierServer.postJson(
+                    "/account/suspension-info", FirebaseService.activeToken,
+                    org.json.JSONObject().put("deviceHash", deviceHashValue)
+                )
+                if (res != null && res.optBoolean("ok") && res.optBoolean("suspended")) {
+                    notice = com.example.data.SuspendedNotice(
+                        res.optString("reason").ifBlank { base },
+                        res.optString("yourMasked").ifBlank { FirebaseAuthService.maskEmail(myEmail) },
+                        res.optString("primaryMasked"),
+                        res.optBoolean("canContinue")
+                    )
+                }
+            } catch (_: Exception) { }
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                _suspendedNotice.value = notice
+                forgetRememberedAccounts()
+            }
+        }
+    }
 
     /**
      * Registers this phone for the signed-in account on the DarkStore server (retries while the login token
@@ -3583,6 +3621,16 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     init {
         runMainStartup()
         startStartupRefresh()
+        // A suspended account tried to log in: forget it (so Google doesn't keep "remembering" it) and show the popup.
+        viewModelScope.launch {
+            FirebaseAuthService.suspensionEvents.collect { info ->
+                if (info != null) {
+                    FirebaseAuthService.suspensionEvents.value = null
+                    forgetRememberedAccounts()
+                    _suspendedNotice.value = com.example.data.SuspendedNotice(info.reason, info.yourMasked, info.primaryMasked, info.canContinue)
+                }
+            }
+        }
         // Admins always have Premium (no switch needed).
         viewModelScope.launch {
             userRole.collect { r ->
