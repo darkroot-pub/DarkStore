@@ -41,6 +41,29 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
 
     private val sharedPrefs = application.getSharedPreferences("dark_store_pref", Context.MODE_PRIVATE)
 
+    /**
+     * Stable, privacy-preserving device identifier used by the server's device/referral checks.
+     * Never send the raw Android ID to the server.
+     */
+    private val deviceHashValue: String = run {
+        val androidId = android.provider.Settings.Secure.getString(
+            application.contentResolver,
+            android.provider.Settings.Secure.ANDROID_ID
+        ).orEmpty()
+        val stableSource = if (androidId.isNotBlank()) {
+            "${application.packageName}:$androidId"
+        } else {
+            val seed = sharedPrefs.getString("device_hash_seed", null)
+                ?: java.util.UUID.randomUUID().toString().also {
+                    sharedPrefs.edit().putString("device_hash_seed", it).apply()
+                }
+            "${application.packageName}:$seed"
+        }
+        java.security.MessageDigest.getInstance("SHA-256")
+            .digest(stableSource.toByteArray(Charsets.UTF_8))
+            .joinToString("") { byte -> "%02x".format(byte) }
+    }
+
     init {
         val apiKey = sharedPrefs.getString("custom_firebase_api_key", "AIzaSyDWAQ3MmbZwzIQ9zNZvN9lep-_W6dIbv9o") ?: "AIzaSyDWAQ3MmbZwzIQ9zNZvN9lep-_W6dIbv9o"
         val projectId = sharedPrefs.getString("custom_firebase_project_id", "dark-store-6836d") ?: "dark-store-6836d"
