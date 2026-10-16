@@ -526,7 +526,7 @@ object FirebaseAuthService {
                     if (suspended || finalUser.isSuspended) {
                         val msg = (if (finalUser.suspensionReason.isNotBlank()) finalUser.suspensionReason else reason)
                             .ifBlank { "Please contact support." }
-                        return@use suspendedLogin(msg, finalUser.email, token)
+                        return@use suspendedLogin(msg, finalUser.email, "")
                     }
                     saveUserInRealtimeDatabase(finalUser)
                     saveLocalUser(context, finalUser, "fake_token_$uid")
