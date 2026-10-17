@@ -9,6 +9,8 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -47,7 +49,14 @@ fun Modifier.glass(isDark: Boolean, shape: Shape, elevation: Dp = 6.dp): Modifie
     return base
         .clip(shape)
         .drawWithCache {
-            val outline = shape.createOutline(size, layoutDirection, this)
+            // Turn the shape into a Path once (cached per size); drawPath works for any Shape.
+            val path = Path().apply {
+                when (val o = shape.createOutline(size, layoutDirection, this@drawWithCache)) {
+                    is Outline.Rectangle -> addRect(o.rect)
+                    is Outline.Rounded -> addRoundRect(o.roundRect)
+                    is Outline.Generic -> addPath(o.path)
+                }
+            }
             val fill = Brush.verticalGradient(
                 if (isDark) listOf(Color.White.copy(alpha = 0.13f), Color.White.copy(alpha = 0.05f))
                 else listOf(Color.White.copy(alpha = 0.66f), Color.White.copy(alpha = 0.40f))
@@ -65,9 +74,9 @@ fun Modifier.glass(isDark: Boolean, shape: Shape, elevation: Dp = 6.dp): Modifie
             )
             val stroke = Stroke(width = 1.dp.toPx())
             onDrawBehind {
-                drawOutline(outline, fill)
-                drawOutline(outline, sheen)
-                drawOutline(outline, edge, style = stroke)
+                drawPath(path, brush = fill)
+                drawPath(path, brush = sheen)
+                drawPath(path, brush = edge, style = stroke)
             }
         }
 }
