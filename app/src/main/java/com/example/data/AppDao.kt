@@ -46,6 +46,14 @@ class AppDao(private val context: Context) {
         loadCachedNotices()
     }
 
+    // CRASH FIX: concurrent / interrupted writes used to leave half-written JSON, which then
+    // failed to parse at next launch. Write to a temp file and rename.
+    private fun writeAtomic(target: File, json: String) {
+        val tmp = File(target.parentFile, target.name + ".tmp")
+        tmp.writeText(json)
+        if (!tmp.renameTo(target)) { target.writeText(json); tmp.delete() }
+    }
+
     private fun loadCachedApps() {
         try {
             if (appsFile.exists()) {
@@ -60,10 +68,11 @@ class AppDao(private val context: Context) {
         }
     }
 
+    @Synchronized
     private fun saveCachedApps() {
         try {
             val json = appsListAdapter.toJson(_appsFlow.value)
-            appsFile.writeText(json)
+            writeAtomic(appsFile, json)
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -83,10 +92,11 @@ class AppDao(private val context: Context) {
         }
     }
 
+    @Synchronized
     private fun saveCachedDownloads() {
         try {
             val json = downloadsListAdapter.toJson(_downloadsFlow.value)
-            downloadsFile.writeText(json)
+            writeAtomic(downloadsFile, json)
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -104,6 +114,7 @@ class AppDao(private val context: Context) {
         return _appsFlow.value.find { it.id == id }
     }
 
+    @Synchronized
     fun insertApps(apps: List<AppEntity>) {
         // PERF: this used to unconditionally reassign _appsFlow.value and
         // synchronously rewrite the ENTIRE cached-apps JSON file to disk on every
@@ -134,6 +145,7 @@ class AppDao(private val context: Context) {
         }
     }
 
+    @Synchronized
     fun deleteApp(app: AppEntity) {
         val current = _appsFlow.value.toMutableList()
         current.removeAll { it.id == app.id }
@@ -141,6 +153,7 @@ class AppDao(private val context: Context) {
         saveCachedApps()
     }
 
+    @Synchronized
     fun clearAllApps() {
         _appsFlow.value = emptyList()
         saveCachedApps()
@@ -157,18 +170,24 @@ class AppDao(private val context: Context) {
         return _downloadsFlow.value.find { it.packageName == packageName }
     }
 
+    @Synchronized
     fun insertDownload(download: DownloadEntity) {
         val current = _downloadsFlow.value.toMutableList()
         val index = current.indexOfFirst { it.id == download.id }
+        // PERF: while a download runs this is called twice a second. Rewriting the whole
+        // downloads JSON file on every tick was pure disk churn - a running download is marked
+        // FAILED on the next cold start anyway, so only persist real status changes.
+        val statusChanged = index == -1 || current[index].status != download.status
         if (index != -1) {
             current[index] = download
         } else {
             current.add(download)
         }
         _downloadsFlow.value = current
-        saveCachedDownloads()
+        if (statusChanged || download.status != "DOWNLOADING") saveCachedDownloads()
     }
 
+    @Synchronized
     fun deleteDownloadById(id: String) {
         val current = _downloadsFlow.value.toMutableList()
         current.removeAll { it.id == id }
@@ -181,11 +200,14 @@ class AppDao(private val context: Context) {
 
     fun getNoticesList(): List<NoticeEntity> = _noticesFlow.value
 
+    @Synchronized
     fun insertNotices(notices: List<NoticeEntity>) {
+        // PERF: the background poll calls this every cycle; skip the disk write when nothing changed.
+        if (_noticesFlow.value == notices) return
         _noticesFlow.value = notices
         try {
             val json = noticesListAdapter.toJson(notices)
-            noticesFile.writeText(json)
+            writeAtomic(noticesFile, json)
         } catch (e: Exception) {
             e.printStackTrace()
         }

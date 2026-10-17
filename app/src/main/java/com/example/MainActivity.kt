@@ -228,7 +228,7 @@ class MainActivity : ComponentActivity() {
                 .diskCache {
                     DiskCache.Builder()
                         .directory(applicationContext.cacheDir.resolve("image_cache"))
-                        .maxSizePercent(0.04) // reasonable portion of disk cache
+                        .maxSizeBytes(200L * 1024 * 1024) // was 4% of the whole partition (several GB)
                         .build()
                 }
                 .crossfade(true)
@@ -2124,11 +2124,15 @@ fun DiscoveryTabContent(
     val downloadsMap = remember(downloads) { downloads.associateBy { it.id } }
     
     // Filter Games out for Games tab specifically
+    // CRASH FIX: LazyColumn/LazyRow throw "Key was already used" if two items share a key.
+    // A duplicate app id in the catalog (or a re-ordered live list) would crash the feed, so
+    // the list is de-duplicated by id once per data change.
     val appsToRender = remember(apps, category, selectedPill) {
+        val unique = apps.distinctBy { it.id }
         if (category == "Games") {
-            apps.filter { it.category.equals("Games", ignoreCase = true) }
+            unique.filter { it.category.equals("Games", ignoreCase = true) }
         } else {
-            apps
+            unique
         }
     }
     val featuredList = remember(appsToRender) { appsToRender.filter { it.isFeatured } }
@@ -2297,7 +2301,13 @@ fun DiscoveryTabContent(
                         // High-performance strategy: Load the entire next chunk in a single frame,
                         // avoiding index-by-index recomposition lag!
                         kotlinx.coroutines.delay(80)
-                        val nextChunk = standardApps.subList(totalLoaded, totalLoaded + nextPageSize)
+                        // CRASH FIX: the live list can shift while paging, so the next slice may
+                        // contain apps that are already shown -> duplicate LazyColumn keys.
+                        val shownIds = loadedApps.mapNotNullTo(HashSet()) { it?.id }
+                        val nextChunk = standardApps.asSequence()
+                            .filter { it.id !in shownIds }
+                            .take(nextPageSize)
+                            .toList()
                         loadedApps.addAll(nextChunk)
                     }
                     isPageLoading = false

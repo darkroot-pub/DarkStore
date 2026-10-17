@@ -75,12 +75,14 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 
-      - name: Build unsigned release APK
+      # INSTALL THIS ONE for real use / speed testing. The debug APK above is debuggable and not
+      # minified; Jetpack Compose runs several times slower in it, so it looks laggy on any phone.
+      - name: Build release APK (R8-optimised, signed with the release signing config)
         run: gradle assembleRelease --stacktrace
 
-      - name: Upload unsigned release APK
+      - name: Upload release APK
         uses: actions/upload-artifact@v4
         with:
-          name: darkroot-store-release-unsigned-apk
+          name: darkroot-store-release-apk
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error

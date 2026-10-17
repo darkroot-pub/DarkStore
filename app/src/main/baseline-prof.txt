@@ -1,0 +1,10 @@
+# Hand-written baseline profile: asks ART to pre-compile (AOT) the app's own code and the Compose
+# paths used on every scroll, so the first launches don't stutter. (H=hot, S=startup, P=post-startup)
+# If a build ever complains about this file, just delete it - nothing else depends on it.
+HSPLcom/example/**;->**(**)**
+HSPLandroidx/compose/runtime/**;->**(**)**
+HSPLandroidx/compose/ui/**;->**(**)**
+HSPLandroidx/compose/foundation/**;->**(**)**
+HSPLandroidx/compose/animation/**;->**(**)**
+HSPLandroidx/compose/material3/**;->**(**)**
+HSPLcoil/**;->**(**)**

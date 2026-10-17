@@ -837,11 +837,25 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     private val _apkAdmin = MutableStateFlow<com.example.data.ApkAdminStatus?>(null)
     val apkAdminStatus: StateFlow<com.example.data.ApkAdminStatus?> = _apkAdmin.asStateFlow()
 
+    private val _apkAdminError = MutableStateFlow<String?>(null)
+    /** Why the admin storage card couldn't load (null = fine / still loading). */
+    val apkAdminError: StateFlow<String?> = _apkAdminError.asStateFlow()
+
     fun refreshApkAdmin() {
         viewModelScope.launch(Dispatchers.IO) {
+            _apkAdminError.value = null
             FirebaseAuthService.refreshIdTokenIfNeeded(getApplication())
-            val r = com.example.utils.NotifierServer.postJson("/admin/apk/status", FirebaseService.activeToken, org.json.JSONObject()) ?: return@launch
-            if (!r.optBoolean("ok")) return@launch
+            val r = com.example.utils.NotifierServer.postJson("/admin/apk/status", FirebaseService.activeToken, org.json.JSONObject())
+            if (r == null) {
+                _apkAdminError.value = "Can't reach the DarkStore server. Check that it is running and try again."
+                return@launch
+            }
+            if (!r.optBoolean("ok")) {
+                _apkAdminError.value = if (r.optString("error") == "not found")
+                    "The DarkStore server is running an older version without APK storage. Upload the new notifier.py, apk_storage.py and referral_guard.py, restart it, then retry. (Open /health on the server: it should say version 2.3.)"
+                else r.optString("message").ifBlank { "The server refused the request. Are you signed in as an admin?" }
+                return@launch
+            }
             _apkAdmin.value = com.example.data.ApkAdminStatus(
                 r.optBoolean("enabled"), r.optInt("maxFileMB", 100), r.optInt("perUserFiles", 5), r.optInt("perUserMB", 300),
                 r.optBoolean("configured"), r.optString("keyHint"), r.optString("baseUrl"),
@@ -2347,6 +2361,13 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
             // Give setup some initial seconds to settle
             delay(5000)
             while (true) {
+                // PERF: only poll while the app is on screen. Pushes (FCM) already cover the
+                // background case, and fetching + parsing the whole catalog every 12 s while
+                // minimised just burns CPU, radio and memory (GC churn = jank on return).
+                if (!com.example.utils.ChatPushState.appInForeground) {
+                    delay(3000)
+                    continue
+                }
                 try {
                     Log.d("StoreViewModel", "Background sync run for new apps, announcements/notices...")
                     refreshMarketplace(force = false, isBackground = true)
@@ -2368,7 +2389,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                     Log.e("StoreViewModel", "Periodic background sync error: ${e.message}")
                 }
                 loadUnityAdsConfig()
-                delay(12000) // Poll every 12 seconds for real-time admin updates
+                delay(30000) // was 12 s - the worker pushes real-time changes via FCM anyway
             }
         }
     }
