@@ -1263,6 +1263,19 @@ fun PlayStoreMainDashboard(
     }
     androidx.activity.compose.BackHandler(enabled = activeTab == "Settings") { activeTab = "Profile" }
     androidx.activity.compose.BackHandler(enabled = activeTab == "Notifications") { activeTab = "Apps" }
+    // Back-button behaviour like a store app: an open chat closes first, then any other tab
+    // returns to the Apps home tab, and only from Apps does back leave the app.
+    val navActiveChatPeer by viewModel.activeChatPeer.collectAsStateWithLifecycle()
+    androidx.activity.compose.BackHandler(enabled = activeTab == "Chat" && navActiveChatPeer != null) {
+        viewModel.closeChat()
+    }
+    androidx.activity.compose.BackHandler(
+        enabled = activeTab != "Apps" && activeTab != "Settings" && activeTab != "Notifications" &&
+            !(activeTab == "Chat" && navActiveChatPeer != null)
+    ) {
+        if (selectedCategory == "Games") viewModel.selectCategory("All")
+        activeTab = "Apps"
+    }
     val tabsList = remember(tabs) { tabs.map { it.first } }
 
 
@@ -1441,18 +1454,15 @@ fun PlayStoreMainDashboard(
             )
 
             // 2. Discover Content Board based on selected Navigation Tab with smooth GPU-accelerated animated transitions to prevent lagging
+            // Remembers each tab's saved state (scroll position, list state) while it is off screen,
+            // so coming back to a tab restores it instead of rebuilding it from the top.
+            val tabStateHolder = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
             AnimatedContent(
                 targetState = activeTab,
+                // PERF: was a 300 ms full-screen slide of two heavy trees at once. A short fade
+                // (like a store app's tab switch) keeps both layers cheap while they overlap.
                 transitionSpec = {
-                    val initialIdx = tabsList.indexOf(initialState)
-                    val targetIdx = tabsList.indexOf(targetState)
-                    val direction = if (targetIdx >= initialIdx) {
-                        AnimatedContentTransitionScope.SlideDirection.Left
-                    } else {
-                        AnimatedContentTransitionScope.SlideDirection.Right
-                    }
-                    slideIntoContainer(direction, animationSpec = tween(300, easing = FastOutSlowInEasing)) + fadeIn(animationSpec = tween(150)) togetherWith
-                    slideOutOfContainer(direction, animationSpec = tween(300, easing = FastOutSlowInEasing)) + fadeOut(animationSpec = tween(150))
+                    fadeIn(animationSpec = tween(150)) togetherWith fadeOut(animationSpec = tween(80))
                 },
                 label = "dashboard_tab_transition_animation",
                 modifier = Modifier
@@ -1530,6 +1540,7 @@ fun PlayStoreMainDashboard(
                         banners = visibleBanners
                     )
                 }
+                tabStateHolder.SaveableStateProvider(targetTab) {
                 when (targetTab) {
                     "Games" -> {
                         DiscoveryTabContent(
@@ -1680,6 +1691,7 @@ fun PlayStoreMainDashboard(
                         )
                     }
                 }
+                } // end SaveableStateProvider
             }
         }
     }
@@ -1750,8 +1762,10 @@ fun PlayStoreMainDashboard(
                                         } else if (tabId == "Apps" && selectedCategory == "Games") {
                                             viewModel.selectCategory("All")
                                         }
-                                        // Always re-fetch live data when switching tabs while online
-                                        viewModel.refreshMarketplace(force = true)
+                                        // PERF: was a FORCED full refetch (apps + collections + banners +
+                                        // submissions + every developer) on every tab tap. Now only when the
+                                        // data is older than 30 s - the app already syncs in the background.
+                                        viewModel.refreshMarketplaceIfStale()
                                         if (tabId == "Chat") viewModel.refreshChatThreads()
                                         if (tabId == "Profile" || tabId == "Console") viewModel.refreshSubmissions()
                                     },
@@ -2157,7 +2171,14 @@ fun DiscoveryTabContent(
     val context = LocalContext.current
     val cacheKey = remember(category, selectedPill, searchQuery) { "${category}_${selectedPill}_${searchQuery}" }
     
-    val loadedApps = remember { mutableStateListOf<AppEntity?>() }
+    // Pre-filled synchronously (no empty first frame) so a restored scroll position has rows to land
+    // on when you come back to this tab - an empty list made the saved position collapse to the top.
+    val loadedApps = remember {
+        mutableStateListOf<AppEntity?>().apply {
+            val n = maxOf(40, com.example.data.PaginationCache.peekCount(cacheKey))
+            addAll(standardApps.take(n))
+        }
+    }
     var isPageLoading by remember { mutableStateOf(false) }
 
     var isLoadingDiscovery by remember { mutableStateOf(true) }
@@ -2303,7 +2324,7 @@ fun DiscoveryTabContent(
                         kotlinx.coroutines.delay(80)
                         // CRASH FIX: the live list can shift while paging, so the next slice may
                         // contain apps that are already shown -> duplicate LazyColumn keys.
-                        val shownIds = loadedApps.mapNotNullTo(HashSet()) { it?.id }
+                        val shownIds = loadedApps.mapNotNullTo(HashSet<String>()) { it?.id }
                         val nextChunk = standardApps.asSequence()
                             .filter { it.id !in shownIds }
                             .take(nextPageSize)
@@ -2656,7 +2677,7 @@ fun DiscoveryTabContent(
                             val isPurchased = purchasedAppIds.contains(app.id)
                             val onClick = remember(app.id) { { latestOnAppClick.value(app) } }
                             val onBuyClick = remember(app.id) { { latestOnBuyPremiumClick.value(app) } }
-                            Box(modifier = Modifier.animateItemPlacement(tween(280, easing = FastOutSlowInEasing))) {
+                            Box { // PERF: per-row animateItemPlacement removed (rows slid around mid-scroll when the live list re-synced)
                                 PremiumAppCardView(
                                     app = app,
                                     purchased = isPurchased,
@@ -2693,7 +2714,7 @@ fun DiscoveryTabContent(
                             val isRegistered = preRegisteredAppIds.contains(app.id)
                             val onClick = remember(app.id) { { latestOnAppClick.value(app) } }
                             val onRegisterClick = remember(app.id) { { latestOnPreRegisterClick.value(app) } }
-                            Box(modifier = Modifier.animateItemPlacement(tween(280, easing = FastOutSlowInEasing))) {
+                            Box { // PERF: per-row animateItemPlacement removed (rows slid around mid-scroll when the live list re-synced)
                                 UpcomingAppCardView(
                                     app = app,
                                     registered = isRegistered,
@@ -2758,7 +2779,7 @@ fun DiscoveryTabContent(
                     // built-in, low-cost placement-animation primitive — safe
                     // to add without reopening any of the earlier scroll-perf
                     // fixes to this same row.
-                    Box(modifier = Modifier.animateItemPlacement(tween(280, easing = FastOutSlowInEasing))) {
+                    Box { // PERF: per-row animateItemPlacement removed (rows slid around mid-scroll when the live list re-synced)
                         AppItemCardView(
                             app = app,
                             downloadState = dlState,
@@ -4305,7 +4326,7 @@ fun ProfileTabContent(
     var activeDetailSubmission by remember { mutableStateOf<com.example.data.SubmissionEntity?>(null) }
     val catalogApps by viewModel.unfilteredApps.collectAsStateWithLifecycle()
     // Pull the latest catalog when the profile opens, so a suspension done by the admin shows immediately.
-    LaunchedEffect(Unit) { viewModel.refreshMarketplace() }
+    LaunchedEffect(Unit) { viewModel.refreshMarketplaceIfStale() }
     var editOptionsForApp by remember { mutableStateOf<com.example.data.SubmissionEntity?>(null) }
     var showUpdateScreenshotsFormFor by remember { mutableStateOf<com.example.data.SubmissionEntity?>(null) }
     var showPushUpdateFormFor by remember { mutableStateOf<com.example.data.SubmissionEntity?>(null) }
@@ -8874,7 +8895,7 @@ fun ConsoleTabContent(
     // Trigger submissions refresh whenever the screen becomes visible or authorization changes
     LaunchedEffect(userRole, userEmail) {
         viewModel.refreshSubmissions()
-        viewModel.refreshMarketplace()
+        viewModel.refreshMarketplaceIfStale()
         viewModel.refreshTermsAgreements()
     }
 
@@ -12107,7 +12128,9 @@ fun AppDetailsDialog(
     var inputReviewText by remember { mutableStateOf("") }
     var activeLightboxImageIndex by remember { mutableStateOf<Int?>(null) }
 
-    var isLoadingDetails by remember { mutableStateOf(true) }
+    // The details page used to sit behind a fake 650 ms "loading" shimmer on every open. All the data
+    // is already in memory, so show it immediately.
+    var isLoadingDetails by remember { mutableStateOf(false) }
 
     // PERF: same fix as the home feed — only run the infinite shimmer animation
     // (and only pay its every-frame recomposition cost) while the details
@@ -12128,11 +12151,6 @@ fun AppDetailsDialog(
         0f
     }
 
-    LaunchedEffect(app.id) {
-        isLoadingDetails = true
-        kotlinx.coroutines.delay(650) // Simulate elegant live spec fetching with a 650ms shimmer to avoid lag & look premium
-        isLoadingDetails = false
-    }
 
     val screenshotList = remember(app.screenshots) {
         app.screenshots.split(",").map { it.trim() }.filter { it.isNotBlank() }

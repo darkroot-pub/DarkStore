@@ -74,6 +74,10 @@ object PaginationCache {
         }
     }
 
+    /** How many rows were last shown for [key] (memory only, never touches disk). */
+    @Synchronized
+    fun peekCount(key: String): Int = memoryCache[key]?.size ?: 0
+
     @Synchronized
     fun saveScrollPosition(key: String, index: Int, offset: Int) {
         scrollPositions[key] = Pair(index, offset)

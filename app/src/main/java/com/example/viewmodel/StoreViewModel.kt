@@ -2409,6 +2409,12 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Cheap refresh for tab switches / screen entry: does nothing unless the data is >30 s old. */
+    fun refreshMarketplaceIfStale(minGapMs: Long = 30_000L) {
+        if (System.currentTimeMillis() - lastAppsRefreshTime < minGapMs) return
+        refreshMarketplace(force = false, isBackground = true)
+    }
+
     fun refreshMarketplace(force: Boolean = false, isBackground: Boolean = false) {
         refreshCollections()
         refreshBanners()
