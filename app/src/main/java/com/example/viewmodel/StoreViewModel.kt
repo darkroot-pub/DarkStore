@@ -707,6 +707,9 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** One-way fingerprint of this phone; the real Android ID never leaves the device. */
+    private val deviceHashValue: String by lazy { com.example.utils.FraudRules.deviceHash(getApplication()) }
+
     /**
      * Registers this phone for the signed-in account on the DarkStore server (retries while the login token
      * settles). The SERVER decides: first account on a phone = primary, extra accounts lose referral rights,

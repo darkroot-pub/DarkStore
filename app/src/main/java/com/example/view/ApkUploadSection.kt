@@ -4,6 +4,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -76,7 +77,7 @@ fun ApkUploadSection(
                 Text("Upload APK from your phone", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 if (i?.premium != true) {
                     Text("PREMIUM", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold,
-                        modifier = Modifier.padding(start = 2.dp).then(Modifier))
+                        modifier = Modifier.background(gold, RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 2.dp))
                 }
             }
             when {
