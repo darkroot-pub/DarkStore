@@ -1824,6 +1824,7 @@ fun PlayStoreMainDashboard(
     if (showUserAppSubmissionForm) {
         AddNewAppForm(
             accentColor = accentGreen,
+            viewModel = viewModel,
             isForAdmin = isAdmin,
             userEmail = userEmail,
             defaultDeveloperName = devName,
@@ -1889,6 +1890,7 @@ fun PlayStoreMainDashboard(
         )
         AddNewAppForm(
             accentColor = accentGreen,
+            viewModel = viewModel,
             existingApp = mappedSubApp,
             isForAdmin = isAdmin,
             userEmail = userEmail,
@@ -10067,6 +10069,13 @@ fun ConsoleTabContent(
                     }
                     Spacer(modifier = Modifier.height(16.dp))
 
+                    // ---------------- APK STORAGE (admin) ----------------
+                    com.example.view.AdminApkStorageCard(
+                        viewModel = viewModel, accent = accentGreen, cardBg = cardBgColor, cardBorder = cardBorderColor,
+                        textPrimary = textPrimary, textSecondary = textSecondary
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+
                     // ---------------- ANTI-CHEAT & FAKE ACCOUNTS (admin) ----------------
                     run {
                         val fcfg by viewModel.fraudConfig.collectAsStateWithLifecycle()
@@ -10096,7 +10105,7 @@ fun ConsoleTabContent(
                                     }
                                 }
                                 Text(
-                                    "Detects invites between accounts on the same phone, many accounts on one phone, referral bursts and temporary emails. The DarkStore server scans automatically every 2 minutes, even when you are offline.",
+                                    "Detects extra accounts on the same phone (suspended and signed out automatically), same-phone invites, referral bursts and temporary emails. The DarkStore server scans automatically every 2 minutes, even when you are offline.",
                                     color = textSecondary, fontSize = 11.sp, lineHeight = 15.sp
                                 )
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -10113,7 +10122,7 @@ fun ConsoleTabContent(
                                     }
                                     Switch(checked = verifiedS, onCheckedChange = { verifiedS = it })
                                 }
-                                AdminStepper("Max accounts per phone before extra accounts are suspended", devS, 1..10, textPrimary, textSecondary) { devS = it }
+                                AdminStepper("Accounts allowed per phone (every extra account is suspended)", devS, 1..10, textPrimary, textSecondary) { devS = it }
                                 AdminStepper("Referrals per hour before it looks like a burst", burstS, 2..20, textPrimary, textSecondary) { burstS = it }
                                 AdminStepper("Blocked cheating attempts before self-suspension", strikeS, 1..5, textPrimary, textSecondary) { strikeS = it }
 
@@ -10723,6 +10732,7 @@ fun ConsoleTabContent(
             val appToEdit = editingApp
             AddNewAppForm(
             accentColor = accentGreen,
+            viewModel = viewModel,
                 existingApp = appToEdit,
                 isForAdmin = isAdmin,
                 userEmail = userEmail,
@@ -10753,6 +10763,7 @@ fun ConsoleTabContent(
             val sub = editingSubmission!!
             AddNewAppForm(
             accentColor = accentGreen,
+            viewModel = viewModel,
                 existingApp = AppEntity(
                     id = sub.id, name = sub.name, developer = sub.developer, version = sub.version,
                     size = "18 MB", category = sub.category, rating = "0.0", description = sub.description,
@@ -10805,6 +10816,7 @@ fun ConsoleTabContent(
             )
             AddNewAppForm(
             accentColor = accentGreen,
+            viewModel = viewModel,
                 existingApp = mappedSubApp,
                 isForAdmin = isAdmin,
                 userEmail = userEmail,
@@ -13491,7 +13503,8 @@ fun AddNewAppForm(
     defaultDeveloperName: String = "",
     onDismiss: () -> Unit,
     onSubmit: (AppEntity) -> Unit,
-    accentColor: Color = Color.Unspecified
+    accentColor: Color = Color.Unspecified,
+    viewModel: StoreViewModel? = null
 ) {
     // Theme: follow the app accent (gold for Premium) + dark/light, like every other screen.
     val accent = if (accentColor == Color.Unspecified) MaterialTheme.colorScheme.primary else accentColor
@@ -14176,6 +14189,18 @@ fun AddNewAppForm(
                                 Text("Distribution & Monetization", fontWeight = FontWeight.Bold, color = accent, fontSize = 14.sp)
                             }
                             Spacer(modifier = Modifier.height(2.dp))
+
+                            // Premium: upload the APK file directly instead of pasting a link
+                            if (viewModel != null && !isUpcoming) {
+                                com.example.view.ApkUploadSection(
+                                    viewModel = viewModel, accent = accent, isDark = isDark, expectedPackage = packageName
+                                ) { res ->
+                                    apkUrl = res.url
+                                    if (packageName.isBlank()) packageName = res.packageName
+                                    if (version.isBlank()) version = res.versionName
+                                    versionCodeInput = res.versionCode.toString()
+                                }
+                            }
 
                             OutlinedTextField(
     colors = fieldColors,

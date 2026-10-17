@@ -41,29 +41,6 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
 
     private val sharedPrefs = application.getSharedPreferences("dark_store_pref", Context.MODE_PRIVATE)
 
-    /**
-     * Stable, privacy-preserving device identifier used by the server's device/referral checks.
-     * Never send the raw Android ID to the server.
-     */
-    private val deviceHashValue: String = run {
-        val androidId = android.provider.Settings.Secure.getString(
-            application.contentResolver,
-            android.provider.Settings.Secure.ANDROID_ID
-        ).orEmpty()
-        val stableSource = if (androidId.isNotBlank()) {
-            "${application.packageName}:$androidId"
-        } else {
-            val seed = sharedPrefs.getString("device_hash_seed", null)
-                ?: java.util.UUID.randomUUID().toString().also {
-                    sharedPrefs.edit().putString("device_hash_seed", it).apply()
-                }
-            "${application.packageName}:$seed"
-        }
-        java.security.MessageDigest.getInstance("SHA-256")
-            .digest(stableSource.toByteArray(Charsets.UTF_8))
-            .joinToString("") { byte -> "%02x".format(byte) }
-    }
-
     init {
         val apiKey = sharedPrefs.getString("custom_firebase_api_key", "AIzaSyDWAQ3MmbZwzIQ9zNZvN9lep-_W6dIbv9o") ?: "AIzaSyDWAQ3MmbZwzIQ9zNZvN9lep-_W6dIbv9o"
         val projectId = sharedPrefs.getString("custom_firebase_project_id", "dark-store-6836d") ?: "dark-store-6836d"
@@ -750,6 +727,168 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 return
             }
             kotlinx.coroutines.delay(2500)
+        }
+    }
+
+    // ---------------- APK upload (Premium) + admin storage control ----------------
+    private fun parseApkFiles(arr: org.json.JSONArray?): List<com.example.data.ApkFile> {
+        val out = mutableListOf<com.example.data.ApkFile>()
+        if (arr != null) for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            out.add(com.example.data.ApkFile(
+                o.optString("id"), o.optString("name"), o.optLong("size"), o.optString("email"),
+                o.optLong("createdAt"), o.optInt("downloads"), o.optBoolean("inUse")
+            ))
+        }
+        return out
+    }
+
+    private val _apkInfo = MutableStateFlow<com.example.data.ApkUploadInfo?>(null)
+    val apkUploadInfo: StateFlow<com.example.data.ApkUploadInfo?> = _apkInfo.asStateFlow()
+    private val _apkProgress = MutableStateFlow<Float?>(null)
+    /** null = idle, -1 = preparing the file, 0..1 = uploading */
+    val apkUploadProgress: StateFlow<Float?> = _apkProgress.asStateFlow()
+
+    fun loadApkUploadInfo() {
+        viewModelScope.launch(Dispatchers.IO) {
+            FirebaseAuthService.refreshIdTokenIfNeeded(getApplication())
+            val r = com.example.utils.NotifierServer.postJson("/apk/mine", FirebaseService.activeToken, org.json.JSONObject()) ?: return@launch
+            if (!r.optBoolean("ok")) return@launch
+            _apkInfo.value = com.example.data.ApkUploadInfo(
+                r.optBoolean("enabled"), r.optBoolean("premium"), r.optInt("maxFileMB", 100), r.optInt("perUserFiles", 5),
+                r.optInt("perUserMB", 300), r.optInt("usedFiles"), r.optLong("usedBytes"), parseApkFiles(r.optJSONArray("files"))
+            )
+        }
+    }
+
+    /**
+     * Premium: pick an APK on the phone -> read its package/version locally -> stream it to the DarkStore server
+     * (which stores it and gives back a download link). The storage API key never touches the app.
+     */
+    fun uploadApk(uri: android.net.Uri, expectedPackage: String, onFinished: (com.example.data.ApkUploadResult?, String) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val app = getApplication<Application>()
+            var tmp: java.io.File? = null
+            var result: com.example.data.ApkUploadResult? = null
+            var msg = ""
+            _apkProgress.value = -1f
+            try {
+                FirebaseAuthService.refreshIdTokenIfNeeded(app)
+                val maxBytes = (_apkInfo.value?.maxFileMB ?: 100) * 1024L * 1024L
+                val dir = java.io.File(app.cacheDir, "apks").apply { mkdirs() }
+                tmp = java.io.File(dir, "upload_${System.currentTimeMillis()}.apk")
+                var copied = 0L
+                app.contentResolver.openInputStream(uri)?.use { input ->
+                    tmp!!.outputStream().use { out ->
+                        val buf = ByteArray(64 * 1024)
+                        while (true) {
+                            val n = input.read(buf)
+                            if (n < 0) break
+                            copied += n
+                            if (copied > maxBytes) throw IllegalStateException("That file is larger than the ${maxBytes / 1024 / 1024} MB limit.")
+                            out.write(buf, 0, n)
+                        }
+                    }
+                } ?: throw IllegalStateException("Couldn't open that file.")
+
+                @Suppress("DEPRECATION")
+                val pi = app.packageManager.getPackageArchiveInfo(tmp!!.absolutePath, 0)
+                if (pi == null) {
+                    msg = "That file isn't a valid APK."
+                } else if (expectedPackage.isNotBlank() && !pi.packageName.equals(expectedPackage, ignoreCase = true)) {
+                    msg = "This APK is for ${pi.packageName}, but your app's package is $expectedPackage."
+                } else {
+                    @Suppress("DEPRECATION")
+                    val code = if (android.os.Build.VERSION.SDK_INT >= 28) pi.longVersionCode.toInt() else pi.versionCode
+                    val vName = pi.versionName ?: ""
+                    val fileName = "${pi.packageName}_$vName.apk"
+                    _apkProgress.value = 0f
+                    val res = com.example.utils.NotifierServer.uploadFile("/apk/upload", FirebaseService.activeToken, fileName, tmp!!) { _apkProgress.value = it }
+                    if (res != null && res.optBoolean("ok")) {
+                        result = com.example.data.ApkUploadResult(res.optString("url"), res.optString("sha256"), res.optLong("size"), pi.packageName, vName, code)
+                    } else {
+                        msg = res?.optString("message").orEmpty().ifBlank { "Can't reach the DarkStore server right now. Please try again." }
+                    }
+                }
+            } catch (e: Exception) {
+                msg = e.message?.takeIf { it.startsWith("That file") } ?: "Couldn't read that file."
+            } finally {
+                try { tmp?.delete() } catch (_: Exception) { }
+                _apkProgress.value = null
+            }
+            if (result != null) loadApkUploadInfo()
+            kotlinx.coroutines.withContext(Dispatchers.Main) { onFinished(result, msg) }
+        }
+    }
+
+    fun deleteMyApk(id: String, onFinished: (Boolean, String) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            FirebaseAuthService.refreshIdTokenIfNeeded(getApplication())
+            val r = com.example.utils.NotifierServer.postJson("/apk/delete-mine", FirebaseService.activeToken, org.json.JSONObject().put("fileId", id))
+            val ok = r?.optBoolean("ok") == true
+            if (ok) loadApkUploadInfo()
+            kotlinx.coroutines.withContext(Dispatchers.Main) { onFinished(ok, r?.optString("message").orEmpty().ifBlank { "Can't reach the DarkStore server." }) }
+        }
+    }
+
+    private val _apkAdmin = MutableStateFlow<com.example.data.ApkAdminStatus?>(null)
+    val apkAdminStatus: StateFlow<com.example.data.ApkAdminStatus?> = _apkAdmin.asStateFlow()
+
+    fun refreshApkAdmin() {
+        viewModelScope.launch(Dispatchers.IO) {
+            FirebaseAuthService.refreshIdTokenIfNeeded(getApplication())
+            val r = com.example.utils.NotifierServer.postJson("/admin/apk/status", FirebaseService.activeToken, org.json.JSONObject()) ?: return@launch
+            if (!r.optBoolean("ok")) return@launch
+            _apkAdmin.value = com.example.data.ApkAdminStatus(
+                r.optBoolean("enabled"), r.optInt("maxFileMB", 100), r.optInt("perUserFiles", 5), r.optInt("perUserMB", 300),
+                r.optBoolean("configured"), r.optString("keyHint"), r.optString("baseUrl"),
+                r.optInt("totalFiles"), r.optLong("totalBytes"), r.optInt("users"), parseApkFiles(r.optJSONArray("files"))
+            )
+        }
+    }
+
+    /** Admin: switch uploads on/off, set limits and (optionally) change the storage API address / key. Key is write-only. */
+    fun saveApkConfigAsAdmin(
+        enabled: Boolean, maxMB: Int, perFiles: Int, perMB: Int, baseUrl: String, apiKey: String,
+        onFinished: (Boolean, String) -> Unit
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            FirebaseAuthService.refreshIdTokenIfNeeded(getApplication())
+            val body = org.json.JSONObject().put("enabled", enabled).put("maxFileMB", maxMB)
+                .put("perUserFiles", perFiles).put("perUserMB", perMB)
+            if (baseUrl.isNotBlank()) body.put("baseUrl", baseUrl.trim())
+            if (apiKey.isNotBlank()) body.put("apiKey", apiKey.trim())
+            val r = com.example.utils.NotifierServer.postJson("/admin/apk/config", FirebaseService.activeToken, body)
+            val ok = r?.optBoolean("ok") == true
+            if (ok) {
+                logAdminAction("APK_STORAGE_CONFIG", "config", "premiumConfig/apkUpload", "APK storage",
+                    "enabled=$enabled, maxMB=$maxMB, perUserFiles=$perFiles, perUserMB=$perMB" + if (apiKey.isNotBlank() || baseUrl.isNotBlank()) ", api changed" else "")
+                refreshApkAdmin()
+            }
+            kotlinx.coroutines.withContext(Dispatchers.Main) { onFinished(ok, r?.optString("message").orEmpty().ifBlank { "Can't reach the DarkStore server." }) }
+        }
+    }
+
+    fun testApkApi(onFinished: (String) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            FirebaseAuthService.refreshIdTokenIfNeeded(getApplication())
+            val r = com.example.utils.NotifierServer.postJson("/admin/apk/test", FirebaseService.activeToken, org.json.JSONObject())
+            val text = when {
+                r == null -> "Can't reach the DarkStore server."
+                r.optBoolean("ok") -> "Storage API OK (HTTP ${r.optInt("status")}, ${r.optInt("ms")} ms). Files on it: ${r.optInt("remoteFiles")} (${r.optLong("remoteBytes") / 1024 / 1024} MB)."
+                else -> r.optString("message").ifBlank { "Storage API answered HTTP ${r.optInt("status")}." }
+            }
+            kotlinx.coroutines.withContext(Dispatchers.Main) { onFinished(text) }
+        }
+    }
+
+    fun deleteApkAsAdmin(id: String, onFinished: (Boolean, String) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            FirebaseAuthService.refreshIdTokenIfNeeded(getApplication())
+            val r = com.example.utils.NotifierServer.postJson("/admin/apk/delete", FirebaseService.activeToken, org.json.JSONObject().put("fileId", id))
+            val ok = r?.optBoolean("ok") == true
+            if (ok) refreshApkAdmin()
+            kotlinx.coroutines.withContext(Dispatchers.Main) { onFinished(ok, r?.optString("message").orEmpty().ifBlank { "Can't reach the DarkStore server." }) }
         }
     }
 
@@ -3651,6 +3790,20 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                     FirebaseAuthService.suspensionEvents.value = null
                     forgetRememberedAccounts()
                     _suspendedNotice.value = com.example.data.SuspendedNotice(info.reason, info.yourMasked, info.primaryMasked, info.canContinue)
+                }
+            }
+        }
+        // Kick a logged-in user quickly when the server suspends their account (extra account on this phone, cheating...).
+        viewModelScope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(45_000)
+                val uid = _userUid.value
+                if (_isLoggedIn.value && uid.isNotBlank() && uid != "guest_uid" && !_userRole.value.equals("admin", true)) {
+                    try {
+                        FirebaseAuthService.refreshIdTokenIfNeeded(getApplication())
+                        val u = kotlinx.coroutines.withContext(Dispatchers.IO) { FirebaseAuthService.getUserProfile(uid) }
+                        if (u != null && u.isSuspended) enforceSuspension(u.suspensionReason)
+                    } catch (_: Exception) { }
                 }
             }
         }

@@ -245,6 +245,7 @@ object FirebaseAuthService {
                         val reason = user.suspensionReason.ifBlank { suspReason }.ifBlank { "Please contact support." }
                         return@use suspendedLogin(reason, user.email, idToken)
                     }
+                    deviceGate(context, idToken)?.let { why -> return@use suspendedLogin(why, user.email, idToken) }
 
                     saveLocalUser(context, user, idToken, refreshToken)
 
@@ -490,6 +491,7 @@ object FirebaseAuthService {
                         return@use suspendedLogin(msg, finalUser.email, token)
                     }
                     saveUserInRealtimeDatabase(finalUser)
+                    deviceGate(context, token)?.let { why -> return@use suspendedLogin(why, finalUser.email, token) }
                     saveLocalUser(context, finalUser, token, refreshToken)
                     Triple(true, "Successfully authenticated with Google through Firebase IDP!", finalUser)
                 } else {
@@ -526,7 +528,7 @@ object FirebaseAuthService {
                     if (suspended || finalUser.isSuspended) {
                         val msg = (if (finalUser.suspensionReason.isNotBlank()) finalUser.suspensionReason else reason)
                             .ifBlank { "Please contact support." }
-                        return@use suspendedLogin(msg, finalUser.email, "")
+                        return@use suspendedLogin(msg, finalUser.email, token)
                     }
                     saveUserInRealtimeDatabase(finalUser)
                     saveLocalUser(context, finalUser, "fake_token_$uid")
@@ -1180,7 +1182,7 @@ object FirebaseAuthService {
     // ----------------------------------------------------
     data class FraudConfig(
         val autoSuspend: Boolean = true,      // suspend obvious cheaters automatically
-        val maxAccountsPerDevice: Int = 3,    // more accounts than this on one phone = fake accounts
+        val maxAccountsPerDevice: Int = 1,    // accounts allowed per phone; every extra account is suspended
         val burstLimit: Int = 5,              // referrals for one person within an hour
         val strikeLimit: Int = 2,             // blocked cheating attempts before the account suspends itself
         val requireVerifiedEmail: Boolean = false // only accounts with a verified email may use referral codes
@@ -1208,7 +1210,7 @@ object FirebaseAuthService {
             val j = JSONObject(raw)
             FraudConfig(
                 autoSuspend = j.optBoolean("autoSuspend", true),
-                maxAccountsPerDevice = j.optInt("maxAccountsPerDevice", 3).coerceIn(1, 20),
+                maxAccountsPerDevice = j.optInt("maxAccountsPerDevice", 1).coerceIn(1, 20),
                 burstLimit = j.optInt("burstLimit", 5).coerceIn(2, 100),
                 strikeLimit = j.optInt("strikeLimit", 2).coerceIn(1, 10),
                 requireVerifiedEmail = j.optBoolean("requireVerifiedEmail", false)
@@ -1253,6 +1255,22 @@ object FirebaseAuthService {
 
     /** Set when a sign-in is refused because the account is suspended; the ViewModel shows the popup. */
     val suspensionEvents = kotlinx.coroutines.flow.MutableStateFlow<SuspensionInfo?>(null)
+
+
+    /**
+     * Registers this phone with the DarkStore server AT LOGIN. If the server says this is an extra account on a phone
+     * that already has one (only one account is allowed per phone) it has just suspended it, and we refuse the login
+     * right here - the popup shows on the login page and no session is ever saved. null = fine (or server unreachable).
+     */
+    private suspend fun deviceGate(context: Context, idToken: String): String? {
+        if (idToken.isBlank() || idToken.startsWith("google_oauth_token_") || idToken.startsWith("fake_token_")) return null
+        val res = com.example.utils.NotifierServer.postJson(
+            "/device/register", idToken,
+            JSONObject().put("deviceHash", com.example.utils.FraudRules.deviceHash(context))
+                .put("emulator", com.example.utils.FraudRules.isEmulator())
+        ) ?: return null
+        return if (res.optBoolean("suspended")) res.optString("reason").ifBlank { "Only one account is allowed per phone." } else null
+    }
 
     /** da***e@gmail.com - never show a full address on the login screen. */
     fun maskEmail(e: String): String {

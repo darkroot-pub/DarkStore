@@ -133,4 +133,45 @@ object NotifierServer {
             null
         }
     }
+
+    /**
+     * Streams a file to the DarkStore server (raw bytes, with progress). The server - not the app - holds the
+     * storage API key. Returns the server's JSON reply, or null if it can't be reached.
+     */
+    suspend fun uploadFile(
+        path: String, idToken: String, fileName: String, file: java.io.File, onProgress: (Float) -> Unit
+    ): JSONObject? = withContext(Dispatchers.IO) {
+        if (!loaded) refreshBaseUrl()
+        try {
+            val total = file.length()
+            val body = object : okhttp3.RequestBody() {
+                override fun contentType() = "application/octet-stream".toMediaType()
+                override fun contentLength() = total
+                override fun writeTo(sink: okio.BufferedSink) {
+                    file.inputStream().use { input ->
+                        val buf = ByteArray(64 * 1024)
+                        var sent = 0L
+                        while (true) {
+                            val n = input.read(buf)
+                            if (n < 0) break
+                            sink.write(buf, 0, n)
+                            sent += n
+                            onProgress(if (total > 0) sent.toFloat() / total else 1f)
+                        }
+                    }
+                }
+            }
+            val req = Request.Builder().url("$baseUrl$path")
+                .header("Authorization", "Bearer $idToken")
+                .header("X-File-Name", fileName)
+                .post(body).build()
+            val longClient = client.newBuilder()
+                .writeTimeout(15, TimeUnit.MINUTES).readTimeout(15, TimeUnit.MINUTES).callTimeout(0, TimeUnit.SECONDS).build()
+            longClient.newCall(req).execute().use { r ->
+                try { JSONObject(r.body?.string().orEmpty()) } catch (e: Exception) { null }
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
 }
