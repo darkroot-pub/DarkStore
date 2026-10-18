@@ -3455,7 +3455,7 @@ private fun AppActionButton(
         "${app.id}_${downloadState?.status}_${isInstalled}_${hasUpdate}_${purchased}_${registered}"
     }
 
-    Box(key = stateKey, contentAlignment = Alignment.Center) {
+    Box(Modifier.key(stateKey), contentAlignment = Alignment.Center) {
         if (downloadState?.status == "DOWNLOADING") {
             IconButton(onClick = onActionClick, modifier = Modifier.size(34.dp)) {
                 Icon(Icons.Default.Close, "Cancel download", tint = textSecondary, modifier = Modifier.size(16.dp))
@@ -3535,7 +3535,7 @@ private fun DownloadProgressOverlay(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 10.dp, horizontal = 12.dp, bottom = 8.dp)
+                .padding(top = 10.dp, start = 12.dp, end = 12.dp, bottom = 8.dp)
                 .background(textSecondary.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
                 .padding(12.dp)
         ) {
