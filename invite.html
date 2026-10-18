@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>You're invited to DarkRoot Store</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#f4f7fb">
+<meta property="og:title" content="You're invited to DarkRoot Store">
+<meta property="og:description" content="A friend invited you. Join DarkRoot Store.">
+<meta property="og:image" content="icon.png">
+<link rel="icon" href="favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#f4f7fb; --plate:#ffffff; --ink:#0b1020; --steel:#586274; --line:#dbe3ef;
+    --blue:#1f6feb; --blue-ink:#ffffff; --blue-soft:#e3eeff;
+    --display:'Bricolage Grotesque','Segoe UI',system-ui,sans-serif;
+    --body:'IBM Plex Sans','Segoe UI',system-ui,sans-serif;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --paper:#080b12; --ink:#eef2f9; --steel:#9aa6ba; --line:#1c2433; --blue:#3b8bff; --blue-ink:#06101f; --blue-soft:#0f1d36; color-scheme: dark; }
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; min-height:100vh; background:var(--paper); color:var(--ink); font:400 17px/1.55 var(--body);
+    display:grid; place-items:center;
+    padding:calc(24px + env(safe-area-inset-top)) calc(20px + env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) calc(20px + env(safe-area-inset-left));
+  }
+  :focus-visible{outline:3px solid var(--blue); outline-offset:3px; border-radius:8px}
+  .card{width:100%; max-width:440px; background:color-mix(in srgb, var(--paper) 70%, var(--plate) 30%); border:1px solid var(--line); border-radius:28px; padding:30px 26px 26px; text-align:center; box-shadow:0 30px 60px -36px rgba(10,20,50,.5)}
+  .logo{width:104px; height:104px; margin:0 auto 14px; border-radius:26px; background:#fff; display:grid; place-items:center; border:1px solid var(--line)}
+  .logo img{width:88%; height:88%; object-fit:contain}
+  h1{font:800 26px/1.15 var(--display); letter-spacing:-.01em; margin:0 0 8px}
+  p{margin:0 0 18px; color:var(--steel)}
+  .appid{display:inline-block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:500 14px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--blue-soft); color:var(--blue); padding:5px 12px; border-radius:999px; margin-bottom:18px}
+  .btn{display:flex; width:100%; align-items:center; justify-content:center; gap:10px; font:600 17px var(--body); padding:15px 18px; border-radius:14px; text-decoration:none; border:0; cursor:pointer; margin-top:12px}
+  .primary{background:var(--blue); color:var(--blue-ink)}
+  .ghost{background:transparent; color:var(--ink); border:1.5px solid var(--line)}
+  .ghost:hover{border-color:var(--blue)}
+  .spin{width:30px; height:30px; margin:6px auto 14px; border-radius:50%; border:3px solid var(--line); border-top-color:var(--blue); animation:r .8s linear infinite}
+  @keyframes r{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion: reduce){ .spin{animation:none; border-top-color:var(--line); border-right-color:var(--blue)} }
+  .hint{font-size:14px; margin:16px 0 0}
+  .appicon{width:112px; height:112px; margin:0 auto 14px; border-radius:28px; background:var(--blue-soft); display:grid; place-items:center; overflow:hidden; border:1px solid var(--line)}
+  .appicon img{width:100%; height:100%; object-fit:cover; display:block}
+  .appicon.fallback{background:#fff}
+  .appicon.fallback img{width:86%; height:86%; object-fit:contain}
+  .meta{display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin:2px 0 6px}
+  .chip{font-size:13.5px; padding:4px 11px; border-radius:999px; background:var(--blue-soft); color:var(--blue); font-weight:500}
+  .by{font-size:15px; margin:0 0 14px}
+  .shared{font-size:13px; letter-spacing:.06em; text-transform:uppercase; color:var(--steel); margin:0 0 10px; font-weight:600}
+  .skel{display:inline-block; width:150px; height:26px; border-radius:8px; background:var(--line); vertical-align:middle}
+  .code{font:800 30px ui-monospace,SFMono-Regular,Menlo,monospace; letter-spacing:.18em; background:var(--blue-soft); color:var(--blue); padding:10px 18px; border-radius:16px; display:inline-block; margin:2px 0 14px; user-select:all}
+  ol.how{text-align:left; margin:18px 0 4px; padding-left:1.3em; color:var(--steel); font-size:15px}
+  ol.how li{margin:0 0 6px; padding-left:4px}
+  ol.how li::marker{color:var(--blue); font-weight:700}
+  .sep{margin:22px 0 2px; font-size:14px; color:var(--steel)}
+  .brandmini{display:flex; align-items:center; justify-content:center; gap:8px; margin-top:20px; font-size:13px; color:var(--steel)}
+  .brandmini img{width:20px; height:20px; border-radius:6px; background:#fff}
+  [hidden]{display:none !important}
+</style>
+</head>
+<body>
+<main class="card" aria-live="polite">
+
+  <section id="invite" hidden>
+    <p class="shared">Invitation</p>
+    <div class="appicon fallback"><img src="icon.png" alt="DarkRoot Store"></div>
+    <h1 id="title">You're invited to DarkRoot Store</h1>
+    <p class="by" id="sub">Install apps that were reviewed first.</p>
+    <div class="code" id="code" aria-label="Invite code"></div>
+
+    <a class="btn primary" id="open" href="#">Open in DarkRoot Store</a>
+    <p class="hint" id="status" role="status"></p>
+
+    <div id="getbox">
+      <p class="sep" id="getlabel">Don't have DarkRoot Store yet?</p>
+      <a class="btn ghost" id="dl" href="#" rel="noopener">Download DarkRoot Store</a>
+      <ol class="how">
+        <li>Download and install the app.</li>
+        <li>Sign up with a new account.</li>
+        <li>Your friend's invite is applied automatically.</li>
+      </ol>
+      <p class="hint" id="copied" hidden>We copied your invite code, so the app can find it after you install.</p>
+    </div>
+    <button class="btn ghost" id="copy" type="button">Copy invite code</button>
+    <div class="brandmini"><img src="favicon.png" alt="">DarkRoot Store</div>
+  </section>
+
+  <section id="bad" hidden>
+    <div class="logo"><img src="icon.png" alt="DarkRoot Store"></div>
+    <h1>This invite link isn't valid</h1>
+    <p>Ask your friend to send it again.</p>
+    <a class="btn primary" href="./">Go to DarkRoot Store</a>
+  </section>
+</main>
+
+<script>
+(function(){
+  // ---- CHANGE THESE if needed ----
+  var DOWNLOAD_URL = "https://drive.google.com/file/d/1_L6Tw_eoxsWXJpcp7ZTAryv-ZdbseI-2/view?usp=drivesdk";
+  var PACKAGE = "com.darkstore.darkroot";
+  var SCHEME  = "darkstore";
+  var BACKEND = "https://darkstore.bot-keep.xyz";   // the DarkStore server (notifier.py)
+
+  var $ = function(id){ return document.getElementById(id); };
+  var q = new URLSearchParams(location.search);
+  var code = (q.get("ref") || "").trim().toUpperCase();
+  if (!/^[A-Z0-9]{8}$/.test(code)) { $("bad").hidden = false; return; }   // only a plain 8-character code is ever used
+  $("invite").hidden = false;
+  $("code").textContent = code;
+
+  var isAndroid = /Android/i.test(navigator.userAgent);
+  var intent = "intent://invite/" + code + "#Intent;scheme=" + SCHEME + ";package=" + PACKAGE + ";end";
+  $("open").href = isAndroid ? intent : SCHEME + "://invite/" + code;
+  $("dl").href = DOWNLOAD_URL;
+
+  // ---- who invited you ----
+  var ctrl = ("AbortController" in window) ? new AbortController() : null;
+  var t = setTimeout(function(){ if (ctrl) ctrl.abort(); }, 6000);
+  fetch(BACKEND + "/referral/inviter?code=" + encodeURIComponent(code), ctrl ? {signal: ctrl.signal} : {})
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(j){
+      clearTimeout(t);
+      if (!j || !j.ok) return;
+      if (j.valid && j.name) {
+        $("title").textContent = j.name + " invited you to DarkRoot Store";
+        document.title = j.name + " invited you to DarkRoot Store";
+      } else if (j.enabled === false) {
+        $("sub").textContent = "Invite rewards are paused right now, but you can still join.";
+      } else if (j.valid === false) {
+        $("sub").textContent = "This invite code wasn't found, but you can still join DarkRoot Store.";
+      }
+    }).catch(function(){ clearTimeout(t); });
+
+  // ---- copy helpers ----
+  function copy(text){
+    if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text);
+    return new Promise(function(res){
+      var ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); } catch(e) {}
+      ta.remove(); res();
+    });
+  }
+  $("copy").addEventListener("click", function(){
+    var b = this;
+    copy(code).then(function(){ b.textContent = "Code copied"; setTimeout(function(){ b.textContent = "Copy invite code"; }, 1800); });
+  });
+
+  // Download: first leave "DSREF:<CODE>" in the clipboard. After install, DarkRoot Store finds it and applies the invite.
+  $("dl").addEventListener("click", function(e){
+    e.preventDefault();
+    var url = this.href;
+    $("copied").hidden = false;
+    copy("DSREF:" + code).then(function(){ setTimeout(function(){ location.href = url; }, 350); },
+                              function(){ location.href = url; });
+  });
+
+  if (!isAndroid) {
+    $("open").hidden = true;
+    $("status").textContent = "DarkRoot Store is an Android app. Open this link on your Android phone.";
+    return;
+  }
+  // Best effort: when the browser allows it (or the verified link is set up), open the app straight away.
+  setTimeout(function(){ location.href = intent; }, 250);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Open in DarkRoot Store</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#f4f7fb">
+<meta property="og:title" content="Open this app in DarkRoot Store">
+<meta property="og:description" content="Someone shared an app with you.">
+<meta property="og:image" content="icon.png">
+<link rel="icon" href="favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#f4f7fb; --plate:#ffffff; --ink:#0b1020; --steel:#586274; --line:#dbe3ef;
+    --blue:#1f6feb; --blue-ink:#ffffff; --blue-soft:#e3eeff;
+    --display:'Bricolage Grotesque','Segoe UI',system-ui,sans-serif;
+    --body:'IBM Plex Sans','Segoe UI',system-ui,sans-serif;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --paper:#080b12; --ink:#eef2f9; --steel:#9aa6ba; --line:#1c2433; --blue:#3b8bff; --blue-ink:#06101f; --blue-soft:#0f1d36; color-scheme: dark; }
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; min-height:100vh; background:var(--paper); color:var(--ink); font:400 17px/1.55 var(--body);
+    display:grid; place-items:center;
+    padding:calc(24px + env(safe-area-inset-top)) calc(20px + env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) calc(20px + env(safe-area-inset-left));
+  }
+  :focus-visible{outline:3px solid var(--blue); outline-offset:3px; border-radius:8px}
+  .card{width:100%; max-width:440px; background:color-mix(in srgb, var(--paper) 70%, var(--plate) 30%); border:1px solid var(--line); border-radius:28px; padding:30px 26px 26px; text-align:center; box-shadow:0 30px 60px -36px rgba(10,20,50,.5)}
+  .logo{width:104px; height:104px; margin:0 auto 14px; border-radius:26px; background:#fff; display:grid; place-items:center; border:1px solid var(--line)}
+  .logo img{width:88%; height:88%; object-fit:contain}
+  h1{font:800 26px/1.15 var(--display); letter-spacing:-.01em; margin:0 0 8px}
+  p{margin:0 0 18px; color:var(--steel)}
+  .appid{display:inline-block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:500 14px ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--blue-soft); color:var(--blue); padding:5px 12px; border-radius:999px; margin-bottom:18px}
+  .btn{display:flex; width:100%; align-items:center; justify-content:center; gap:10px; font:600 17px var(--body); padding:15px 18px; border-radius:14px; text-decoration:none; border:0; cursor:pointer; margin-top:12px}
+  .primary{background:var(--blue); color:var(--blue-ink)}
+  .ghost{background:transparent; color:var(--ink); border:1.5px solid var(--line)}
+  .ghost:hover{border-color:var(--blue)}
+  .spin{width:30px; height:30px; margin:6px auto 14px; border-radius:50%; border:3px solid var(--line); border-top-color:var(--blue); animation:r .8s linear infinite}
+  @keyframes r{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion: reduce){ .spin{animation:none; border-top-color:var(--line); border-right-color:var(--blue)} }
+  .hint{font-size:14px; margin:16px 0 0}
+  .appicon{width:112px; height:112px; margin:0 auto 14px; border-radius:28px; background:var(--blue-soft); display:grid; place-items:center; overflow:hidden; border:1px solid var(--line)}
+  .appicon img{width:100%; height:100%; object-fit:cover; display:block}
+  .appicon.fallback{background:#fff}
+  .appicon.fallback img{width:86%; height:86%; object-fit:contain}
+  .meta{display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin:2px 0 6px}
+  .chip{font-size:13.5px; padding:4px 11px; border-radius:999px; background:var(--blue-soft); color:var(--blue); font-weight:500}
+  .by{font-size:15px; margin:0 0 14px}
+  .shared{font-size:13px; letter-spacing:.06em; text-transform:uppercase; color:var(--steel); margin:0 0 10px; font-weight:600}
+  .skel{display:inline-block; width:150px; height:26px; border-radius:8px; background:var(--line); vertical-align:middle}
+  .sep{margin:22px 0 2px; font-size:14px; color:var(--steel)}
+  .brandmini{display:flex; align-items:center; justify-content:center; gap:8px; margin-top:20px; font-size:13px; color:var(--steel)}
+  .brandmini img{width:20px; height:20px; border-radius:6px; background:#fff}
+  [hidden]{display:none !important}
+</style>
+</head>
+<body>
+<main class="card" aria-live="polite">
+
+  <!-- shared app preview (name + icon are loaded from the store) -->
+  <section id="app" hidden>
+    <p class="shared">Shared with you</p>
+    <div class="appicon" id="appicon"><img id="applogo" alt="" referrerpolicy="no-referrer"></div>
+    <h1 id="appname"><span class="skel"></span></h1>
+    <p class="by" id="appby"></p>
+    <div class="meta" id="appmeta"></div>
+
+    <a class="btn primary" id="open" href="#">Open in DarkRoot Store</a>
+    <p class="hint" id="status" role="status"></p>
+
+    <div id="getbox" hidden>
+      <p class="sep" id="getlabel">Don't have DarkRoot Store yet?</p>
+      <a class="btn ghost" id="dl" href="#" rel="noopener">Download DarkRoot Store</a>
+    </div>
+    <button class="btn ghost" id="copy" type="button">Copy link</button>
+    <div class="brandmini"><img src="favicon.png" alt="">DarkRoot Store</div>
+  </section>
+
+  <section id="bad" hidden>
+    <div class="logo"><img src="icon.png" alt="DarkRoot Store"></div>
+    <h1>This link isn't valid</h1>
+    <p>Ask the person who sent it to share the app again.</p>
+    <a class="btn primary" href="./">Go to DarkRoot Store</a>
+  </section>
+</main>
+
+<script>
+(function(){
+  // ---- CHANGE THESE if needed ----
+  var DOWNLOAD_URL = "https://drive.google.com/file/d/1_L6Tw_eoxsWXJpcp7ZTAryv-ZdbseI-2/view?usp=drivesdk";
+  var PACKAGE = "com.darkstore.darkroot";
+  var SCHEME  = "darkstore";
+  var RTDB    = "https://dark-store-6836d-default-rtdb.asia-southeast1.firebasedatabase.app/";
+
+  var $ = function(id){ return document.getElementById(id); };
+  var q = new URLSearchParams(location.search);
+  var id = (q.get("id") || "").trim();
+  if (!/^[A-Za-z0-9_.\-]{1,120}$/.test(id)) { $("bad").hidden = false; return; }
+  $("app").hidden = false;
+
+  var isAndroid = /Android/i.test(navigator.userAgent);
+  var shareUrl = location.origin + location.pathname + "?id=" + encodeURIComponent(id);
+  var intent = "intent://app/" + encodeURIComponent(id) + "#Intent;scheme=" + SCHEME + ";package=" + PACKAGE + ";end";
+
+  $("dl").href = DOWNLOAD_URL;
+  $("open").href = isAndroid ? intent : SCHEME + "://app/" + encodeURIComponent(id);
+
+  // ---- 1. show the shared app (name, icon, developer) ----
+  var logoEl = $("applogo"), iconBox = $("appicon");
+  function genericIcon(){ iconBox.classList.add("fallback"); logoEl.src = "icon.png"; logoEl.alt = "DarkRoot Store"; }
+  function chip(t){ var s = document.createElement("span"); s.className = "chip"; s.textContent = t; $("appmeta").appendChild(s); }
+  function unknownApp(){ $("appname").textContent = "An app on DarkRoot Store"; genericIcon(); }
+
+  var ctrl = ("AbortController" in window) ? new AbortController() : null;
+  var timer = setTimeout(function(){ if (ctrl) ctrl.abort(); }, 7000);
+  fetch(RTDB + "apps/" + encodeURIComponent(id) + ".json", ctrl ? {signal: ctrl.signal} : {})
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(a){
+      clearTimeout(timer);
+      if (!a || a.isApproved === false || a.isSuspended === true || !a.name) { unknownApp(); return; }
+      document.title = a.name + " on DarkRoot Store";
+      $("appname").textContent = a.name;
+      if (a.developer) $("appby").textContent = "by " + a.developer;
+      if (a.category) chip(a.category);
+      if (a.rating && parseFloat(a.rating) > 0) chip("★ " + parseFloat(a.rating).toFixed(1));
+      if (a.version) chip("v" + a.version);
+      if (typeof a.logo === "string" && /^https:\/\//i.test(a.logo)) {
+        logoEl.onerror = genericIcon; logoEl.alt = a.name + " icon"; logoEl.src = a.logo;
+      } else genericIcon();
+    })
+    .catch(function(){ clearTimeout(timer); unknownApp(); });
+
+  // ---- 2. copy link ----
+  $("copy").addEventListener("click", function(){
+    var b = this;
+    function done(){ b.textContent = "Link copied"; setTimeout(function(){ b.textContent = "Copy link"; }, 1800); }
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(shareUrl).then(done, done);
+    else { var t = document.createElement("textarea"); t.value = shareUrl; document.body.appendChild(t); t.select(); try{document.execCommand("copy");}catch(e){} t.remove(); done(); }
+  });
+
+  // ---- 3. open the app ----
+  // The page always shows the shared app and an "Open in DarkRoot Store" button.
+  // People who don't have the app yet see the download button below it.
+  var status = $("status");
+  $("getbox").hidden = false;
+
+  if (!isAndroid) {
+    $("open").hidden = true;
+    status.textContent = "DarkRoot Store is an Android app. Open this link on your Android phone.";
+    return;
+  }
+  status.textContent = "";
+
+  // Best effort: when the browser allows it, open the app straight away.
+  setTimeout(function(){ location.href = intent; }, 250);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>DarkRoot Store – Download for Android</title>
+<meta name="description" content="DarkRoot Store is an Android app marketplace where every app and every update is reviewed by an admin before it goes live.">
+<meta name="theme-color" content="#f4f7fb">
+<meta property="og:title" content="DarkRoot Store for Android">
+<meta property="og:description" content="Install Android apps that were reviewed first.">
+<meta property="og:image" content="icon.png">
+<link rel="icon" href="favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#f4f7fb; --plate:#ffffff; --ink:#0b1020; --steel:#586274; --line:#dbe3ef;
+    --blue:#1f6feb; --blue-ink:#ffffff; --blue-soft:#e3eeff;
+    --display:'Bricolage Grotesque','Segoe UI',system-ui,sans-serif;
+    --body:'IBM Plex Sans','Segoe UI',system-ui,sans-serif;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --paper:#080b12; --plate:#ffffff; --ink:#eef2f9; --steel:#9aa6ba; --line:#1c2433;
+      --blue:#3b8bff; --blue-ink:#06101f; --blue-soft:#0f1d36;
+      color-scheme: dark;
+    }
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font:400 17px/1.6 var(--body);
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  a{color:inherit}
+  :focus-visible{outline:3px solid var(--blue); outline-offset:3px; border-radius:6px}
+  .wrap{max-width:1040px; margin:0 auto; padding:0 22px}
+
+  header.top{display:flex; align-items:center; justify-content:space-between; padding:18px 0}
+  .brand{display:flex; align-items:center; gap:10px; font:700 18px var(--display); text-decoration:none}
+  .brand img{width:34px; height:34px; border-radius:9px; background:#fff; padding:2px}
+  .top a.small{font-size:15px; color:var(--steel); text-decoration:none}
+  .top a.small:hover{color:var(--ink)}
+
+  /* hero */
+  .hero{display:grid; grid-template-columns:1.15fr .85fr; gap:40px; align-items:center; padding:48px 0 64px}
+  h1{font:800 clamp(38px,6.4vw,68px)/1.02 var(--display); letter-spacing:-.025em; margin:0 0 20px}
+  .lede{font-size:19px; color:var(--steel); max-width:34em; margin:0 0 30px}
+  .actions{display:flex; flex-wrap:wrap; gap:14px; align-items:center}
+  .btn{
+    display:inline-flex; align-items:center; gap:10px; background:var(--blue); color:var(--blue-ink);
+    font:600 17px var(--body); padding:15px 26px; border-radius:14px; text-decoration:none;
+    box-shadow:0 10px 28px -10px var(--blue); transition:transform .15s ease;
+  }
+  .btn:hover{transform:translateY(-2px)}
+  .btn svg{width:20px; height:20px}
+  .note{font-size:14px; color:var(--steel); margin:14px 0 0}
+
+  .mark{position:relative; justify-self:center; width:min(300px,72vw); aspect-ratio:1; border-radius:36px; background:var(--plate);
+    display:grid; place-items:center; box-shadow:0 30px 60px -30px rgba(10,20,50,.45); border:1px solid var(--line)}
+  .mark img{width:84%; height:84%; object-fit:contain}
+  /* the one moment of motion: a verification ring that draws once */
+  .mark svg{position:absolute; inset:-14px; width:calc(100% + 28px); height:calc(100% + 28px); pointer-events:none}
+  .mark rect{fill:none; stroke:var(--blue); stroke-width:2.5; stroke-linecap:round; stroke-dasharray:1; stroke-dashoffset:1;
+    animation:draw 1.6s .3s cubic-bezier(.4,0,.2,1) forwards}
+  @keyframes draw{to{stroke-dashoffset:0}}
+  @media (prefers-reduced-motion: reduce){ .mark rect{animation:none; stroke-dashoffset:0} .btn{transition:none} html{scroll-behavior:auto} }
+
+  /* sections */
+  section{padding:56px 0; border-top:1px solid var(--line)}
+  h2{font:700 clamp(26px,4vw,36px)/1.15 var(--display); letter-spacing:-.015em; margin:0 0 10px}
+  .sub{color:var(--steel); margin:0 0 32px; max-width:38em}
+
+  .flow{display:grid; grid-template-columns:repeat(3,1fr); gap:0; margin:0; padding:0; list-style:none; counter-reset:s}
+  .flow li{position:relative; padding:0 26px 0 0}
+  .flow li::before{
+    counter-increment:s; content:counter(s); display:grid; place-items:center; width:36px; height:36px; border-radius:50%;
+    background:var(--blue-soft); color:var(--blue); font:700 16px var(--display); margin-bottom:14px;
+  }
+  .flow li:not(:last-child)::after{content:""; position:absolute; top:18px; left:46px; right:10px; height:2px; background:var(--line)}
+  .flow h3{font:700 19px var(--display); margin:0 0 6px}
+  .flow p{margin:0; color:var(--steel); font-size:16px}
+
+  dl.feat{margin:0; display:grid; grid-template-columns:1fr 1fr; gap:0 48px}
+  dl.feat div{padding:18px 0; border-bottom:1px solid var(--line)}
+  dl.feat dt{font:700 18px var(--display); margin-bottom:4px}
+  dl.feat dd{margin:0; color:var(--steel); font-size:16px}
+
+  ol.steps{margin:0; padding-left:1.2em; max-width:38em}
+  ol.steps li{margin:0 0 12px; padding-left:6px}
+  ol.steps li::marker{color:var(--blue); font-weight:700}
+  .warn{margin-top:22px; padding:14px 18px; border-left:4px solid var(--blue); background:var(--blue-soft); border-radius:0 12px 12px 0; max-width:42em; font-size:15.5px}
+
+  footer{padding:36px 0 52px; border-top:1px solid var(--line); color:var(--steel); font-size:14.5px; display:flex; flex-wrap:wrap; gap:10px 28px; justify-content:space-between}
+  footer a{text-decoration:none; border-bottom:1px solid var(--line)}
+
+  @media (max-width:760px){
+    .hero{grid-template-columns:1fr; gap:28px; padding-top:20px}
+    .mark{order:-1; width:min(210px,56vw); border-radius:28px}
+    .flow{grid-template-columns:1fr; gap:26px}
+    .flow li{padding:0 0 0 52px}
+    .flow li::before{position:absolute; left:0; top:0; margin:0}
+    .flow li:not(:last-child)::after{top:40px; left:17px; right:auto; width:2px; height:calc(100% + 0px)}
+    dl.feat{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <a class="brand" href="./"><img src="favicon.png" alt="" width="34" height="34">DarkRoot Store</a>
+    <a class="small" href="#install">How to install</a>
+  </header>
+
+  <main>
+    <div class="hero">
+      <div>
+        <h1>Install Android apps that were reviewed first.</h1>
+        <p class="lede">DarkRoot Store is an app marketplace where an admin checks every new app and every update before it reaches your phone.</p>
+        <div class="actions">
+          <a class="btn" id="dl" href="#" rel="noopener">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0l-5-5m5 5l5-5M5 21h14"/></svg>
+            Download for Android
+          </a>
+        </div>
+        <p class="note">Android APK. The button opens Google Drive: tap the download icon there.</p>
+      </div>
+      <div class="mark">
+        <svg viewBox="0 0 100 100" aria-hidden="true"><rect x="1.5" y="1.5" width="97" height="97" rx="15" pathLength="1"/></svg>
+        <img src="icon.png" alt="DarkRoot Store logo: a black shield with a blue shopping bag">
+      </div>
+    </div>
+
+    <section aria-labelledby="h-flow">
+      <h2 id="h-flow">How an app reaches the store</h2>
+      <p class="sub">Nothing is published automatically.</p>
+      <ol class="flow">
+        <li><h3>A developer submits it</h3><p>They send the app with its screenshots and details. While it waits, they can't queue another update for the same app.</p></li>
+        <li><h3>An admin reviews it</h3><p>The admin approves it or rejects it with a reason. Updates go through the same check.</p></li>
+        <li><h3>It goes live</h3><p>Only approved apps show up in the catalog, so what you see has been looked at.</p></li>
+      </ol>
+    </section>
+
+    <section aria-labelledby="h-feat">
+      <h2 id="h-feat">What you get</h2>
+      <dl class="feat">
+        <div><dt>Reviewed apps and updates</dt><dd>One review at a time per app, so updates can't be flooded in.</dd></div>
+        <div><dt>Chat with developers</dt><dd>Message a developer directly, or join the global chat. Admins carry a blue tick.</dd></div>
+        <div><dt>Ratings and reviews</dt><dd>See what other people think before you install.</dd></div>
+        <div><dt>Report a problem</dt><dd>Found a bug or something unsafe? Send it to the admin from Settings.</dd></div>
+        <div><dt>Light, dark and themes</dt><dd>Pick the look you like, including Premium accent themes.</dd></div>
+        <div><dt>Your account stays protected</dt><dd>Sign-in tokens are encrypted on your device and cleared when you log out.</dd></div>
+      </dl>
+    </section>
+
+    <section id="install" aria-labelledby="h-install">
+      <h2 id="h-install">Install in three steps</h2>
+      <p class="sub">DarkRoot Store isn't on Google Play, so you install the APK file yourself.</p>
+      <ol class="steps">
+        <li>Download the APK from the button above.</li>
+        <li>When Android asks, allow installs from your browser or Files app.</li>
+        <li>Open the downloaded file and tap Install.</li>
+      </ol>
+      <p class="warn">Android shows a warning for any app installed outside Google Play. That is normal for APK files.</p>
+    </section>
+  </main>
+
+  <footer>
+    <span>© DarkRoot Organizations</span>
+    <a href="https://github.com/darkrootiding-hub" rel="noopener">GitHub</a>
+  </footer>
+</div>
+
+<script>
+  // An invite link that landed on the home page -> send it to the invite page
+  (function(){ var r = new URLSearchParams(location.search).get("ref"); if (r && /^[A-Za-z0-9]{8}$/.test(r)) location.replace("invite.html?ref=" + encodeURIComponent(r.toUpperCase())); })();
+  // ---- CHANGE THIS if the APK link ever moves ----
+  var DOWNLOAD_URL = "https://drive.google.com/file/d/1_L6Tw_eoxsWXJpcp7ZTAryv-ZdbseI-2/view?usp=drivesdk";
+  document.getElementById("dl").href = DOWNLOAD_URL;
+</script>
+</body>
+</html>
