@@ -3450,12 +3450,7 @@ private fun AppActionButton(
         )
     }
 
-    // Stable key per app+state so Compose can skip this entirely when unchanged
-    val stateKey = remember(app.id, downloadState?.status, isInstalled, hasUpdate, purchased, registered) {
-        "${app.id}_${downloadState?.status}_${isInstalled}_${hasUpdate}_${purchased}_${registered}"
-    }
-
-    Box(Modifier.key(stateKey), contentAlignment = Alignment.Center) {
+    Box(contentAlignment = Alignment.Center) {
         if (downloadState?.status == "DOWNLOADING") {
             IconButton(onClick = onActionClick, modifier = Modifier.size(34.dp)) {
                 Icon(Icons.Default.Close, "Cancel download", tint = textSecondary, modifier = Modifier.size(16.dp))
