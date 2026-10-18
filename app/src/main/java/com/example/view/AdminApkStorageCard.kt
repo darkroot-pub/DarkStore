@@ -34,6 +34,7 @@ fun AdminApkStorageCard(
 ) {
     val context = LocalContext.current
     val st by viewModel.apkAdminStatus.collectAsStateWithLifecycle()
+    val loadError by viewModel.apkAdminError.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { viewModel.refreshApkAdmin() }
 
     val s = st
@@ -56,7 +57,12 @@ fun AdminApkStorageCard(
             Text("APK STORAGE (PREMIUM UPLOADS)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = textSecondary, letterSpacing = 1.sp)
 
             if (s == null) {
-                Text("Loading storage status...", color = textSecondary, fontSize = 12.sp)
+                if (loadError != null) {
+                    Text(loadError.orEmpty(), color = Color(0xFFEF4444), fontSize = 12.sp, lineHeight = 16.sp)
+                    OutlinedButton(onClick = { viewModel.refreshApkAdmin() }) { Text("Retry") }
+                } else {
+                    Text("Loading storage status...", color = textSecondary, fontSize = 12.sp)
+                }
             } else {
                 Text(
                     "${s.totalFiles} files - ${fmtSize(s.totalBytes)} - ${s.users} uploader(s)",

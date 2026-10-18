@@ -47,7 +47,12 @@ fun ApkUploadSection(
     val progress by viewModel.apkUploadProgress.collectAsStateWithLifecycle()
     var done by remember { mutableStateOf<ApkUploadResult?>(null) }
     var showFiles by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { viewModel.loadApkUploadInfo() }
+    var gaveUp by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        viewModel.loadApkUploadInfo()
+        kotlinx.coroutines.delay(10_000)
+        gaveUp = true
+    }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -81,6 +86,10 @@ fun ApkUploadSection(
                 }
             }
             when {
+                i == null && gaveUp -> {
+                    Text("Direct upload isn't available right now (the DarkStore server didn't answer). Paste a download link below instead.", fontSize = 12.sp)
+                    TextButton(onClick = { gaveUp = false; viewModel.loadApkUploadInfo() }) { Text("Try again", fontSize = 12.sp) }
+                }
                 i == null -> Text("Checking upload access...", fontSize = 12.sp)
                 !i.premium -> {
                     Text("Premium members can upload the APK file directly, no download link needed.", fontSize = 12.sp)

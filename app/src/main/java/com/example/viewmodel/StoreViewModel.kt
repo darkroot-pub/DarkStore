@@ -2206,6 +2206,9 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 appList.filter { it.category.equals(category, ignoreCase = true) }
             }
         }
+        // PERF: the catalog filter / search runs on every refresh and every keystroke; it used to run on
+        // viewModelScope's default dispatcher (Main). Do the list work off the UI thread.
+        .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     val unfilteredApps: StateFlow<List<AppEntity>> = activeAppSourceFlow

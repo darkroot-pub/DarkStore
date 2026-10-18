@@ -11,6 +11,7 @@ import com.example.view.ambientGlow
 import com.example.view.glass
 import com.example.view.glassEdge
 import com.example.view.glassSheen
+import com.example.view.predictiveBackTransform
 import com.example.view.ProfilePhotoEditor
 import com.example.view.UserIdentityCard
 import android.widget.Toast
@@ -231,7 +232,9 @@ class MainActivity : ComponentActivity() {
                         .maxSizeBytes(200L * 1024 * 1024) // was 4% of the whole partition (several GB)
                         .build()
                 }
-                .crossfade(true)
+                // PERF: a global 100 ms cross-fade made every list icon run its own animation while
+                // flinging. Icons now just appear (placeholders are already in place).
+                .crossfade(false)
                 .respectCacheHeaders(false) // reuse local cache ignoring remote HTTP override headers
                 .build()
             coil.Coil.setImageLoader(imageLoader)
@@ -1132,7 +1135,7 @@ fun PlayStoreMainDashboard(
     LaunchedEffect(showDetailsApp) {
         if (showDetailsApp != null) {
             viewModel.refreshInstalledApps()
-            viewModel.loadReviewsForApp(showDetailsApp!!.id)
+            showDetailsApp?.let { viewModel.loadReviewsForApp(it.id) }
         }
     }
 
@@ -1261,20 +1264,25 @@ fun PlayStoreMainDashboard(
             // Settings now lives inside Profile (gear button next to refresh).
         }
     }
-    androidx.activity.compose.BackHandler(enabled = activeTab == "Settings") { activeTab = "Profile" }
-    androidx.activity.compose.BackHandler(enabled = activeTab == "Notifications") { activeTab = "Apps" }
     // Back-button behaviour like a store app: an open chat closes first, then any other tab
-    // returns to the Apps home tab, and only from Apps does back leave the app.
+    // returns to Apps (Settings -> Profile), and only from Apps does back leave the app.
+    // On the Apps tab NO handler is enabled, so Android plays its own back-to-home animation.
     val navActiveChatPeer by viewModel.activeChatPeer.collectAsStateWithLifecycle()
     androidx.activity.compose.BackHandler(enabled = activeTab == "Chat" && navActiveChatPeer != null) {
         viewModel.closeChat()
     }
-    androidx.activity.compose.BackHandler(
-        enabled = activeTab != "Apps" && activeTab != "Settings" && activeTab != "Notifications" &&
-            !(activeTab == "Chat" && navActiveChatPeer != null)
+    val tabBackState = com.example.view.rememberPredictiveBackState()
+    com.example.view.PredictiveBackNav(
+        enabled = activeTab != "Apps" && !(activeTab == "Chat" && navActiveChatPeer != null),
+        state = tabBackState
     ) {
-        if (selectedCategory == "Games") viewModel.selectCategory("All")
-        activeTab = "Apps"
+        when (activeTab) {
+            "Settings" -> activeTab = "Profile"
+            else -> {
+                if (selectedCategory == "Games") viewModel.selectCategory("All")
+                activeTab = "Apps"
+            }
+        }
     }
     val tabsList = remember(tabs) { tabs.map { it.first } }
 
@@ -1468,6 +1476,7 @@ fun PlayStoreMainDashboard(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
+                    .predictiveBackTransform(tabBackState)
                     // PERF: this used to be a hand-rolled awaitPointerEventScope loop
                     // that called awaitPointerEvent() on every single touch-move
                     // sample of ANY gesture anywhere in this subtree — including
@@ -12164,9 +12173,19 @@ fun AppDetailsDialog(
             dismissOnClickOutside = false
         )
     ) {
+        // Predictive back inside the dialog window: while the edge-swipe is held the page shrinks
+        // and rounds; letting go early springs it back, committing closes the details.
+        // Disabled while the lightbox / dev-profile overlays are up so they get back first.
+        val detailsBackState = com.example.view.rememberPredictiveBackState()
+        com.example.view.PredictiveBackNav(
+            enabled = activeLightboxImageIndex == null && !showDevProfileDialog,
+            state = detailsBackState,
+            onBack = onDismiss
+        )
         Surface(
             modifier = Modifier
                 .fillMaxSize()
+                .predictiveBackTransform(detailsBackState)
                 .background(if (isDarkMode) Color(0xFF0E1013) else Color(0xFFF3F6F9))
                 .ambientGlow(isDarkMode, false, accentGreen),
             color = Color.Transparent
@@ -16143,11 +16162,25 @@ sealed class UpdateState {
  * and reports a clear "server is down" message on failure via [onError],
  * rather than the vague "upload failed/skipped" messages that existed before.
  */
+// One shared client: building a new OkHttpClient per upload leaked a thread pool + connection pool each time.
+private val imgBbClient: okhttp3.OkHttpClient by lazy {
+    okhttp3.OkHttpClient.Builder()
+        .connectTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+        .writeTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
+}
+
 internal suspend fun uploadImageToImgBB(
     context: android.content.Context,
     bytes: ByteArray,
     onError: (String) -> Unit
 ): String? {
+    // Base64 + form body hold ~3x the image in memory; refuse absurd sizes instead of risking an OOM crash.
+    if (bytes.size > 12 * 1024 * 1024) {
+        onError("This image is too large (max 12 MB). Please pick a smaller one.")
+        return null
+    }
     return try {
         val base64String = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
         val formBody = okhttp3.FormBody.Builder()
@@ -16157,24 +16190,23 @@ internal suspend fun uploadImageToImgBB(
             .url("https://api.imgbb.com/1/upload?key=a046c848dfa5230136f107106d4bb187")
             .post(formBody)
             .build()
-        val client = okhttp3.OkHttpClient.Builder()
-            .connectTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
-            .writeTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
-            .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
-            .build()
-        val response = client.newCall(request).execute()
-        if (response.isSuccessful) {
-            val bodyString = response.body?.string() ?: ""
-            val match = Regex("\"url\"\\s*:\\s*\"([^\"]+)\"").find(bodyString)
-            val uploadedUrl = match?.groupValues?.get(1)?.replace("\\/", "/")
-            if (uploadedUrl == null) {
-                onError("Image server returned an unexpected response. Please try again.")
+        // response.use{} always closes the body (the error branch used to leak the connection)
+        imgBbClient.newCall(request).execute().use { response ->
+            if (response.isSuccessful) {
+                val bodyString = response.body?.string() ?: ""
+                val match = Regex("\"url\"\\s*:\\s*\"([^\"]+)\"").find(bodyString)
+                val uploadedUrl = match?.groupValues?.get(1)?.replace("\\/", "/")
+                if (uploadedUrl == null) {
+                    onError("Image server returned an unexpected response. Please try again.")
+                }
+                uploadedUrl
+            } else {
+                onError("Image server is currently down (error ${response.code}). Please try again later.")
+                null
             }
-            uploadedUrl
-        } else {
-            onError("Image server is currently down (error ${response.code}). Please try again later.")
-            null
         }
+    } catch (ce: kotlinx.coroutines.CancellationException) {
+        throw ce // never swallow cancellation (breaks structured concurrency)
     } catch (ex: java.io.IOException) {
         onError("Image server is currently down or unreachable. Please try again later.")
         null
