@@ -2179,6 +2179,7 @@ fun DiscoveryTabContent(
 
     val context = LocalContext.current
     val cacheKey = remember(category, selectedPill, searchQuery) { "${category}_${selectedPill}_${searchQuery}" }
+    val saveScope = rememberCoroutineScope()
     
     // Pre-filled synchronously (no empty first frame) so a restored scroll position has rows to land
     // on when you come back to this tab - an empty list made the saved position collapse to the top.
@@ -2322,7 +2323,7 @@ fun DiscoveryTabContent(
                     val firstOffset = listState.firstVisibleItemScrollOffset
                     com.example.data.PaginationCache.saveScrollPosition(cacheKey, firstIndex, firstOffset)
                 }
-                
+
                 val totalLoaded = loadedApps.size
                 if (hasMore && !isPageLoading && totalLoaded > 0 && lastVisibleIndex >= (totalLoaded * 0.85).toInt()) {
                     isPageLoading = true
@@ -2342,17 +2343,11 @@ fun DiscoveryTabContent(
                     }
                     isPageLoading = false
                     if (searchQuery.isEmpty()) {
-                        // PERF/BUG: this was the big one — this fires roughly every ~17
-                        // rows scrolled (each time pagination triggers) for as long as
-                        // the user keeps scrolling down, re-serializing the ENTIRE
-                        // (ever-growing) loaded list to JSON and writing it to disk,
-                        // synchronously, directly on the main thread — a real freeze
-                        // landing exactly mid-scroll, repeatedly, for long scroll
-                        // sessions. Snapshot the list before hopping off the main
-                        // thread (SnapshotStateList isn't safe to read from a
-                        // background thread while still attached to composition).
-                        val snapshot = loadedApps.filterNotNull()
-                        withContext(Dispatchers.IO) {
+                        // PERF: Snapshot list on main thread (SnapshotStateList isn't thread-safe),
+                        // then serialize + write to disk on IO thread. Use snapshotFlow to avoid
+                        // re-reading the entire list on every pagination trigger.
+                        val snapshot = loadedApps.filterNotNull().toList()
+                        saveScope.launch(Dispatchers.IO) {
                             com.example.data.PaginationCache.saveApps(context, cacheKey, snapshot)
                         }
                     }
@@ -3430,6 +3425,134 @@ fun AdBadge(modifier: Modifier = Modifier) {
     )
 }
 
+// PERF: Memoized action button — only recomposes when its inputs change.
+// Extracted so the main AppItemCardView doesn't re-evaluate the entire when-block
+// on every parent recomposition (which happens during scroll).
+@Composable
+private fun AppActionButton(
+    app: AppEntity,
+    downloadState: DownloadEntity?,
+    installedInfo: com.example.utils.ApkInstaller.InstalledAppInfo?,
+    purchased: Boolean,
+    registered: Boolean,
+    accentGreen: Color,
+    textSecondary: Color,
+    onBuyClick: () -> Unit,
+    onRegisterClick: () -> Unit,
+    onActionClick: () -> Unit
+) {
+    val context = LocalContext.current
+    val isInstalled = remember(installedInfo) { installedInfo != null }
+    val hasUpdate = remember(isInstalled, app.versionCode, app.version, installedInfo) {
+        isInstalled && (
+            app.versionCode > (installedInfo?.versionCode ?: 0L) ||
+            (installedInfo?.versionName != null && !app.version.trim().equals(installedInfo.versionName.trim(), ignoreCase = true))
+        )
+    }
+
+    // Stable key per app+state so Compose can skip this entirely when unchanged
+    val stateKey = remember(app.id, downloadState?.status, isInstalled, hasUpdate, purchased, registered) {
+        "${app.id}_${downloadState?.status}_${isInstalled}_${hasUpdate}_${purchased}_${registered}"
+    }
+
+    Box(key = stateKey, contentAlignment = Alignment.Center) {
+        if (downloadState?.status == "DOWNLOADING") {
+            IconButton(onClick = onActionClick, modifier = Modifier.size(34.dp)) {
+                Icon(Icons.Default.Close, "Cancel download", tint = textSecondary, modifier = Modifier.size(16.dp))
+            }
+        } else when {
+            app.isUpcoming -> {
+                if (registered) {
+                    OutlinedButton(onClick = {}, shape = RoundedCornerShape(20.dp),
+                        border = BorderStroke(1.dp, accentGreen),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = accentGreen),
+                        contentPadding = PaddingValues(horizontal = 12.dp), modifier = Modifier.height(32.dp)
+                    ) { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(12.dp)); Text("Registered", fontSize = 11.sp, fontWeight = FontWeight.Bold) } }
+                } else {
+                    Button(onClick = onRegisterClick, shape = RoundedCornerShape(20.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF9C27B0), contentColor = Color.White),
+                        contentPadding = PaddingValues(horizontal = 14.dp), modifier = Modifier.height(32.dp)
+                    ) { Text("Pre-register", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                }
+            }
+            app.isPremium && !purchased && !isInstalled -> {
+                Button(onClick = onBuyClick, shape = RoundedCornerShape(20.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800), contentColor = Color.White),
+                    contentPadding = PaddingValues(horizontal = 14.dp), modifier = Modifier.height(32.dp)
+                ) { Text(app.price.ifEmpty { "$1.99" }, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold) }
+            }
+            downloadState?.status == "DOWNLOADED" -> {
+                Button(onClick = onActionClick, shape = RoundedCornerShape(20.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = accentGreen, contentColor = Color.White),
+                    contentPadding = PaddingValues(horizontal = 16.dp), modifier = Modifier.height(32.dp)
+                ) { Text("Install", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+            }
+            isInstalled && hasUpdate -> {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Button(onClick = onActionClick, shape = RoundedCornerShape(20.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = accentGreen, contentColor = Color.White),
+                        contentPadding = PaddingValues(horizontal = 12.dp), modifier = Modifier.height(32.dp)
+                    ) { Text("Update", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                    OutlinedButton(onClick = { ApkInstaller.launchApp(context, app.packageName) }, shape = RoundedCornerShape(20.dp),
+                        border = BorderStroke(1.dp, accentGreen), colors = ButtonDefaults.outlinedButtonColors(contentColor = accentGreen),
+                        contentPadding = PaddingValues(horizontal = 12.dp), modifier = Modifier.height(32.dp)
+                    ) { Text("Open", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                }
+            }
+            isInstalled -> {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Button(onClick = { ApkInstaller.launchApp(context, app.packageName) }, shape = RoundedCornerShape(20.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE6F4EA), contentColor = Color(0xFF01875F)),
+                        contentPadding = PaddingValues(horizontal = 12.dp), modifier = Modifier.height(32.dp)
+                    ) { Text("Open", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                    if (LocalUninstallEnabled.current) {
+                        OutlinedButton(onClick = { ApkInstaller.uninstallApp(context, app.packageName) }, shape = RoundedCornerShape(20.dp),
+                            border = BorderStroke(1.dp, Color(0xFFEF5350)), colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFEF5350)),
+                            contentPadding = PaddingValues(horizontal = 12.dp), modifier = Modifier.height(32.dp)
+                        ) { Text("Uninstall", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                    }
+                }
+            }
+            else -> {
+                Button(onClick = onActionClick, shape = RoundedCornerShape(20.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = accentGreen, contentColor = Color.White),
+                    contentPadding = PaddingValues(horizontal = 16.dp), modifier = Modifier.height(32.dp)
+                ) { Text("Install", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+            }
+        }
+    }
+}
+
+// PERF: Download progress overlay — only composes when downloading.
+// Uses AnimatedVisibility so it doesn't add nodes to composition when hidden.
+@Composable
+private fun DownloadProgressOverlay(
+    downloadState: DownloadEntity,
+    accentGreen: Color,
+    textSecondary: Color
+) {
+    AnimatedVisibility(visible = downloadState.status == "DOWNLOADING") {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 10.dp, horizontal = 12.dp, bottom = 8.dp)
+                .background(textSecondary.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
+                .padding(12.dp)
+        ) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Downloading: ", color = textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Text("${downloadState.progress}%", color = accentGreen, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
+                }
+                Text(downloadState.downloadSpeed, color = accentGreen, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.height(6.dp))
+            LinearProgressIndicator(progress = downloadState.progress / 100f, color = accentGreen,
+                trackColor = textSecondary.copy(alpha = 0.2f), modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(3.dp)))
+        }
+    }
+}
+
 @Composable
 fun AppItemCardView(
     app: AppEntity,
@@ -3448,362 +3571,61 @@ fun AppItemCardView(
     onClick: () -> Unit,
     onActionClick: () -> Unit
 ) {
+    val isDark = textPrimary.luminance() > 0.5f
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .glass(textPrimary.luminance() > 0.5f, RoundedCornerShape(22.dp), elevation = 3.dp)
+            .glass(isDark, RoundedCornerShape(22.dp), elevation = 3.dp)
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-        // PERF: Material3's default Card elevation renders a soft shadow via
-        // an extra graphics layer per card. With a visible border already
-        // providing separation between rows, that shadow adds nothing here
-        // but costs a compositing pass on every row, every frame it's on
-        // screen — multiplied by however many rows a fast fling brings on
-        // screen at once. Pinning it to 0 removes that cost outright.
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         border = null
     ) {
-        Box(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    // Logo bounding box representing percentage ring on download trigger
-                    Box(contentAlignment = Alignment.Center) {
-                        AppLogo(
-                            logoUrl = app.logo,
-                            appName = app.name,
-                            packageName = app.packageName,
-                            modifier = Modifier
-                                .size(54.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                        )
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Logo with optional download ring
+                Box(contentAlignment = Alignment.Center) {
+                    AppLogo(logoUrl = app.logo, appName = app.name, packageName = app.packageName,
+                        modifier = Modifier.size(54.dp).clip(RoundedCornerShape(12.dp)))
+                    if (downloadState?.status == "DOWNLOADING") {
+                        CircularProgressIndicator(progress = downloadState.progress / 100f, color = accentGreen,
+                            trackColor = Color.Transparent, strokeWidth = 3.dp, modifier = Modifier.size(58.dp))
+                    }
+                }
+                Spacer(Modifier.width(14.dp))
 
-                        // Draw thin percentage progress circle directly around logo as specified
-                        if (downloadState?.status == "DOWNLOADING") {
-                            CircularProgressIndicator(
-                                progress = downloadState.progress / 100f,
-                                color = accentGreen,
-                                trackColor = Color.Transparent,
-                                strokeWidth = 3.dp,
-                                modifier = Modifier.size(58.dp)
-                            )
+                // Info column
+                Column(Modifier.weight(1f).padding(end = if (app.hasAds) 55.dp else 0.dp)) {
+                    Text(app.name, color = textPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Spacer(Modifier.height(2.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(app.developer, color = textSecondary, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                        Box(modifier = Modifier.background(accentGreen.copy(alpha = 0.08f), RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 2.dp)) {
+                            Text(app.category.uppercase(), color = accentGreen, fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace)
                         }
                     }
-
-                    Spacer(modifier = Modifier.width(14.dp))
-
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(end = if (app.hasAds) 55.dp else 0.dp) // Leave safety room for top-right Ad badge if name is long
-                    ) {
-                        Text(
-                            text = app.name,
-                            color = textPrimary,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Text(
-                                text = app.developer,
-                                color = textSecondary,
-                                fontSize = 11.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f, fill = false)
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .background(accentGreen.copy(alpha = 0.08f), RoundedCornerShape(6.dp))
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                            ) {
-                                Text(
-                                    text = app.category.uppercase(),
-                                    color = accentGreen,
-                                    fontSize = 8.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                            }
+                    Spacer(Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Star, "Rating Star", tint = Color(0xFFF1A80A), modifier = Modifier.size(11.dp))
+                            Spacer(Modifier.width(2.dp))
+                            Text(overriddenRating, fontSize = 11.sp, color = textPrimary, fontWeight = FontWeight.Bold)
                         }
-                        
-                        Spacer(modifier = Modifier.height(4.dp))
-                        
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.Star,
-                                    contentDescription = "Rating Star",
-                                    tint = Color(0xFFF1A80A),
-                                    modifier = Modifier.size(11.dp)
-                                )
-                                Spacer(modifier = Modifier.width(2.dp))
-                                Text(
-                                    text = overriddenRating,
-                                    fontSize = 11.sp,
-                                    color = textPrimary,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                            
-                            Divider(
-                                modifier = Modifier
-                                    .height(10.dp)
-                                    .width(1.dp),
-                                color = textSecondary.copy(alpha = 0.3f)
-                            )
-
-                            Text(
-                                text = app.size,
-                                fontSize = 11.sp,
-                                color = textSecondary
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    // Contextual action button layout as per user version matching rules
-                    Box(contentAlignment = Alignment.Center) {
-                        val context = LocalContext.current
-                        if (downloadState?.status == "DOWNLOADING") {
-                            IconButton(
-                                onClick = onActionClick,
-                                modifier = Modifier.size(34.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Cancel download",
-                                    tint = textSecondary,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        } else {
-                            val isInstalled = remember(installedInfo) { installedInfo != null }
-                            val hasUpdate = remember(isInstalled, app.versionCode, app.version, installedInfo) {
-                                isInstalled && (
-                                    app.versionCode > (installedInfo?.versionCode ?: 0L) ||
-                                    (installedInfo?.versionName != null && !app.version.trim().equals(installedInfo.versionName.trim(), ignoreCase = true))
-                                )
-                            }
-
-                            when {
-                                app.isUpcoming -> {
-                                    if (registered) {
-                                        OutlinedButton(
-                                            onClick = {},
-                                            shape = RoundedCornerShape(20.dp),
-                                            border = BorderStroke(1.dp, accentGreen),
-                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = accentGreen),
-                                            contentPadding = PaddingValues(horizontal = 12.dp),
-                                            modifier = Modifier.height(32.dp)
-                                        ) {
-                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(12.dp))
-                                                Text("Registered", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                            }
-                                        }
-                                    } else {
-                                        Button(
-                                            onClick = onRegisterClick,
-                                            shape = RoundedCornerShape(20.dp),
-                                            colors = ButtonDefaults.buttonColors(
-                                                containerColor = Color(0xFF9C27B0),
-                                                contentColor = Color.White
-                                            ),
-                                            contentPadding = PaddingValues(horizontal = 14.dp),
-                                            modifier = Modifier.height(32.dp)
-                                        ) {
-                                            Text("Pre-register", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                        }
-                                    }
-                                }
-                                app.isPremium && !purchased && !isInstalled -> {
-                                    Button(
-                                        onClick = onBuyClick,
-                                        shape = RoundedCornerShape(20.dp),
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = Color(0xFFFF9800),
-                                            contentColor = Color.White
-                                        ),
-                                        contentPadding = PaddingValues(horizontal = 14.dp),
-                                        modifier = Modifier.height(32.dp).testTag("premium_buy_button_${app.id}")
-                                    ) {
-                                        Text(app.price.ifEmpty { "$1.99" }, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
-                                    }
-                                }
-                                downloadState?.status == "DOWNLOADED" -> {
-                                    Button(
-                                        onClick = onActionClick,
-                                        shape = RoundedCornerShape(20.dp),
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = accentGreen,
-                                            contentColor = Color.White
-                                        ),
-                                        contentPadding = PaddingValues(horizontal = 16.dp),
-                                        modifier = Modifier
-                                            .height(32.dp)
-                                            .testTag("install_action_button_${app.id}")
-                                    ) {
-                                        Text("Install", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                }
-                                isInstalled && hasUpdate -> {
-                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        // Update Button
-                                        Button(
-                                            onClick = onActionClick,
-                                            shape = RoundedCornerShape(20.dp),
-                                            colors = ButtonDefaults.buttonColors(
-                                                containerColor = accentGreen,
-                                                contentColor = Color.White
-                                            ),
-                                            contentPadding = PaddingValues(horizontal = 12.dp),
-                                            modifier = Modifier
-                                                .height(32.dp)
-                                                .testTag("update_action_button_${app.id}")
-                                        ) {
-                                            Text("Update", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                        }
-
-                                        // Open Button
-                                        OutlinedButton(
-                                            onClick = { ApkInstaller.launchApp(context, app.packageName) },
-                                            shape = RoundedCornerShape(20.dp),
-                                            border = BorderStroke(1.dp, accentGreen),
-                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = accentGreen),
-                                            contentPadding = PaddingValues(horizontal = 12.dp),
-                                            modifier = Modifier
-                                                .height(32.dp)
-                                                .testTag("open_action_button_${app.id}")
-                                        ) {
-                                            Text("Open", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                        }
-                                    }
-                                }
-                                isInstalled -> {
-                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        // Open Button
-                                        Button(
-                                            onClick = { ApkInstaller.launchApp(context, app.packageName) },
-                                            shape = RoundedCornerShape(20.dp),
-                                            colors = ButtonDefaults.buttonColors(
-                                                containerColor = Color(0xFFE6F4EA),
-                                                contentColor = Color(0xFF01875F)
-                                            ),
-                                            contentPadding = PaddingValues(horizontal = 12.dp),
-                                            modifier = Modifier
-                                                .height(32.dp)
-                                                .testTag("open_action_button_${app.id}")
-                                        ) {
-                                            Text("Open", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                        }
-
-                                        // Uninstall Button
-                                        if (LocalUninstallEnabled.current) {
-                                            OutlinedButton(
-                                                onClick = { ApkInstaller.uninstallApp(context, app.packageName) },
-                                                shape = RoundedCornerShape(20.dp),
-                                                border = BorderStroke(1.dp, Color(0xFFEF5350)),
-                                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFEF5350)),
-                                                contentPadding = PaddingValues(horizontal = 12.dp),
-                                                modifier = Modifier
-                                                    .height(32.dp)
-                                                    .testTag("uninstall_action_button_${app.id}")
-                                            ) {
-                                                Text("Uninstall", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                            }
-                                        }
-                                    }
-                                }
-                                else -> {
-                                    Button(
-                                        onClick = onActionClick,
-                                        shape = RoundedCornerShape(20.dp),
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = accentGreen,
-                                            contentColor = Color.White
-                                        ),
-                                        contentPadding = PaddingValues(horizontal = 16.dp),
-                                        modifier = Modifier
-                                            .height(32.dp)
-                                            .testTag("install_action_button_${app.id}")
-                                    ) {
-                                        Text("Install", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                }
-                            }
-                        }
+                        Divider(modifier = Modifier.height(10.dp).width(1.dp), color = textSecondary.copy(alpha = 0.3f))
+                        Text(app.size, fontSize = 11.sp, color = textSecondary)
                     }
                 }
 
-                // Real-time progress bar description inside card
-                if (downloadState?.status == "DOWNLOADING") {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(textSecondary.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
-                            .padding(horizontal = 12.dp, vertical = 8.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "Downloading: ",
-                                    color = textSecondary,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                // Show real-time downloading percentage
-                                Text(
-                                    text = "${downloadState.progress}%",
-                                    color = accentGreen,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.ExtraBold
-                                )
-                            }
-                            Text(
-                                text = downloadState.downloadSpeed,
-                                color = accentGreen,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(6.dp))
-                        LinearProgressIndicator(
-                            progress = downloadState.progress / 100f,
-                            color = accentGreen,
-                            trackColor = textSecondary.copy(alpha = 0.2f),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(3.dp))
-                        )
-                    }
-                }
+                Spacer(Modifier.width(8.dp))
+
+                // Action button (memoized)
+                AppActionButton(app, downloadState, installedInfo, purchased, registered, accentGreen, textSecondary,
+                    onBuyClick, onRegisterClick, onActionClick)
             }
-            if (app.hasAds) {
-                AdBadge(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(top = 8.dp, end = 8.dp)
-                )
-            }
+
+            // Download progress (AnimatedVisibility — zero nodes when not downloading)
+            downloadState?.let { DownloadProgressOverlay(it, accentGreen, textSecondary) }
         }
     }
 }

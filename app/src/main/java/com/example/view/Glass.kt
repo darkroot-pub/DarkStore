@@ -36,11 +36,8 @@ fun Modifier.ambientGlow(isDark: Boolean, isAmoled: Boolean, accent: Color): Mod
 /**
  * "Liquid glass" panel: translucent frosted fill, a specular highlight and a bright edge.
  *
- * PERF: this runs on EVERY list row. It used to chain shadow + clip + two background(brush) +
- * border(brush), i.e. 4 modifier nodes, 3 gradient Brush objects re-allocated on each
- * recomposition and a per-row elevation shadow (an extra GPU render pass). Now it is a single
- * draw pass whose brushes are cached per size, and the soft shadow is only drawn for real
- * floating panels (elevation > 4.dp); list rows (3.dp) are separated by the edge line instead.
+ * PERF: Uses drawWithCache so brushes + path are created once per layout pass (when size/shape
+ * changes), not every frame. Shadow only for floating panels (elevation > 4.dp).
  */
 fun Modifier.glass(isDark: Boolean, shape: Shape, elevation: Dp = 6.dp): Modifier {
     val base = if (elevation > 4.dp) {
@@ -49,7 +46,7 @@ fun Modifier.glass(isDark: Boolean, shape: Shape, elevation: Dp = 6.dp): Modifie
     return base
         .clip(shape)
         .drawWithCache {
-            // Turn the shape into a Path once (cached per size); drawPath works for any Shape.
+            // Path cached per size/shape
             val path = Path().apply {
                 when (val o = shape.createOutline(size, layoutDirection, this@drawWithCache)) {
                     is Outline.Rectangle -> addRect(o.rect)
@@ -57,26 +54,26 @@ fun Modifier.glass(isDark: Boolean, shape: Shape, elevation: Dp = 6.dp): Modifie
                     is Outline.Generic -> addPath(o.path)
                 }
             }
-            val fill = Brush.verticalGradient(
+            // Brushes created once per layout pass (drawWithCache runs when size changes)
+            val fillBrush = Brush.verticalGradient(
                 if (isDark) listOf(Color.White.copy(alpha = 0.13f), Color.White.copy(alpha = 0.05f))
                 else listOf(Color.White.copy(alpha = 0.66f), Color.White.copy(alpha = 0.40f))
             )
-            // specular highlight sweeping from the top-left corner - what makes it read as liquid
-            val sheen = Brush.linearGradient(
+            val sheenBrush = Brush.linearGradient(
                 colors = if (isDark) listOf(Color.White.copy(alpha = 0.16f), Color.Transparent)
                 else listOf(Color.White.copy(alpha = 0.70f), Color.Transparent),
                 start = Offset(0f, 0f),
-                end = Offset(520f, 360f)
+                end = Offset(size.width, size.height)
             )
-            val edge = Brush.linearGradient(
+            val edgeBrush = Brush.linearGradient(
                 if (isDark) listOf(Color.White.copy(alpha = 0.34f), Color.White.copy(alpha = 0.05f))
                 else listOf(Color.White.copy(alpha = 0.98f), Color(0xFF8FA0B3).copy(alpha = 0.32f))
             )
             val stroke = Stroke(width = 1.dp.toPx())
             onDrawBehind {
-                drawPath(path, brush = fill)
-                drawPath(path, brush = sheen)
-                drawPath(path, brush = edge, style = stroke)
+                drawPath(path, brush = fillBrush)
+                drawPath(path, brush = sheenBrush)
+                drawPath(path, brush = edgeBrush, style = stroke)
             }
         }
 }
