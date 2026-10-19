@@ -1024,7 +1024,7 @@ fun PlayStoreMainDashboard(
         }
     }
 
-    var activeTab by remember { mutableStateOf("Apps") } // Apps, Games, Library, Console
+    var activeTab by remember { mutableStateOf("Apps") } // Apps (start tab, AppsHomeScreen), Games, Library, Console
     var showDetailsApp by remember { mutableStateOf<AppEntity?>(null) }
     val headerPhotoUrl by viewModel.profilePhotoUrl.collectAsStateWithLifecycle()
     val readNoticeIds by viewModel.readNoticeIds.collectAsStateWithLifecycle()
@@ -1582,31 +1582,28 @@ fun PlayStoreMainDashboard(
                         )
                     }
                     "Apps" -> {
-                        // Apps board with category pills overlay
-                        DiscoveryTabContent(
+                        com.example.view.AppsHomeScreen(
                             isDarkMode = isDarkMode,
-                            category = selectedCategory,
-                            searchQuery = searchQuery,
                             feedState = discoveryFeedState,
+                            searchQuery = searchQuery,
+                            selectedCategory = selectedCategory,
+                            onCategorySelect = { viewModel.selectCategory(it) },
                             isRefreshing = isRefreshing,
                             onRefresh = { viewModel.refreshMarketplace(force = true) },
-                            accentGreen = accentGreen,
+                            accent = accentGreen,
                             textPrimary = textPrimary,
                             textSecondary = textSecondary,
                             cardBgColor = glassCardBg,
-                            onBannerClick = onBannerClick,
                             cardBorderColor = glassCardBorder,
                             onAppClick = onAppClick,
-                            showPillNavbar = true,
-                            selectedPill = selectedCategory,
-                            onPillSelect = { viewModel.selectCategory(it) },
-                            onCollectionClick = { openCollection = it },
-                            onBuyPremiumClick = { purchaseAppTarget = it },
-                            onPreRegisterClick = { app ->
+                            onActionClick = onActionClick,
+                            onBuyClick = { purchaseAppTarget = it },
+                            onRegisterClick = { app ->
                                 viewModel.preRegisterApp(app.id)
                                 Toast.makeText(context, "Successfully Pre-registered for ${app.name}! You will be notified when this upcoming software goes live.", Toast.LENGTH_LONG).show()
                             },
-                            onActionClick = onActionClick
+                            onCollectionClick = { openCollection = it },
+                            onBannerClick = onBannerClick
                         )
                     }
                     "Library" -> {
