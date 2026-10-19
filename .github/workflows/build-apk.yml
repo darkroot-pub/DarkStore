@@ -75,14 +75,20 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 
-      # INSTALL THIS ONE for real use / speed testing. The debug APK above is debuggable and not
-      # minified; Jetpack Compose runs several times slower in it, so it looks laggy on any phone.
-      - name: Build release APK (R8-optimised, signed with the release signing config)
+      - name: Performance note
+        run: |
+          {
+            echo "### Which APK to install"
+            echo "- **darkroot-store-RELEASE-apk-use-this-one** - optimised (R8 + no debug logging). Use this to judge speed."
+            echo "- darkroot-store-debug-apk - for developers only. Debug builds of Compose apps are several times slower and can look 'laggy' even when the code is fine."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build unsigned release APK
         run: gradle assembleRelease --stacktrace
 
-      - name: Upload release APK
+      - name: Upload unsigned release APK
         uses: actions/upload-artifact@v4
         with:
-          name: darkroot-store-release-apk
+          name: darkroot-store-RELEASE-apk-use-this-one
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error

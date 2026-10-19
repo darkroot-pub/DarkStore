@@ -110,22 +110,35 @@ object FirebaseService {
         return emptyList()
     }
 
+    // PERF: RTDB supports ETags. When the catalog hasn't changed the server answers "304 Not Modified" with no body,
+    // so we skip the download, the JSON parse (the whole catalog!) and every downstream recomposition.
+    @Volatile private var appsEtag: String? = null
+    @Volatile private var appsCache: List<AppEntity>? = null
+
     private fun fetchAppsFromRTDB(): List<AppEntity> {
         val tokenParam = getTokenParam()
-        val request = Request.Builder()
+        val cached = appsCache
+        val etag = appsEtag
+        val rb = Request.Builder()
             .url("${RTDB_URL}apps.json$tokenParam")
             .get()
-            .build()
+            .header("X-Firebase-ETag", "true")
+        if (cached != null && etag != null) rb.header("if-none-match", etag)
 
         return try {
-            client.newCall(request).execute().use { response ->
+            client.newCall(rb.build()).execute().use { response ->
+                if (response.code == 304 && cached != null) return cached
                 if (!response.isSuccessful) {
                     Log.e(TAG, "RTDB HTTP error: ${response.code}")
                     return emptyList()
                 }
+                val newEtag = response.header("ETag")
                 val bodyStr = response.body?.string()
-                Log.d(TAG, "RTDB Response: $bodyStr")
-                parseFirebaseResponse(bodyStr)
+                Log.d(TAG, "RTDB apps response: ${bodyStr?.length ?: 0} bytes")
+                val parsed = parseFirebaseResponse(bodyStr)
+                if (parsed.isNotEmpty() && newEtag != null) { appsEtag = newEtag; appsCache = parsed }
+                else { appsEtag = null; appsCache = null }
+                parsed
             }
         } catch (e: Exception) {
             Log.e(TAG, "RTDB Network error: ${e.message}", e)
@@ -387,7 +400,7 @@ object FirebaseService {
                     return emptyList()
                 }
                 val bodyStr = response.body?.string()
-                Log.d(TAG, "RTDB notices response: $bodyStr")
+                Log.d(TAG, "RTDB notices response: ${bodyStr?.length ?: 0} bytes")
                 parseRTDBNoticesResponse(bodyStr)
             }
         } catch (e: Exception) {
@@ -682,7 +695,7 @@ object FirebaseService {
                     return emptyList()
                 }
                 val bodyStr = response.body?.string()
-                Log.d(TAG, "RTDB TermsAgreements Response: $bodyStr")
+                Log.d(TAG, "RTDB TermsAgreements Response: ${bodyStr?.length ?: 0} bytes")
                 parseTermsAgreementsResponse(bodyStr)
             }
         } catch (e: Exception) {
@@ -755,7 +768,7 @@ object FirebaseService {
             val update = client.newCall(request).execute().use { response ->
                 if (response.isSuccessful) {
                     val bodyStr = response.body?.string()
-                    Log.d(TAG, "RTDB Update Response: $bodyStr")
+                    Log.d(TAG, "RTDB Update Response: ${bodyStr?.length ?: 0} bytes")
                     if (!bodyStr.isNullOrBlank() && bodyStr != "null" && bodyStr != "{}") {
                         val adapter = moshi.adapter(UpdateConfigEntity::class.java)
                         adapter.fromJson(bodyStr)

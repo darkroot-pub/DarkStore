@@ -11,7 +11,6 @@ import com.example.view.ambientGlow
 import com.example.view.glass
 import com.example.view.glassEdge
 import com.example.view.glassSheen
-import com.example.view.predictiveBackTransform
 import com.example.view.ProfilePhotoEditor
 import com.example.view.UserIdentityCard
 import android.widget.Toast
@@ -153,10 +152,12 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         com.example.utils.ChatPushState.appInForeground = true
+        viewModel.setAppForeground(true)   // background polling resumes
     }
 
     override fun onStop() {
         com.example.utils.ChatPushState.appInForeground = false
+        viewModel.setAppForeground(false)  // background polling pauses (saves CPU, battery, data)
         super.onStop()
     }
 
@@ -223,18 +224,16 @@ class MainActivity : ComponentActivity() {
             val imageLoader = ImageLoader.Builder(applicationContext)
                 .memoryCache {
                     MemoryCache.Builder(applicationContext)
-                        .maxSizePercent(0.25) // use up to 25% of available RAM 
+                        .maxSizePercent(0.20) // 20% of the app memory budget: less GC pressure, fewer out-of-memory kills
                         .build()
                 }
                 .diskCache {
                     DiskCache.Builder()
                         .directory(applicationContext.cacheDir.resolve("image_cache"))
-                        .maxSizeBytes(200L * 1024 * 1024) // was 4% of the whole partition (several GB)
+                        .maxSizePercent(0.04) // reasonable portion of disk cache
                         .build()
                 }
-                // PERF: a global 100 ms cross-fade made every list icon run its own animation while
-                // flinging. Icons now just appear (placeholders are already in place).
-                .crossfade(false)
+                .crossfade(true)
                 .respectCacheHeaders(false) // reuse local cache ignoring remote HTTP override headers
                 .build()
             coil.Coil.setImageLoader(imageLoader)
@@ -1135,7 +1134,7 @@ fun PlayStoreMainDashboard(
     LaunchedEffect(showDetailsApp) {
         if (showDetailsApp != null) {
             viewModel.refreshInstalledApps()
-            showDetailsApp?.let { viewModel.loadReviewsForApp(it.id) }
+            viewModel.loadReviewsForApp(showDetailsApp!!.id)
         }
     }
 
@@ -1264,26 +1263,8 @@ fun PlayStoreMainDashboard(
             // Settings now lives inside Profile (gear button next to refresh).
         }
     }
-    // Back-button behaviour like a store app: an open chat closes first, then any other tab
-    // returns to Apps (Settings -> Profile), and only from Apps does back leave the app.
-    // On the Apps tab NO handler is enabled, so Android plays its own back-to-home animation.
-    val navActiveChatPeer by viewModel.activeChatPeer.collectAsStateWithLifecycle()
-    androidx.activity.compose.BackHandler(enabled = activeTab == "Chat" && navActiveChatPeer != null) {
-        viewModel.closeChat()
-    }
-    val tabBackState = com.example.view.rememberPredictiveBackState()
-    com.example.view.PredictiveBackNav(
-        enabled = activeTab != "Apps" && !(activeTab == "Chat" && navActiveChatPeer != null),
-        state = tabBackState
-    ) {
-        when (activeTab) {
-            "Settings" -> activeTab = "Profile"
-            else -> {
-                if (selectedCategory == "Games") viewModel.selectCategory("All")
-                activeTab = "Apps"
-            }
-        }
-    }
+    androidx.activity.compose.BackHandler(enabled = activeTab == "Settings") { activeTab = "Profile" }
+    androidx.activity.compose.BackHandler(enabled = activeTab == "Notifications") { activeTab = "Apps" }
     val tabsList = remember(tabs) { tabs.map { it.first } }
 
 
@@ -1462,21 +1443,23 @@ fun PlayStoreMainDashboard(
             )
 
             // 2. Discover Content Board based on selected Navigation Tab with smooth GPU-accelerated animated transitions to prevent lagging
-            // Remembers each tab's saved state (scroll position, list state) while it is off screen,
-            // so coming back to a tab restores it instead of rebuilding it from the top.
-            val tabStateHolder = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
             AnimatedContent(
                 targetState = activeTab,
-                // PERF: was a 300 ms full-screen slide of two heavy trees at once. A short fade
-                // (like a store app's tab switch) keeps both layers cheap while they overlap.
                 transitionSpec = {
-                    fadeIn(animationSpec = tween(150)) togetherWith fadeOut(animationSpec = tween(80))
+                    val initialIdx = tabsList.indexOf(initialState)
+                    val targetIdx = tabsList.indexOf(targetState)
+                    val direction = if (targetIdx >= initialIdx) {
+                        AnimatedContentTransitionScope.SlideDirection.Left
+                    } else {
+                        AnimatedContentTransitionScope.SlideDirection.Right
+                    }
+                    slideIntoContainer(direction, animationSpec = tween(300, easing = FastOutSlowInEasing)) + fadeIn(animationSpec = tween(150)) togetherWith
+                    slideOutOfContainer(direction, animationSpec = tween(300, easing = FastOutSlowInEasing)) + fadeOut(animationSpec = tween(150))
                 },
                 label = "dashboard_tab_transition_animation",
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .predictiveBackTransform(tabBackState)
                     // PERF: this used to be a hand-rolled awaitPointerEventScope loop
                     // that called awaitPointerEvent() on every single touch-move
                     // sample of ANY gesture anywhere in this subtree — including
@@ -1549,7 +1532,6 @@ fun PlayStoreMainDashboard(
                         banners = visibleBanners
                     )
                 }
-                tabStateHolder.SaveableStateProvider(targetTab) {
                 when (targetTab) {
                     "Games" -> {
                         DiscoveryTabContent(
@@ -1700,7 +1682,6 @@ fun PlayStoreMainDashboard(
                         )
                     }
                 }
-                } // end SaveableStateProvider
             }
         }
     }
@@ -1771,10 +1752,8 @@ fun PlayStoreMainDashboard(
                                         } else if (tabId == "Apps" && selectedCategory == "Games") {
                                             viewModel.selectCategory("All")
                                         }
-                                        // PERF: was a FORCED full refetch (apps + collections + banners +
-                                        // submissions + every developer) on every tab tap. Now only when the
-                                        // data is older than 30 s - the app already syncs in the background.
-                                        viewModel.refreshMarketplaceIfStale()
+                                        // Always re-fetch live data when switching tabs while online
+                                        viewModel.refreshMarketplace(force = true)
                                         if (tabId == "Chat") viewModel.refreshChatThreads()
                                         if (tabId == "Profile" || tabId == "Console") viewModel.refreshSubmissions()
                                     },
@@ -2147,15 +2126,11 @@ fun DiscoveryTabContent(
     val downloadsMap = remember(downloads) { downloads.associateBy { it.id } }
     
     // Filter Games out for Games tab specifically
-    // CRASH FIX: LazyColumn/LazyRow throw "Key was already used" if two items share a key.
-    // A duplicate app id in the catalog (or a re-ordered live list) would crash the feed, so
-    // the list is de-duplicated by id once per data change.
     val appsToRender = remember(apps, category, selectedPill) {
-        val unique = apps.distinctBy { it.id }
         if (category == "Games") {
-            unique.filter { it.category.equals("Games", ignoreCase = true) }
+            apps.filter { it.category.equals("Games", ignoreCase = true) }
         } else {
-            unique
+            apps
         }
     }
     val featuredList = remember(appsToRender) { appsToRender.filter { it.isFeatured } }
@@ -2179,16 +2154,8 @@ fun DiscoveryTabContent(
 
     val context = LocalContext.current
     val cacheKey = remember(category, selectedPill, searchQuery) { "${category}_${selectedPill}_${searchQuery}" }
-    val saveScope = rememberCoroutineScope()
     
-    // Pre-filled synchronously (no empty first frame) so a restored scroll position has rows to land
-    // on when you come back to this tab - an empty list made the saved position collapse to the top.
-    val loadedApps = remember {
-        mutableStateListOf<AppEntity?>().apply {
-            val n = maxOf(40, com.example.data.PaginationCache.peekCount(cacheKey))
-            addAll(standardApps.take(n))
-        }
-    }
+    val loadedApps = remember { mutableStateListOf<AppEntity?>() }
     var isPageLoading by remember { mutableStateOf(false) }
 
     var isLoadingDiscovery by remember { mutableStateOf(true) }
@@ -2323,7 +2290,7 @@ fun DiscoveryTabContent(
                     val firstOffset = listState.firstVisibleItemScrollOffset
                     com.example.data.PaginationCache.saveScrollPosition(cacheKey, firstIndex, firstOffset)
                 }
-
+                
                 val totalLoaded = loadedApps.size
                 if (hasMore && !isPageLoading && totalLoaded > 0 && lastVisibleIndex >= (totalLoaded * 0.85).toInt()) {
                     isPageLoading = true
@@ -2332,22 +2299,22 @@ fun DiscoveryTabContent(
                         // High-performance strategy: Load the entire next chunk in a single frame,
                         // avoiding index-by-index recomposition lag!
                         kotlinx.coroutines.delay(80)
-                        // CRASH FIX: the live list can shift while paging, so the next slice may
-                        // contain apps that are already shown -> duplicate LazyColumn keys.
-                        val shownIds = loadedApps.mapNotNullTo(HashSet<String>()) { it?.id }
-                        val nextChunk = standardApps.asSequence()
-                            .filter { it.id !in shownIds }
-                            .take(nextPageSize)
-                            .toList()
+                        val nextChunk = standardApps.subList(totalLoaded, totalLoaded + nextPageSize)
                         loadedApps.addAll(nextChunk)
                     }
                     isPageLoading = false
                     if (searchQuery.isEmpty()) {
-                        // PERF: Snapshot list on main thread (SnapshotStateList isn't thread-safe),
-                        // then serialize + write to disk on IO thread. Use snapshotFlow to avoid
-                        // re-reading the entire list on every pagination trigger.
-                        val snapshot = loadedApps.filterNotNull().toList()
-                        saveScope.launch(Dispatchers.IO) {
+                        // PERF/BUG: this was the big one — this fires roughly every ~17
+                        // rows scrolled (each time pagination triggers) for as long as
+                        // the user keeps scrolling down, re-serializing the ENTIRE
+                        // (ever-growing) loaded list to JSON and writing it to disk,
+                        // synchronously, directly on the main thread — a real freeze
+                        // landing exactly mid-scroll, repeatedly, for long scroll
+                        // sessions. Snapshot the list before hopping off the main
+                        // thread (SnapshotStateList isn't safe to read from a
+                        // background thread while still attached to composition).
+                        val snapshot = loadedApps.filterNotNull()
+                        withContext(Dispatchers.IO) {
                             com.example.data.PaginationCache.saveApps(context, cacheKey, snapshot)
                         }
                     }
@@ -2681,7 +2648,7 @@ fun DiscoveryTabContent(
                             val isPurchased = purchasedAppIds.contains(app.id)
                             val onClick = remember(app.id) { { latestOnAppClick.value(app) } }
                             val onBuyClick = remember(app.id) { { latestOnBuyPremiumClick.value(app) } }
-                            Box { // PERF: per-row animateItemPlacement removed (rows slid around mid-scroll when the live list re-synced)
+                            Box(modifier = Modifier.animateItemPlacement(tween(280, easing = FastOutSlowInEasing))) {
                                 PremiumAppCardView(
                                     app = app,
                                     purchased = isPurchased,
@@ -2718,7 +2685,7 @@ fun DiscoveryTabContent(
                             val isRegistered = preRegisteredAppIds.contains(app.id)
                             val onClick = remember(app.id) { { latestOnAppClick.value(app) } }
                             val onRegisterClick = remember(app.id) { { latestOnPreRegisterClick.value(app) } }
-                            Box { // PERF: per-row animateItemPlacement removed (rows slid around mid-scroll when the live list re-synced)
+                            Box(modifier = Modifier.animateItemPlacement(tween(280, easing = FastOutSlowInEasing))) {
                                 UpcomingAppCardView(
                                     app = app,
                                     registered = isRegistered,
@@ -2783,7 +2750,7 @@ fun DiscoveryTabContent(
                     // built-in, low-cost placement-animation primitive — safe
                     // to add without reopening any of the earlier scroll-perf
                     // fixes to this same row.
-                    Box { // PERF: per-row animateItemPlacement removed (rows slid around mid-scroll when the live list re-synced)
+                    Box(modifier = Modifier.animateItemPlacement(tween(280, easing = FastOutSlowInEasing))) {
                         AppItemCardView(
                             app = app,
                             downloadState = dlState,
@@ -3425,129 +3392,6 @@ fun AdBadge(modifier: Modifier = Modifier) {
     )
 }
 
-// PERF: Memoized action button — only recomposes when its inputs change.
-// Extracted so the main AppItemCardView doesn't re-evaluate the entire when-block
-// on every parent recomposition (which happens during scroll).
-@Composable
-private fun AppActionButton(
-    app: AppEntity,
-    downloadState: DownloadEntity?,
-    installedInfo: com.example.utils.ApkInstaller.InstalledAppInfo?,
-    purchased: Boolean,
-    registered: Boolean,
-    accentGreen: Color,
-    textSecondary: Color,
-    onBuyClick: () -> Unit,
-    onRegisterClick: () -> Unit,
-    onActionClick: () -> Unit
-) {
-    val context = LocalContext.current
-    val isInstalled = remember(installedInfo) { installedInfo != null }
-    val hasUpdate = remember(isInstalled, app.versionCode, app.version, installedInfo) {
-        isInstalled && (
-            app.versionCode > (installedInfo?.versionCode ?: 0L) ||
-            (installedInfo?.versionName != null && !app.version.trim().equals(installedInfo.versionName.trim(), ignoreCase = true))
-        )
-    }
-
-    Box(contentAlignment = Alignment.Center) {
-        if (downloadState?.status == "DOWNLOADING") {
-            IconButton(onClick = onActionClick, modifier = Modifier.size(34.dp)) {
-                Icon(Icons.Default.Close, "Cancel download", tint = textSecondary, modifier = Modifier.size(16.dp))
-            }
-        } else when {
-            app.isUpcoming -> {
-                if (registered) {
-                    OutlinedButton(onClick = {}, shape = RoundedCornerShape(20.dp),
-                        border = BorderStroke(1.dp, accentGreen),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = accentGreen),
-                        contentPadding = PaddingValues(horizontal = 12.dp), modifier = Modifier.height(32.dp)
-                    ) { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(12.dp)); Text("Registered", fontSize = 11.sp, fontWeight = FontWeight.Bold) } }
-                } else {
-                    Button(onClick = onRegisterClick, shape = RoundedCornerShape(20.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF9C27B0), contentColor = Color.White),
-                        contentPadding = PaddingValues(horizontal = 14.dp), modifier = Modifier.height(32.dp)
-                    ) { Text("Pre-register", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
-                }
-            }
-            app.isPremium && !purchased && !isInstalled -> {
-                Button(onClick = onBuyClick, shape = RoundedCornerShape(20.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800), contentColor = Color.White),
-                    contentPadding = PaddingValues(horizontal = 14.dp), modifier = Modifier.height(32.dp)
-                ) { Text(app.price.ifEmpty { "$1.99" }, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold) }
-            }
-            downloadState?.status == "DOWNLOADED" -> {
-                Button(onClick = onActionClick, shape = RoundedCornerShape(20.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = accentGreen, contentColor = Color.White),
-                    contentPadding = PaddingValues(horizontal = 16.dp), modifier = Modifier.height(32.dp)
-                ) { Text("Install", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
-            }
-            isInstalled && hasUpdate -> {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Button(onClick = onActionClick, shape = RoundedCornerShape(20.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = accentGreen, contentColor = Color.White),
-                        contentPadding = PaddingValues(horizontal = 12.dp), modifier = Modifier.height(32.dp)
-                    ) { Text("Update", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
-                    OutlinedButton(onClick = { ApkInstaller.launchApp(context, app.packageName) }, shape = RoundedCornerShape(20.dp),
-                        border = BorderStroke(1.dp, accentGreen), colors = ButtonDefaults.outlinedButtonColors(contentColor = accentGreen),
-                        contentPadding = PaddingValues(horizontal = 12.dp), modifier = Modifier.height(32.dp)
-                    ) { Text("Open", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
-                }
-            }
-            isInstalled -> {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Button(onClick = { ApkInstaller.launchApp(context, app.packageName) }, shape = RoundedCornerShape(20.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE6F4EA), contentColor = Color(0xFF01875F)),
-                        contentPadding = PaddingValues(horizontal = 12.dp), modifier = Modifier.height(32.dp)
-                    ) { Text("Open", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
-                    if (LocalUninstallEnabled.current) {
-                        OutlinedButton(onClick = { ApkInstaller.uninstallApp(context, app.packageName) }, shape = RoundedCornerShape(20.dp),
-                            border = BorderStroke(1.dp, Color(0xFFEF5350)), colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFEF5350)),
-                            contentPadding = PaddingValues(horizontal = 12.dp), modifier = Modifier.height(32.dp)
-                        ) { Text("Uninstall", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
-                    }
-                }
-            }
-            else -> {
-                Button(onClick = onActionClick, shape = RoundedCornerShape(20.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = accentGreen, contentColor = Color.White),
-                    contentPadding = PaddingValues(horizontal = 16.dp), modifier = Modifier.height(32.dp)
-                ) { Text("Install", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
-            }
-        }
-    }
-}
-
-// PERF: Download progress overlay — only composes when downloading.
-// Uses AnimatedVisibility so it doesn't add nodes to composition when hidden.
-@Composable
-private fun DownloadProgressOverlay(
-    downloadState: DownloadEntity,
-    accentGreen: Color,
-    textSecondary: Color
-) {
-    AnimatedVisibility(visible = downloadState.status == "DOWNLOADING") {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 10.dp, start = 12.dp, end = 12.dp, bottom = 8.dp)
-                .background(textSecondary.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
-                .padding(12.dp)
-        ) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Downloading: ", color = textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                    Text("${downloadState.progress}%", color = accentGreen, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
-                }
-                Text(downloadState.downloadSpeed, color = accentGreen, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-            }
-            Spacer(Modifier.height(6.dp))
-            LinearProgressIndicator(progress = downloadState.progress / 100f, color = accentGreen,
-                trackColor = textSecondary.copy(alpha = 0.2f), modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(3.dp)))
-        }
-    }
-}
-
 @Composable
 fun AppItemCardView(
     app: AppEntity,
@@ -3566,61 +3410,362 @@ fun AppItemCardView(
     onClick: () -> Unit,
     onActionClick: () -> Unit
 ) {
-    val isDark = textPrimary.luminance() > 0.5f
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .glass(isDark, RoundedCornerShape(22.dp), elevation = 3.dp)
+            .glass(textPrimary.luminance() > 0.5f, RoundedCornerShape(22.dp), elevation = 3.dp)
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        // PERF: Material3's default Card elevation renders a soft shadow via
+        // an extra graphics layer per card. With a visible border already
+        // providing separation between rows, that shadow adds nothing here
+        // but costs a compositing pass on every row, every frame it's on
+        // screen — multiplied by however many rows a fast fling brings on
+        // screen at once. Pinning it to 0 removes that cost outright.
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         border = null
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // Logo with optional download ring
-                Box(contentAlignment = Alignment.Center) {
-                    AppLogo(logoUrl = app.logo, appName = app.name, packageName = app.packageName,
-                        modifier = Modifier.size(54.dp).clip(RoundedCornerShape(12.dp)))
-                    if (downloadState?.status == "DOWNLOADING") {
-                        CircularProgressIndicator(progress = downloadState.progress / 100f, color = accentGreen,
-                            trackColor = Color.Transparent, strokeWidth = 3.dp, modifier = Modifier.size(58.dp))
-                    }
-                }
-                Spacer(Modifier.width(14.dp))
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    // Logo bounding box representing percentage ring on download trigger
+                    Box(contentAlignment = Alignment.Center) {
+                        AppLogo(
+                            logoUrl = app.logo,
+                            appName = app.name,
+                            packageName = app.packageName,
+                            modifier = Modifier
+                                .size(54.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                        )
 
-                // Info column
-                Column(Modifier.weight(1f).padding(end = if (app.hasAds) 55.dp else 0.dp)) {
-                    Text(app.name, color = textPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Spacer(Modifier.height(2.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(app.developer, color = textSecondary, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                        Box(modifier = Modifier.background(accentGreen.copy(alpha = 0.08f), RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 2.dp)) {
-                            Text(app.category.uppercase(), color = accentGreen, fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace)
+                        // Draw thin percentage progress circle directly around logo as specified
+                        if (downloadState?.status == "DOWNLOADING") {
+                            CircularProgressIndicator(
+                                progress = downloadState.progress / 100f,
+                                color = accentGreen,
+                                trackColor = Color.Transparent,
+                                strokeWidth = 3.dp,
+                                modifier = Modifier.size(58.dp)
+                            )
                         }
                     }
-                    Spacer(Modifier.height(4.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Star, "Rating Star", tint = Color(0xFFF1A80A), modifier = Modifier.size(11.dp))
-                            Spacer(Modifier.width(2.dp))
-                            Text(overriddenRating, fontSize = 11.sp, color = textPrimary, fontWeight = FontWeight.Bold)
+
+                    Spacer(modifier = Modifier.width(14.dp))
+
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = if (app.hasAds) 55.dp else 0.dp) // Leave safety room for top-right Ad badge if name is long
+                    ) {
+                        Text(
+                            text = app.name,
+                            color = textPrimary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = app.developer,
+                                color = textSecondary,
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false)
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .background(accentGreen.copy(alpha = 0.08f), RoundedCornerShape(6.dp))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = app.category.uppercase(),
+                                    color = accentGreen,
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
                         }
-                        Divider(modifier = Modifier.height(10.dp).width(1.dp), color = textSecondary.copy(alpha = 0.3f))
-                        Text(app.size, fontSize = 11.sp, color = textSecondary)
+                        
+                        Spacer(modifier = Modifier.height(4.dp))
+                        
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Star,
+                                    contentDescription = "Rating Star",
+                                    tint = Color(0xFFF1A80A),
+                                    modifier = Modifier.size(11.dp)
+                                )
+                                Spacer(modifier = Modifier.width(2.dp))
+                                Text(
+                                    text = overriddenRating,
+                                    fontSize = 11.sp,
+                                    color = textPrimary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            
+                            Divider(
+                                modifier = Modifier
+                                    .height(10.dp)
+                                    .width(1.dp),
+                                color = textSecondary.copy(alpha = 0.3f)
+                            )
+
+                            Text(
+                                text = app.size,
+                                fontSize = 11.sp,
+                                color = textSecondary
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    // Contextual action button layout as per user version matching rules
+                    Box(contentAlignment = Alignment.Center) {
+                        val context = LocalContext.current
+                        if (downloadState?.status == "DOWNLOADING") {
+                            IconButton(
+                                onClick = onActionClick,
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Cancel download",
+                                    tint = textSecondary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        } else {
+                            val isInstalled = remember(installedInfo) { installedInfo != null }
+                            val hasUpdate = remember(isInstalled, app.versionCode, app.version, installedInfo) {
+                                isInstalled && (
+                                    app.versionCode > (installedInfo?.versionCode ?: 0L) ||
+                                    (installedInfo?.versionName != null && !app.version.trim().equals(installedInfo.versionName.trim(), ignoreCase = true))
+                                )
+                            }
+
+                            when {
+                                app.isUpcoming -> {
+                                    if (registered) {
+                                        OutlinedButton(
+                                            onClick = {},
+                                            shape = RoundedCornerShape(20.dp),
+                                            border = BorderStroke(1.dp, accentGreen),
+                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = accentGreen),
+                                            contentPadding = PaddingValues(horizontal = 12.dp),
+                                            modifier = Modifier.height(32.dp)
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(12.dp))
+                                                Text("Registered", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                    } else {
+                                        Button(
+                                            onClick = onRegisterClick,
+                                            shape = RoundedCornerShape(20.dp),
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = Color(0xFF9C27B0),
+                                                contentColor = Color.White
+                                            ),
+                                            contentPadding = PaddingValues(horizontal = 14.dp),
+                                            modifier = Modifier.height(32.dp)
+                                        ) {
+                                            Text("Pre-register", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                                app.isPremium && !purchased && !isInstalled -> {
+                                    Button(
+                                        onClick = onBuyClick,
+                                        shape = RoundedCornerShape(20.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = Color(0xFFFF9800),
+                                            contentColor = Color.White
+                                        ),
+                                        contentPadding = PaddingValues(horizontal = 14.dp),
+                                        modifier = Modifier.height(32.dp).testTag("premium_buy_button_${app.id}")
+                                    ) {
+                                        Text(app.price.ifEmpty { "$1.99" }, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                                    }
+                                }
+                                downloadState?.status == "DOWNLOADED" -> {
+                                    Button(
+                                        onClick = onActionClick,
+                                        shape = RoundedCornerShape(20.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = accentGreen,
+                                            contentColor = Color.White
+                                        ),
+                                        contentPadding = PaddingValues(horizontal = 16.dp),
+                                        modifier = Modifier
+                                            .height(32.dp)
+                                            .testTag("install_action_button_${app.id}")
+                                    ) {
+                                        Text("Install", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                                isInstalled && hasUpdate -> {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        // Update Button
+                                        Button(
+                                            onClick = onActionClick,
+                                            shape = RoundedCornerShape(20.dp),
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = accentGreen,
+                                                contentColor = Color.White
+                                            ),
+                                            contentPadding = PaddingValues(horizontal = 12.dp),
+                                            modifier = Modifier
+                                                .height(32.dp)
+                                                .testTag("update_action_button_${app.id}")
+                                        ) {
+                                            Text("Update", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+
+                                        // Open Button
+                                        OutlinedButton(
+                                            onClick = { ApkInstaller.launchApp(context, app.packageName) },
+                                            shape = RoundedCornerShape(20.dp),
+                                            border = BorderStroke(1.dp, accentGreen),
+                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = accentGreen),
+                                            contentPadding = PaddingValues(horizontal = 12.dp),
+                                            modifier = Modifier
+                                                .height(32.dp)
+                                                .testTag("open_action_button_${app.id}")
+                                        ) {
+                                            Text("Open", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                                isInstalled -> {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        // Open Button
+                                        Button(
+                                            onClick = { ApkInstaller.launchApp(context, app.packageName) },
+                                            shape = RoundedCornerShape(20.dp),
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = Color(0xFFE6F4EA),
+                                                contentColor = Color(0xFF01875F)
+                                            ),
+                                            contentPadding = PaddingValues(horizontal = 12.dp),
+                                            modifier = Modifier
+                                                .height(32.dp)
+                                                .testTag("open_action_button_${app.id}")
+                                        ) {
+                                            Text("Open", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+
+                                        // Uninstall Button
+                                        if (LocalUninstallEnabled.current) {
+                                            OutlinedButton(
+                                                onClick = { ApkInstaller.uninstallApp(context, app.packageName) },
+                                                shape = RoundedCornerShape(20.dp),
+                                                border = BorderStroke(1.dp, Color(0xFFEF5350)),
+                                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFEF5350)),
+                                                contentPadding = PaddingValues(horizontal = 12.dp),
+                                                modifier = Modifier
+                                                    .height(32.dp)
+                                                    .testTag("uninstall_action_button_${app.id}")
+                                            ) {
+                                                Text("Uninstall", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                    }
+                                }
+                                else -> {
+                                    Button(
+                                        onClick = onActionClick,
+                                        shape = RoundedCornerShape(20.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = accentGreen,
+                                            contentColor = Color.White
+                                        ),
+                                        contentPadding = PaddingValues(horizontal = 16.dp),
+                                        modifier = Modifier
+                                            .height(32.dp)
+                                            .testTag("install_action_button_${app.id}")
+                                    ) {
+                                        Text("Install", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
-                Spacer(Modifier.width(8.dp))
-
-                // Action button (memoized)
-                AppActionButton(app, downloadState, installedInfo, purchased, registered, accentGreen, textSecondary,
-                    onBuyClick, onRegisterClick, onActionClick)
+                // Real-time progress bar description inside card
+                if (downloadState?.status == "DOWNLOADING") {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(textSecondary.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "Downloading: ",
+                                    color = textSecondary,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                // Show real-time downloading percentage
+                                Text(
+                                    text = "${downloadState.progress}%",
+                                    color = accentGreen,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                            }
+                            Text(
+                                text = downloadState.downloadSpeed,
+                                color = accentGreen,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        LinearProgressIndicator(
+                            progress = downloadState.progress / 100f,
+                            color = accentGreen,
+                            trackColor = textSecondary.copy(alpha = 0.2f),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(3.dp))
+                        )
+                    }
+                }
             }
-
-            // Download progress (AnimatedVisibility — zero nodes when not downloading)
-            downloadState?.let { DownloadProgressOverlay(it, accentGreen, textSecondary) }
+            if (app.hasAds) {
+                AdBadge(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 8.dp, end = 8.dp)
+                )
+            }
         }
     }
 }
@@ -4152,7 +4297,7 @@ fun ProfileTabContent(
     var activeDetailSubmission by remember { mutableStateOf<com.example.data.SubmissionEntity?>(null) }
     val catalogApps by viewModel.unfilteredApps.collectAsStateWithLifecycle()
     // Pull the latest catalog when the profile opens, so a suspension done by the admin shows immediately.
-    LaunchedEffect(Unit) { viewModel.refreshMarketplaceIfStale() }
+    LaunchedEffect(Unit) { viewModel.refreshMarketplace() }
     var editOptionsForApp by remember { mutableStateOf<com.example.data.SubmissionEntity?>(null) }
     var showUpdateScreenshotsFormFor by remember { mutableStateOf<com.example.data.SubmissionEntity?>(null) }
     var showPushUpdateFormFor by remember { mutableStateOf<com.example.data.SubmissionEntity?>(null) }
@@ -8721,7 +8866,7 @@ fun ConsoleTabContent(
     // Trigger submissions refresh whenever the screen becomes visible or authorization changes
     LaunchedEffect(userRole, userEmail) {
         viewModel.refreshSubmissions()
-        viewModel.refreshMarketplaceIfStale()
+        viewModel.refreshMarketplace()
         viewModel.refreshTermsAgreements()
     }
 
@@ -10456,7 +10601,7 @@ fun ConsoleTabContent(
                         }
                     }
                 } else {
-                    items(filteredUsers) { user ->
+                    items(filteredUsers, key = { it.uid }) { user ->
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -11954,9 +12099,7 @@ fun AppDetailsDialog(
     var inputReviewText by remember { mutableStateOf("") }
     var activeLightboxImageIndex by remember { mutableStateOf<Int?>(null) }
 
-    // The details page used to sit behind a fake 650 ms "loading" shimmer on every open. All the data
-    // is already in memory, so show it immediately.
-    var isLoadingDetails by remember { mutableStateOf(false) }
+    var isLoadingDetails by remember { mutableStateOf(true) }
 
     // PERF: same fix as the home feed — only run the infinite shimmer animation
     // (and only pay its every-frame recomposition cost) while the details
@@ -11977,6 +12120,11 @@ fun AppDetailsDialog(
         0f
     }
 
+    LaunchedEffect(app.id) {
+        isLoadingDetails = true
+        kotlinx.coroutines.delay(650) // Simulate elegant live spec fetching with a 650ms shimmer to avoid lag & look premium
+        isLoadingDetails = false
+    }
 
     val screenshotList = remember(app.screenshots) {
         app.screenshots.split(",").map { it.trim() }.filter { it.isNotBlank() }
@@ -11990,19 +12138,9 @@ fun AppDetailsDialog(
             dismissOnClickOutside = false
         )
     ) {
-        // Predictive back inside the dialog window: while the edge-swipe is held the page shrinks
-        // and rounds; letting go early springs it back, committing closes the details.
-        // Disabled while the lightbox / dev-profile overlays are up so they get back first.
-        val detailsBackState = com.example.view.rememberPredictiveBackState()
-        com.example.view.PredictiveBackNav(
-            enabled = activeLightboxImageIndex == null && !showDevProfileDialog,
-            state = detailsBackState,
-            onBack = onDismiss
-        )
         Surface(
             modifier = Modifier
                 .fillMaxSize()
-                .predictiveBackTransform(detailsBackState)
                 .background(if (isDarkMode) Color(0xFF0E1013) else Color(0xFFF3F6F9))
                 .ambientGlow(isDarkMode, false, accentGreen),
             color = Color.Transparent
@@ -15979,25 +16117,11 @@ sealed class UpdateState {
  * and reports a clear "server is down" message on failure via [onError],
  * rather than the vague "upload failed/skipped" messages that existed before.
  */
-// One shared client: building a new OkHttpClient per upload leaked a thread pool + connection pool each time.
-private val imgBbClient: okhttp3.OkHttpClient by lazy {
-    okhttp3.OkHttpClient.Builder()
-        .connectTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
-        .writeTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
-        .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
-        .build()
-}
-
 internal suspend fun uploadImageToImgBB(
     context: android.content.Context,
     bytes: ByteArray,
     onError: (String) -> Unit
 ): String? {
-    // Base64 + form body hold ~3x the image in memory; refuse absurd sizes instead of risking an OOM crash.
-    if (bytes.size > 12 * 1024 * 1024) {
-        onError("This image is too large (max 12 MB). Please pick a smaller one.")
-        return null
-    }
     return try {
         val base64String = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
         val formBody = okhttp3.FormBody.Builder()
@@ -16007,23 +16131,24 @@ internal suspend fun uploadImageToImgBB(
             .url("https://api.imgbb.com/1/upload?key=a046c848dfa5230136f107106d4bb187")
             .post(formBody)
             .build()
-        // response.use{} always closes the body (the error branch used to leak the connection)
-        imgBbClient.newCall(request).execute().use { response ->
-            if (response.isSuccessful) {
-                val bodyString = response.body?.string() ?: ""
-                val match = Regex("\"url\"\\s*:\\s*\"([^\"]+)\"").find(bodyString)
-                val uploadedUrl = match?.groupValues?.get(1)?.replace("\\/", "/")
-                if (uploadedUrl == null) {
-                    onError("Image server returned an unexpected response. Please try again.")
-                }
-                uploadedUrl
-            } else {
-                onError("Image server is currently down (error ${response.code}). Please try again later.")
-                null
+        val client = okhttp3.OkHttpClient.Builder()
+            .connectTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+        val response = client.newCall(request).execute()
+        if (response.isSuccessful) {
+            val bodyString = response.body?.string() ?: ""
+            val match = Regex("\"url\"\\s*:\\s*\"([^\"]+)\"").find(bodyString)
+            val uploadedUrl = match?.groupValues?.get(1)?.replace("\\/", "/")
+            if (uploadedUrl == null) {
+                onError("Image server returned an unexpected response. Please try again.")
             }
+            uploadedUrl
+        } else {
+            onError("Image server is currently down (error ${response.code}). Please try again later.")
+            null
         }
-    } catch (ce: kotlinx.coroutines.CancellationException) {
-        throw ce // never swallow cancellation (breaks structured concurrency)
     } catch (ex: java.io.IOException) {
         onError("Image server is currently down or unreachable. Please try again later.")
         null

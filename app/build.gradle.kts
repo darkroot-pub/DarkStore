@@ -113,9 +113,6 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.messaging)
     implementation(libs.unity.ads)
-    // Installs the baseline profile (src/main/baseline-prof.txt) so app code is AOT-compiled at install
-    // instead of interpreted/JIT'd on first launches - big cold-start and first-scroll win.
-    implementation("androidx.profileinstaller:profileinstaller:1.3.1")
 
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
