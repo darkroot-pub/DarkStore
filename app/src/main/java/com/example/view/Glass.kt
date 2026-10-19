@@ -1,16 +1,14 @@
 package com.example.view
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Outline
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -33,62 +31,43 @@ fun Modifier.ambientGlow(isDark: Boolean, isAmoled: Boolean, accent: Color): Mod
     drawRect(Brush.radialGradient(listOf(Color(0xFF06B6D4).copy(alpha = a2 * 0.8f), Color.Transparent), center = Offset(w * 0.15f, h * 0.99f), radius = w * 0.85f))
 }
 
-/**
- * "Liquid glass" panel: translucent frosted fill, a specular highlight and a bright edge.
- *
- * PERF: this runs on EVERY list row. It used to chain shadow + clip + two background(brush) +
- * border(brush), i.e. 4 modifier nodes, 3 gradient Brush objects re-allocated on each
- * recomposition and a per-row elevation shadow (an extra GPU render pass). Now it is a single
- * draw pass whose brushes are cached per size, and the soft shadow is only drawn for real
- * floating panels (elevation > 4.dp); list rows (3.dp) are separated by the edge line instead.
- */
-fun Modifier.glass(isDark: Boolean, shape: Shape, elevation: Dp = 6.dp): Modifier {
-    val base = if (elevation > 4.dp) {
-        this.shadow(elevation, shape, ambientColor = Color.Black.copy(alpha = 0.10f), spotColor = Color.Black.copy(alpha = 0.16f))
-    } else this
-    return base
-        .clip(shape)
-        .drawWithCache {
-            // Turn the shape into a Path once (cached per size); drawPath works for any Shape.
-            val path = Path().apply {
-                when (val o = shape.createOutline(size, layoutDirection, this@drawWithCache)) {
-                    is Outline.Rectangle -> addRect(o.rect)
-                    is Outline.Rounded -> addRoundRect(o.roundRect)
-                    is Outline.Generic -> addPath(o.path)
-                }
-            }
-            val fill = Brush.verticalGradient(
-                if (isDark) listOf(Color.White.copy(alpha = 0.13f), Color.White.copy(alpha = 0.05f))
-                else listOf(Color.White.copy(alpha = 0.66f), Color.White.copy(alpha = 0.40f))
-            )
-            // specular highlight sweeping from the top-left corner - what makes it read as liquid
-            val sheen = Brush.linearGradient(
-                colors = if (isDark) listOf(Color.White.copy(alpha = 0.16f), Color.Transparent)
-                else listOf(Color.White.copy(alpha = 0.70f), Color.Transparent),
-                start = Offset(0f, 0f),
-                end = Offset(520f, 360f)
-            )
-            val edge = Brush.linearGradient(
-                if (isDark) listOf(Color.White.copy(alpha = 0.34f), Color.White.copy(alpha = 0.05f))
-                else listOf(Color.White.copy(alpha = 0.98f), Color(0xFF8FA0B3).copy(alpha = 0.32f))
-            )
-            val stroke = Stroke(width = 1.dp.toPx())
-            onDrawBehind {
-                drawPath(path, brush = fill)
-                drawPath(path, brush = sheen)
-                drawPath(path, brush = edge, style = stroke)
-            }
-        }
-}
-
-/** Light-catching edge for use on any shape (details tiles, thumbnails…). */
-fun glassEdge(isDark: Boolean): Brush = Brush.linearGradient(
-    if (isDark) listOf(Color.White.copy(alpha = 0.30f), Color.White.copy(alpha = 0.04f))
-    else listOf(Color.White.copy(alpha = 0.95f), Color(0xFF8FA0B3).copy(alpha = 0.28f))
+// PERF: these brushes used to be rebuilt (3 Brush objects + lists + colour copies) on EVERY recomposition of EVERY
+// glass tile - pure garbage-collector pressure while scrolling. Brushes are immutable, so build them once.
+private val GLASS_FILL_DARK = Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.13f), Color.White.copy(alpha = 0.05f)))
+private val GLASS_FILL_LIGHT = Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.66f), Color.White.copy(alpha = 0.40f)))
+private val GLASS_SPECULAR_DARK = Brush.linearGradient(
+    colors = listOf(Color.White.copy(alpha = 0.16f), Color.Transparent), start = Offset(0f, 0f), end = Offset(520f, 360f)
 )
+private val GLASS_SPECULAR_LIGHT = Brush.linearGradient(
+    colors = listOf(Color.White.copy(alpha = 0.70f), Color.Transparent), start = Offset(0f, 0f), end = Offset(520f, 360f)
+)
+private val GLASS_EDGE_DARK = Brush.linearGradient(listOf(Color.White.copy(alpha = 0.34f), Color.White.copy(alpha = 0.05f)))
+private val GLASS_EDGE_LIGHT = Brush.linearGradient(listOf(Color.White.copy(alpha = 0.98f), Color(0xFF8FA0B3).copy(alpha = 0.32f)))
+private val GLASS_SHADOW_AMBIENT = Color.Black.copy(alpha = 0.10f)
+private val GLASS_SHADOW_SPOT = Color.Black.copy(alpha = 0.16f)
+
+/**
+ * "Liquid glass" panel: soft shadow, translucent frosted fill, a specular highlight and a bright edge.
+ * Pass `elevation = 0.dp` for tiles that repeat in scrolling lists: a shadow per tile is the most expensive part.
+ */
+fun Modifier.glass(isDark: Boolean, shape: Shape, elevation: Dp = 6.dp): Modifier = this
+    // clip = false: the clip below does the clipping once (shadow() clips by default = a second, wasted clip layer)
+    .then(
+        if (elevation > 0.dp) Modifier.shadow(elevation, shape, clip = false, ambientColor = GLASS_SHADOW_AMBIENT, spotColor = GLASS_SHADOW_SPOT)
+        else Modifier
+    )
+    .clip(shape)
+    .background(if (isDark) GLASS_FILL_DARK else GLASS_FILL_LIGHT)
+    // specular highlight sweeping from the top-left corner - what makes it read as liquid
+    .background(if (isDark) GLASS_SPECULAR_DARK else GLASS_SPECULAR_LIGHT)
+    .border(1.dp, if (isDark) GLASS_EDGE_DARK else GLASS_EDGE_LIGHT, shape)
+
+/** Light-catching edge for use on any shape (details tiles, thumbnails...). */
+fun glassEdge(isDark: Boolean): Brush = if (isDark) GLASS_EDGE_STRONG_DARK else GLASS_EDGE_STRONG_LIGHT
+private val GLASS_EDGE_STRONG_DARK = Brush.linearGradient(listOf(Color.White.copy(alpha = 0.30f), Color.White.copy(alpha = 0.04f)))
+private val GLASS_EDGE_STRONG_LIGHT = Brush.linearGradient(listOf(Color.White.copy(alpha = 0.95f), Color(0xFF8FA0B3).copy(alpha = 0.28f)))
 
 /** Subtle white sheen laid over a panel to make it read as frosted. */
-fun glassSheen(isDark: Boolean): Brush = Brush.verticalGradient(
-    if (isDark) listOf(Color.White.copy(alpha = 0.12f), Color.White.copy(alpha = 0.03f))
-    else listOf(Color.White.copy(alpha = 0.80f), Color.White.copy(alpha = 0.50f))
-)
+fun glassSheen(isDark: Boolean): Brush = if (isDark) GLASS_SHEEN_DARK else GLASS_SHEEN_LIGHT
+private val GLASS_SHEEN_DARK = Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.12f), Color.White.copy(alpha = 0.03f)))
+private val GLASS_SHEEN_LIGHT = Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.80f), Color.White.copy(alpha = 0.50f)))

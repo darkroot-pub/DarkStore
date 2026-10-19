@@ -29,7 +29,6 @@ object PaginationCache {
     private val appListType = Types.newParameterizedType(List::class.java, AppEntity::class.java)
     private val appListAdapter by lazy { moshi.adapter<List<AppEntity>>(appListType) }
 
-    @Synchronized
     fun getApps(context: Context, key: String): List<AppEntity>? {
         // Check memory cache first
         if (memoryCache.containsKey(key)) {
@@ -51,14 +50,15 @@ object PaginationCache {
         return null
     }
 
-    // CRASH FIX: these maps/lists were plain mutableMapOf/mutableListOf touched from the main
-    // thread AND from Dispatchers.IO at the same time (ConcurrentModificationException).
-    // PERF: skip the JSON serialize + disk write when the list did not change.
-    @Synchronized
+    private val savedHash = java.util.concurrent.ConcurrentHashMap<String, Int>()
+
     fun saveApps(context: Context, key: String, apps: List<AppEntity>) {
-        val unchanged = memoryCache[key] == apps
         putInMemory(key, apps)
-        if (!unchanged) saveToDisk(context, key, apps)
+        // PERF: the home feed re-saves after every refresh/page; skip the (JSON + disk) write when nothing changed.
+        val h = apps.hashCode()
+        if (savedHash[key] == h) return
+        savedHash[key] = h
+        saveToDisk(context, key, apps)
     }
 
     private fun putInMemory(key: String, apps: List<AppEntity>) {
@@ -74,16 +74,10 @@ object PaginationCache {
         }
     }
 
-    /** How many rows were last shown for [key] (memory only, never touches disk). */
-    @Synchronized
-    fun peekCount(key: String): Int = memoryCache[key]?.size ?: 0
-
-    @Synchronized
     fun saveScrollPosition(key: String, index: Int, offset: Int) {
         scrollPositions[key] = Pair(index, offset)
     }
 
-    @Synchronized
     fun getScrollPosition(key: String): Pair<Int, Int>? {
         return scrollPositions[key]
     }
@@ -100,9 +94,7 @@ object PaginationCache {
         try {
             val file = getDiskFile(context, key)
             val json = appListAdapter.toJson(apps)
-            val tmp = File(file.parentFile, file.name + ".tmp")
-            tmp.writeText(json)
-            if (!tmp.renameTo(file)) { file.writeText(json); tmp.delete() }
+            file.writeText(json)
             Log.d("PaginationCache", "Saved key to disk cache: $key")
         } catch (e: Exception) {
             Log.e("PaginationCache", "Failed to save to disk cache: $key", e)

@@ -9,9 +9,9 @@ import android.os.Bundle
 import com.example.view.FullScreenPhotoViewer
 import com.example.view.ambientGlow
 import com.example.view.glass
+import com.example.view.predictiveBackTransform
 import com.example.view.glassEdge
 import com.example.view.glassSheen
-import com.example.view.predictiveBackTransform
 import com.example.view.ProfilePhotoEditor
 import com.example.view.UserIdentityCard
 import android.widget.Toast
@@ -114,9 +114,6 @@ fun safeWebUri(raw: String): android.net.Uri? {
 }
 
 class MainActivity : ComponentActivity() {
-    private companion object {
-        @Volatile var imageLoaderConfigured = false
-    }
     private var packageReceiver: android.content.BroadcastReceiver? = null
     private var lastInstalledAppsRefresh = 0L
 
@@ -156,10 +153,12 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         com.example.utils.ChatPushState.appInForeground = true
+        viewModel.setAppForeground(true)   // background polling resumes
     }
 
     override fun onStop() {
         com.example.utils.ChatPushState.appInForeground = false
+        viewModel.setAppForeground(false)  // background polling pauses (saves CPU, battery, data)
         super.onStop()
     }
 
@@ -221,31 +220,26 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         if (savedInstanceState == null) handleShareLink(intent)
         
-        // Optimize Coil Image Loading cache to maximize interface smoothness.
-        // Built once per process: onCreate runs again for every new Activity instance, and each new
-        // ImageLoader would start with an empty memory cache (re-decoding every visible image).
-        if (!imageLoaderConfigured) try {
+        // Optimize Coil Image Loading cache to maximize interface smoothness
+        try {
             val imageLoader = ImageLoader.Builder(applicationContext)
                 .memoryCache {
                     MemoryCache.Builder(applicationContext)
-                        .maxSizePercent(0.25) // use up to 25% of available RAM 
+                        .maxSizePercent(0.20) // 20% of the app memory budget: less GC pressure, fewer out-of-memory kills
                         .build()
                 }
                 .diskCache {
                     DiskCache.Builder()
                         .directory(applicationContext.cacheDir.resolve("image_cache"))
-                        .maxSizeBytes(200L * 1024 * 1024) // was 4% of the whole partition (several GB)
+                        .maxSizePercent(0.04) // reasonable portion of disk cache
                         .build()
                 }
-                // PERF: a global 100 ms cross-fade made every list icon run its own animation while
-                // flinging. Icons now just appear (placeholders are already in place).
-                .crossfade(false)
+                .crossfade(true)
                 .respectCacheHeaders(false) // reuse local cache ignoring remote HTTP override headers
                 .build()
             coil.Coil.setImageLoader(imageLoader)
-            imageLoaderConfigured = true
         } catch (e: Exception) {
-            android.util.Log.e("MainActivity", "Failed to configure custom Coil cache", e)
+            android.util.Log.e("MainActivity", "Failed to configure custom Coil cache: ${e.message}")
         }
         
         NotificationHelper.createNotificationChannel(applicationContext)
@@ -1024,7 +1018,7 @@ fun PlayStoreMainDashboard(
         }
     }
 
-    var activeTab by remember { mutableStateOf("Apps") } // Apps (start tab, AppsHomeScreen), Games, Library, Console
+    var activeTab by remember { mutableStateOf("Apps") } // Apps, Games, Library, Console
     var showDetailsApp by remember { mutableStateOf<AppEntity?>(null) }
     val headerPhotoUrl by viewModel.profilePhotoUrl.collectAsStateWithLifecycle()
     val readNoticeIds by viewModel.readNoticeIds.collectAsStateWithLifecycle()
@@ -1141,7 +1135,7 @@ fun PlayStoreMainDashboard(
     LaunchedEffect(showDetailsApp) {
         if (showDetailsApp != null) {
             viewModel.refreshInstalledApps()
-            showDetailsApp?.let { viewModel.loadReviewsForApp(it.id) }
+            viewModel.loadReviewsForApp(showDetailsApp!!.id)
         }
     }
 
@@ -1270,26 +1264,13 @@ fun PlayStoreMainDashboard(
             // Settings now lives inside Profile (gear button next to refresh).
         }
     }
-    // Back-button behaviour like a store app: an open chat closes first, then any other tab
-    // returns to Apps (Settings -> Profile), and only from Apps does back leave the app.
-    // On the Apps tab NO handler is enabled, so Android plays its own back-to-home animation.
-    val navActiveChatPeer by viewModel.activeChatPeer.collectAsStateWithLifecycle()
-    androidx.activity.compose.BackHandler(enabled = activeTab == "Chat" && navActiveChatPeer != null) {
-        viewModel.closeChat()
-    }
-    val tabBackState = com.example.view.rememberPredictiveBackState()
-    com.example.view.PredictiveBackNav(
-        enabled = activeTab != "Apps" && !(activeTab == "Chat" && navActiveChatPeer != null),
-        state = tabBackState
-    ) {
-        when (activeTab) {
-            "Settings" -> activeTab = "Profile"
-            else -> {
-                if (selectedCategory == "Games") viewModel.selectCategory("All")
-                activeTab = "Apps"
-            }
-        }
-    }
+    // Back from any other tab returns to Apps (instead of leaving the app); from Apps the system plays the
+    // predictive "back to home" animation because no handler is enabled there.
+    androidx.activity.compose.BackHandler(enabled = activeTab != "Apps") { activeTab = "Apps" }
+    androidx.activity.compose.BackHandler(enabled = activeTab == "Settings") { activeTab = "Profile" }
+    androidx.activity.compose.BackHandler(enabled = activeTab == "Notifications") { activeTab = "Apps" }
+    val openChatPeer by viewModel.activeChatPeer.collectAsStateWithLifecycle()
+    androidx.activity.compose.BackHandler(enabled = activeTab == "Chat" && openChatPeer != null) { viewModel.closeChat() }
     val tabsList = remember(tabs) { tabs.map { it.first } }
 
 
@@ -1468,21 +1449,23 @@ fun PlayStoreMainDashboard(
             )
 
             // 2. Discover Content Board based on selected Navigation Tab with smooth GPU-accelerated animated transitions to prevent lagging
-            // Remembers each tab's saved state (scroll position, list state) while it is off screen,
-            // so coming back to a tab restores it instead of rebuilding it from the top.
-            val tabStateHolder = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
             AnimatedContent(
                 targetState = activeTab,
-                // PERF: was a 300 ms full-screen slide of two heavy trees at once. A short fade
-                // (like a store app's tab switch) keeps both layers cheap while they overlap.
                 transitionSpec = {
-                    fadeIn(animationSpec = tween(150)) togetherWith fadeOut(animationSpec = tween(80))
+                    val initialIdx = tabsList.indexOf(initialState)
+                    val targetIdx = tabsList.indexOf(targetState)
+                    val direction = if (targetIdx >= initialIdx) {
+                        AnimatedContentTransitionScope.SlideDirection.Left
+                    } else {
+                        AnimatedContentTransitionScope.SlideDirection.Right
+                    }
+                    slideIntoContainer(direction, animationSpec = tween(300, easing = FastOutSlowInEasing)) + fadeIn(animationSpec = tween(150)) togetherWith
+                    slideOutOfContainer(direction, animationSpec = tween(300, easing = FastOutSlowInEasing)) + fadeOut(animationSpec = tween(150))
                 },
                 label = "dashboard_tab_transition_animation",
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .predictiveBackTransform(tabBackState)
                     // PERF: this used to be a hand-rolled awaitPointerEventScope loop
                     // that called awaitPointerEvent() on every single touch-move
                     // sample of ANY gesture anywhere in this subtree — including
@@ -1555,7 +1538,6 @@ fun PlayStoreMainDashboard(
                         banners = visibleBanners
                     )
                 }
-                tabStateHolder.SaveableStateProvider(targetTab) {
                 when (targetTab) {
                     "Games" -> {
                         DiscoveryTabContent(
@@ -1582,28 +1564,31 @@ fun PlayStoreMainDashboard(
                         )
                     }
                     "Apps" -> {
-                        com.example.view.AppsHomeScreen(
+                        // Apps board with category pills overlay
+                        DiscoveryTabContent(
                             isDarkMode = isDarkMode,
-                            feedState = discoveryFeedState,
+                            category = selectedCategory,
                             searchQuery = searchQuery,
-                            selectedCategory = selectedCategory,
-                            onCategorySelect = { viewModel.selectCategory(it) },
+                            feedState = discoveryFeedState,
                             isRefreshing = isRefreshing,
                             onRefresh = { viewModel.refreshMarketplace(force = true) },
-                            accent = accentGreen,
+                            accentGreen = accentGreen,
                             textPrimary = textPrimary,
                             textSecondary = textSecondary,
                             cardBgColor = glassCardBg,
+                            onBannerClick = onBannerClick,
                             cardBorderColor = glassCardBorder,
                             onAppClick = onAppClick,
-                            onActionClick = onActionClick,
-                            onBuyClick = { purchaseAppTarget = it },
-                            onRegisterClick = { app ->
+                            showPillNavbar = true,
+                            selectedPill = selectedCategory,
+                            onPillSelect = { viewModel.selectCategory(it) },
+                            onCollectionClick = { openCollection = it },
+                            onBuyPremiumClick = { purchaseAppTarget = it },
+                            onPreRegisterClick = { app ->
                                 viewModel.preRegisterApp(app.id)
                                 Toast.makeText(context, "Successfully Pre-registered for ${app.name}! You will be notified when this upcoming software goes live.", Toast.LENGTH_LONG).show()
                             },
-                            onCollectionClick = { openCollection = it },
-                            onBannerClick = onBannerClick
+                            onActionClick = onActionClick
                         )
                     }
                     "Library" -> {
@@ -1703,7 +1688,6 @@ fun PlayStoreMainDashboard(
                         )
                     }
                 }
-                } // end SaveableStateProvider
             }
         }
     }
@@ -1774,10 +1758,8 @@ fun PlayStoreMainDashboard(
                                         } else if (tabId == "Apps" && selectedCategory == "Games") {
                                             viewModel.selectCategory("All")
                                         }
-                                        // PERF: was a FORCED full refetch (apps + collections + banners +
-                                        // submissions + every developer) on every tab tap. Now only when the
-                                        // data is older than 30 s - the app already syncs in the background.
-                                        viewModel.refreshMarketplaceIfStale()
+                                        // Always re-fetch live data when switching tabs while online
+                                        viewModel.refreshMarketplace(force = true)
                                         if (tabId == "Chat") viewModel.refreshChatThreads()
                                         if (tabId == "Profile" || tabId == "Console") viewModel.refreshSubmissions()
                                     },
@@ -2150,15 +2132,11 @@ fun DiscoveryTabContent(
     val downloadsMap = remember(downloads) { downloads.associateBy { it.id } }
     
     // Filter Games out for Games tab specifically
-    // CRASH FIX: LazyColumn/LazyRow throw "Key was already used" if two items share a key.
-    // A duplicate app id in the catalog (or a re-ordered live list) would crash the feed, so
-    // the list is de-duplicated by id once per data change.
     val appsToRender = remember(apps, category, selectedPill) {
-        val unique = apps.distinctBy { it.id }
         if (category == "Games") {
-            unique.filter { it.category.equals("Games", ignoreCase = true) }
+            apps.filter { it.category.equals("Games", ignoreCase = true) }
         } else {
-            unique
+            apps
         }
     }
     val featuredList = remember(appsToRender) { appsToRender.filter { it.isFeatured } }
@@ -2183,14 +2161,7 @@ fun DiscoveryTabContent(
     val context = LocalContext.current
     val cacheKey = remember(category, selectedPill, searchQuery) { "${category}_${selectedPill}_${searchQuery}" }
     
-    // Pre-filled synchronously (no empty first frame) so a restored scroll position has rows to land
-    // on when you come back to this tab - an empty list made the saved position collapse to the top.
-    val loadedApps = remember {
-        mutableStateListOf<AppEntity?>().apply {
-            val n = maxOf(40, com.example.data.PaginationCache.peekCount(cacheKey))
-            addAll(standardApps.take(n))
-        }
-    }
+    val loadedApps = remember { mutableStateListOf<AppEntity?>() }
     var isPageLoading by remember { mutableStateOf(false) }
 
     var isLoadingDiscovery by remember { mutableStateOf(true) }
@@ -2334,13 +2305,7 @@ fun DiscoveryTabContent(
                         // High-performance strategy: Load the entire next chunk in a single frame,
                         // avoiding index-by-index recomposition lag!
                         kotlinx.coroutines.delay(80)
-                        // CRASH FIX: the live list can shift while paging, so the next slice may
-                        // contain apps that are already shown -> duplicate LazyColumn keys.
-                        val shownIds = loadedApps.mapNotNullTo(HashSet<String>()) { it?.id }
-                        val nextChunk = standardApps.asSequence()
-                            .filter { it.id !in shownIds }
-                            .take(nextPageSize)
-                            .toList()
+                        val nextChunk = standardApps.subList(totalLoaded, totalLoaded + nextPageSize)
                         loadedApps.addAll(nextChunk)
                     }
                     isPageLoading = false
@@ -2689,7 +2654,7 @@ fun DiscoveryTabContent(
                             val isPurchased = purchasedAppIds.contains(app.id)
                             val onClick = remember(app.id) { { latestOnAppClick.value(app) } }
                             val onBuyClick = remember(app.id) { { latestOnBuyPremiumClick.value(app) } }
-                            Box { // PERF: per-row animateItemPlacement removed (rows slid around mid-scroll when the live list re-synced)
+                            Box(modifier = Modifier.animateItemPlacement(tween(280, easing = FastOutSlowInEasing))) {
                                 PremiumAppCardView(
                                     app = app,
                                     purchased = isPurchased,
@@ -2726,7 +2691,7 @@ fun DiscoveryTabContent(
                             val isRegistered = preRegisteredAppIds.contains(app.id)
                             val onClick = remember(app.id) { { latestOnAppClick.value(app) } }
                             val onRegisterClick = remember(app.id) { { latestOnPreRegisterClick.value(app) } }
-                            Box { // PERF: per-row animateItemPlacement removed (rows slid around mid-scroll when the live list re-synced)
+                            Box(modifier = Modifier.animateItemPlacement(tween(280, easing = FastOutSlowInEasing))) {
                                 UpcomingAppCardView(
                                     app = app,
                                     registered = isRegistered,
@@ -2791,7 +2756,7 @@ fun DiscoveryTabContent(
                     // built-in, low-cost placement-animation primitive — safe
                     // to add without reopening any of the earlier scroll-perf
                     // fixes to this same row.
-                    Box { // PERF: per-row animateItemPlacement removed (rows slid around mid-scroll when the live list re-synced)
+                    Box(modifier = Modifier.animateItemPlacement(tween(280, easing = FastOutSlowInEasing))) {
                         AppItemCardView(
                             app = app,
                             downloadState = dlState,
@@ -4338,7 +4303,7 @@ fun ProfileTabContent(
     var activeDetailSubmission by remember { mutableStateOf<com.example.data.SubmissionEntity?>(null) }
     val catalogApps by viewModel.unfilteredApps.collectAsStateWithLifecycle()
     // Pull the latest catalog when the profile opens, so a suspension done by the admin shows immediately.
-    LaunchedEffect(Unit) { viewModel.refreshMarketplaceIfStale() }
+    LaunchedEffect(Unit) { viewModel.refreshMarketplace() }
     var editOptionsForApp by remember { mutableStateOf<com.example.data.SubmissionEntity?>(null) }
     var showUpdateScreenshotsFormFor by remember { mutableStateOf<com.example.data.SubmissionEntity?>(null) }
     var showPushUpdateFormFor by remember { mutableStateOf<com.example.data.SubmissionEntity?>(null) }
@@ -8907,7 +8872,7 @@ fun ConsoleTabContent(
     // Trigger submissions refresh whenever the screen becomes visible or authorization changes
     LaunchedEffect(userRole, userEmail) {
         viewModel.refreshSubmissions()
-        viewModel.refreshMarketplaceIfStale()
+        viewModel.refreshMarketplace()
         viewModel.refreshTermsAgreements()
     }
 
@@ -12140,8 +12105,6 @@ fun AppDetailsDialog(
     var inputReviewText by remember { mutableStateOf("") }
     var activeLightboxImageIndex by remember { mutableStateOf<Int?>(null) }
 
-    // The details page used to sit behind a fake 650 ms "loading" shimmer on every open. All the data
-    // is already in memory, so show it immediately.
     var isLoadingDetails by remember { mutableStateOf(false) }
 
     // PERF: same fix as the home feed — only run the infinite shimmer animation
@@ -12163,6 +12126,15 @@ fun AppDetailsDialog(
         0f
     }
 
+    // PERF/UX: this used to force a skeleton + shimmer for 650 ms on EVERY open, purely cosmetic (nothing is
+    // fetched here - the reviews load separately). The page now shows immediately.
+    LaunchedEffect(app.id) { isLoadingDetails = false }
+
+    // Predictive back: shrink/slide the page while the gesture is dragged, then close it.
+    val detailsBack = com.example.view.rememberPredictiveBack(
+        enabled = activeLightboxImageIndex == null && !showDevProfileDialog,
+        onBack = onDismiss
+    )
 
     val screenshotList = remember(app.screenshots) {
         app.screenshots.split(",").map { it.trim() }.filter { it.isNotBlank() }
@@ -12176,19 +12148,10 @@ fun AppDetailsDialog(
             dismissOnClickOutside = false
         )
     ) {
-        // Predictive back inside the dialog window: while the edge-swipe is held the page shrinks
-        // and rounds; letting go early springs it back, committing closes the details.
-        // Disabled while the lightbox / dev-profile overlays are up so they get back first.
-        val detailsBackState = com.example.view.rememberPredictiveBackState()
-        com.example.view.PredictiveBackNav(
-            enabled = activeLightboxImageIndex == null && !showDevProfileDialog,
-            state = detailsBackState,
-            onBack = onDismiss
-        )
         Surface(
             modifier = Modifier
                 .fillMaxSize()
-                .predictiveBackTransform(detailsBackState)
+                .predictiveBackTransform(detailsBack)
                 .background(if (isDarkMode) Color(0xFF0E1013) else Color(0xFFF3F6F9))
                 .ambientGlow(isDarkMode, false, accentGreen),
             color = Color.Transparent
@@ -12833,12 +12796,7 @@ fun AppDetailsDialog(
                             Text("No reviews yet. Be the first to review!", color = textSecondary, fontSize = 12.sp)
                         } else {
                             val reviewerPremiumGold = if (isDarkMode) Color(0xFFFBBF24) else Color(0xFFD97706)
-                            // PERF: the whole details page is one non-lazy scroll column, so every review
-                            // used to be composed the moment the page opened. Show the first few and
-                            // let the user expand the rest.
-                            var showAllReviews by remember(app.id) { mutableStateOf(false) }
-                            val visibleReviews = if (showAllReviews) appReviews else appReviews.take(5)
-                            visibleReviews.forEach { review ->
+                            appReviews.forEach { review ->
                                 // Premium badge + highlight: resolved by matching the
                                 // review's userId against the already-loaded users
                                 // list, same lookup pattern used for the developer
@@ -12896,18 +12854,6 @@ fun AppDetailsDialog(
                                         Divider(color = textSecondary.copy(alpha = 0.1f))
                                     }
                                 }
-                            }
-                            if (!showAllReviews && appReviews.size > 5) {
-                                Text(
-                                    "Show all ${appReviews.size} reviews",
-                                    color = accentGreen,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .clickable { showAllReviews = true }
-                                        .padding(vertical = 8.dp, horizontal = 4.dp)
-                                )
                             }
                         }
 
@@ -13753,6 +13699,8 @@ fun AddNewAppForm(
 
     val categories = remember { listOf("Utilities", "Games", "Tools", "Entertainment") }
 
+    val formBack = com.example.view.rememberPredictiveBack(enabled = true, onBack = onDismiss)
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = androidx.compose.ui.window.DialogProperties(
@@ -13762,6 +13710,7 @@ fun AddNewAppForm(
         Surface(
             modifier = Modifier
                 .fillMaxSize()
+                .predictiveBackTransform(formBack)
                 .background(MaterialTheme.colorScheme.background)
                 .ambientGlow(isDark, false, accent),
             color = Color.Transparent
@@ -16182,25 +16131,11 @@ sealed class UpdateState {
  * and reports a clear "server is down" message on failure via [onError],
  * rather than the vague "upload failed/skipped" messages that existed before.
  */
-// One shared client: building a new OkHttpClient per upload leaked a thread pool + connection pool each time.
-private val imgBbClient: okhttp3.OkHttpClient by lazy {
-    okhttp3.OkHttpClient.Builder()
-        .connectTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
-        .writeTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
-        .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
-        .build()
-}
-
 internal suspend fun uploadImageToImgBB(
     context: android.content.Context,
     bytes: ByteArray,
     onError: (String) -> Unit
 ): String? {
-    // Base64 + form body hold ~3x the image in memory; refuse absurd sizes instead of risking an OOM crash.
-    if (bytes.size > 12 * 1024 * 1024) {
-        onError("This image is too large (max 12 MB). Please pick a smaller one.")
-        return null
-    }
     return try {
         val base64String = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
         val formBody = okhttp3.FormBody.Builder()
@@ -16210,23 +16145,24 @@ internal suspend fun uploadImageToImgBB(
             .url("https://api.imgbb.com/1/upload?key=a046c848dfa5230136f107106d4bb187")
             .post(formBody)
             .build()
-        // response.use{} always closes the body (the error branch used to leak the connection)
-        imgBbClient.newCall(request).execute().use { response ->
-            if (response.isSuccessful) {
-                val bodyString = response.body?.string() ?: ""
-                val match = Regex("\"url\"\\s*:\\s*\"([^\"]+)\"").find(bodyString)
-                val uploadedUrl = match?.groupValues?.get(1)?.replace("\\/", "/")
-                if (uploadedUrl == null) {
-                    onError("Image server returned an unexpected response. Please try again.")
-                }
-                uploadedUrl
-            } else {
-                onError("Image server is currently down (error ${response.code}). Please try again later.")
-                null
+        val client = okhttp3.OkHttpClient.Builder()
+            .connectTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+        val response = client.newCall(request).execute()
+        if (response.isSuccessful) {
+            val bodyString = response.body?.string() ?: ""
+            val match = Regex("\"url\"\\s*:\\s*\"([^\"]+)\"").find(bodyString)
+            val uploadedUrl = match?.groupValues?.get(1)?.replace("\\/", "/")
+            if (uploadedUrl == null) {
+                onError("Image server returned an unexpected response. Please try again.")
             }
+            uploadedUrl
+        } else {
+            onError("Image server is currently down (error ${response.code}). Please try again later.")
+            null
         }
-    } catch (ce: kotlinx.coroutines.CancellationException) {
-        throw ce // never swallow cancellation (breaks structured concurrency)
     } catch (ex: java.io.IOException) {
         onError("Image server is currently down or unreachable. Please try again later.")
         null
