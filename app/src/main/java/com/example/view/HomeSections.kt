@@ -52,8 +52,10 @@ private fun AppIcon(app: AppEntity, size: androidx.compose.ui.unit.Dp, accent: C
 private fun StarRating(rating: String, textPrimary: Color) {
     val r = rating.toFloatOrNull()
     if (r != null && r > 0f) {
+        // PERF: String.format allocates a Formatter; do it once per rating, not on every recomposition.
+        val label = androidx.compose.runtime.remember(r) { String.format("%.1f", r) }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(String.format("%.1f", r), color = textPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            Text(label, color = textPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.width(2.dp))
             Icon(Icons.Default.Star, null, tint = Color(0xFFFFB300), modifier = Modifier.size(12.dp))
         }
@@ -66,7 +68,7 @@ fun SquareAppTile(app: AppEntity, isDark: Boolean, accent: Color, textPrimary: C
     Column(
         modifier = Modifier
             .size(136.dp)
-            .glass(isDark, RoundedCornerShape(24.dp), elevation = 0.dp)
+            .glass(isDark, RoundedCornerShape(24.dp), elevation = 3.dp)
             .clickable(onClick = onClick).padding(12.dp),
         horizontalAlignment = Alignment.Start,
         verticalArrangement = Arrangement.SpaceBetween
@@ -85,7 +87,7 @@ fun PopularAppCard(app: AppEntity, rating: String, isDark: Boolean, accent: Colo
     Column(
         modifier = Modifier
             .width(158.dp).height(136.dp)
-            .glass(isDark, RoundedCornerShape(24.dp), elevation = 0.dp)
+            .glass(isDark, RoundedCornerShape(24.dp), elevation = 3.dp)
             .clickable(onClick = onClick).padding(14.dp),
         verticalArrangement = Arrangement.SpaceBetween
     ) {
@@ -106,7 +108,7 @@ fun CompactAppCard(app: AppEntity, rating: String, isDark: Boolean, accent: Colo
     Column(
         modifier = Modifier
             .size(128.dp)
-            .glass(isDark, RoundedCornerShape(22.dp), elevation = 0.dp)
+            .glass(isDark, RoundedCornerShape(22.dp), elevation = 3.dp)
             .clickable(onClick = onClick).padding(11.dp),
         verticalArrangement = Arrangement.SpaceBetween
     ) {

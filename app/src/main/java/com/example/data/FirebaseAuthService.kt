@@ -858,7 +858,7 @@ object FirebaseAuthService {
                     return emptyList()
                 }
                 val bodyStr = response.body?.string()
-                Log.d(TAG, "RTDB Submissions Response: ${bodyStr?.length ?: 0} bytes")
+                Log.d(TAG, "RTDB Submissions Response: $bodyStr")
                 parseSubmissionsFirebaseResponse(bodyStr)
             }
         } catch (e: Exception) {

@@ -2206,6 +2206,9 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 appList.filter { it.category.equals(category, ignoreCase = true) }
             }
         }
+        // PERF: the catalog filter / search runs on every refresh and every keystroke; it used to run on
+        // viewModelScope's default dispatcher (Main). Do the list work off the UI thread.
+        .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     val unfilteredApps: StateFlow<List<AppEntity>> = activeAppSourceFlow
@@ -2302,18 +2305,9 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** True while the app is on screen. All background polling pauses when it is not (saves battery, CPU, data). */
-    @Volatile var appInForeground: Boolean = true
-        private set
-    fun setAppForeground(foreground: Boolean) { appInForeground = foreground }
-    private var lastExtrasRefresh = 0L
-    private var lastUnityConfigLoad = 0L
-    private var lastRemoteApps: List<AppEntity>? = null
-
     private fun startInstalledAppMonitoring() {
         viewModelScope.launch(Dispatchers.IO) {
             while (true) {
-                if (!appInForeground) { delay(30_000); continue }
                 try {
                     val infoMap = com.example.utils.ApkInstaller.getInstalledApps(getApplication())
                     val oldKeys = _installedPackages.value
@@ -2342,7 +2336,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 // Increased from 12s to 60s — package changes are also caught immediately
                 // via the BroadcastReceiver in MainActivity, so frequent polling is not needed.
-                delay(300_000)
+                delay(60_000)
             }
         }
     }
@@ -2370,7 +2364,13 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
             // Give setup some initial seconds to settle
             delay(5000)
             while (true) {
-                if (!appInForeground) { delay(20_000); continue }
+                // PERF: only poll while the app is on screen. Pushes (FCM) already cover the
+                // background case, and fetching + parsing the whole catalog every 12 s while
+                // minimised just burns CPU, radio and memory (GC churn = jank on return).
+                if (!com.example.utils.ChatPushState.appInForeground) {
+                    delay(3000)
+                    continue
+                }
                 try {
                     Log.d("StoreViewModel", "Background sync run for new apps, announcements/notices...")
                     refreshMarketplace(force = false, isBackground = true)
@@ -2391,11 +2391,8 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 } catch (e: Exception) {
                     Log.e("StoreViewModel", "Periodic background sync error: ${e.message}")
                 }
-                if (System.currentTimeMillis() - lastUnityConfigLoad > 10 * 60_000L) {
-                    lastUnityConfigLoad = System.currentTimeMillis()
-                    loadUnityAdsConfig()
-                }
-                delay(60_000) // was every 12 s: whole catalog + users + submissions were re-downloaded and re-parsed each time
+                loadUnityAdsConfig()
+                delay(30000) // was 12 s - the worker pushes real-time changes via FCM anyway
             }
         }
     }
@@ -2415,14 +2412,15 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Cheap refresh for tab switches / screen entry: does nothing unless the data is >30 s old. */
+    fun refreshMarketplaceIfStale(minGapMs: Long = 30_000L) {
+        if (System.currentTimeMillis() - lastAppsRefreshTime < minGapMs) return
+        refreshMarketplace(force = false, isBackground = true)
+    }
+
     fun refreshMarketplace(force: Boolean = false, isBackground: Boolean = false) {
-        // Collections + banners change rarely: background syncs only refresh them every 5 minutes.
-        val extrasDue = !isBackground || System.currentTimeMillis() - lastExtrasRefresh > 5 * 60_000L
-        if (extrasDue) {
-            lastExtrasRefresh = System.currentTimeMillis()
-            refreshCollections()
-            refreshBanners()
-        }
+        refreshCollections()
+        refreshBanners()
         viewModelScope.launch {
             val now = System.currentTimeMillis()
             // When online, always pull live RTDB data — never serve a stale
@@ -2475,22 +2473,14 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                     ordered
                 }
                 _realtimeApps.value = orderedRemoteApps
-
-                // The server said "304 Not Modified" (same list instance): don't rewrite Room or poke the widget.
-                val catalogChanged = remoteApps !== lastRemoteApps
-                lastRemoteApps = remoteApps
-                if (catalogChanged) {
-                    repository.refreshApps(remoteApps)
-                    try { com.example.widget.DarkStoreWidget.notifyDataChanged(getApplication()) } catch (_: Exception) {}
-                }
+                
+                repository.refreshApps(remoteApps)
+                try { com.example.widget.DarkStoreWidget.notifyDataChanged(getApplication()) } catch (_: Exception) {}
                 lastAppsRefreshTime = System.currentTimeMillis()
-                refreshNotices(force = force)
-                if (extrasDue) refreshAppPolicy()
-                // Submissions are only needed by developers/admins; the full user list only by admins
-                // (chat loads its own list on demand). They used to be re-downloaded for EVERY user on every sync.
-                val roleNow = _userRole.value
-                if (roleNow.equals("admin", true) || _isDeveloper.value) refreshSubmissions()
-                if (roleNow.equals("admin", true)) refreshDevelopers()
+                refreshNotices(force = force || isBackground)
+                refreshAppPolicy()
+                refreshSubmissions() // Fetch submissions in realtime as requested
+                refreshDevelopers()
             } catch (e: Exception) {
                 Log.e("StoreViewModel", "Marketplace refresh failed", e)
             } finally {
@@ -3839,9 +3829,9 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         // Kick a logged-in user quickly when the server suspends their account (extra account on this phone, cheating...).
         viewModelScope.launch {
             while (true) {
-                kotlinx.coroutines.delay(90_000)
+                kotlinx.coroutines.delay(45_000)
                 val uid = _userUid.value
-                if (appInForeground && _isLoggedIn.value && uid.isNotBlank() && uid != "guest_uid" && !_userRole.value.equals("admin", true)) {
+                if (_isLoggedIn.value && uid.isNotBlank() && uid != "guest_uid" && !_userRole.value.equals("admin", true)) {
                     try {
                         FirebaseAuthService.refreshIdTokenIfNeeded(getApplication())
                         val u = kotlinx.coroutines.withContext(Dispatchers.IO) { FirebaseAuthService.getUserProfile(uid) }
