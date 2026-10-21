@@ -172,3 +172,18 @@ configurations.configureEach {
         }
     }
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// MIGRATION SAFETY NET. These three admin-only files now live in src/admin/. If an older copy is still lying in
+// src/main/ (unzipping a new version over an old checkout never deletes files), every build would fail with
+// "Conflicting overloads". They are removed automatically before any build. Safe to delete this block once
+// every checkout is clean.
+// ---------------------------------------------------------------------------------------------------------------
+val removeStaleMovedFiles = tasks.register<Delete>("removeStaleMovedFiles") {
+    delete(
+        "src/main/java/com/example/view/AdminApkStorageCard.kt",
+        "src/main/java/com/example/view/AdminNotifyPanel.kt",
+        "src/main/java/com/example/view/ServerStatusPanel.kt"
+    )
+}
+tasks.named("preBuild") { dependsOn(removeStaleMovedFiles) }

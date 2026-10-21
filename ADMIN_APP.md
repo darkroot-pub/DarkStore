@@ -41,3 +41,9 @@ behaviour differences in shared code.
 * This is a UI/packaging separation. Admin power is still enforced **server-side** (RTDB rules check the `admin` role;
   the backend verifies an admin ID token). The Admin app signs out any non-admin account on sign-in.
 * Keep the Admin APK private (share it only with admins). It is signed with the same key as the user app.
+
+## Upgrading an existing checkout
+The admin-only files moved from `app/src/main/.../view/` to `app/src/admin/.../view/`
+(`AdminApkStorageCard.kt`, `AdminNotifyPanel.kt`, `ServerStatusPanel.kt`). Unzipping over an old checkout leaves the old
+copies behind, which causes "Conflicting overloads". The build now deletes them automatically (task
+`removeStaleMovedFiles`), but you can also delete them by hand.
