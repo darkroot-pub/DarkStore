@@ -56,33 +56,55 @@ jobs:
             echo "DS_KEY_PASSWORD=${{ secrets.DS_KEY_PASSWORD }}" >> "$GITHUB_ENV"
           fi
 
-      - name: Build debug APK
-        run: gradle assembleDebug --stacktrace
+      # Two apps are built from this repo: the user app (DarkStore) and DarkStore Admin.
+      - name: Build debug APKs (user + admin)
+        run: gradle assembleUserDebug assembleAdminDebug --stacktrace
 
-      - name: Show APK signing fingerprints (needed for assetlinks.json)
+      - name: Show APK signing fingerprints (needed for assetlinks.json / Firebase)
         run: |
-          for apk in app/build/outputs/apk/debug/*.apk; do
+          for apk in app/build/outputs/apk/user/debug/*.apk app/build/outputs/apk/admin/debug/*.apk; do
             echo "### Signing certificate of $(basename "$apk")" >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
             keytool -printcert -jarfile "$apk" | grep -E "Owner|SHA1|SHA256" | tee -a "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
           done
 
-      - name: Upload debug APK
+      - name: Upload user debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: darkroot-store-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          name: darkstore-USER-debug-apk
+          path: app/build/outputs/apk/user/debug/*.apk
           if-no-files-found: error
 
-      # INSTALL THIS ONE for real use / speed testing. The debug APK above is debuggable and not
-      # minified; Jetpack Compose runs several times slower in it, so it looks laggy on any phone.
-      - name: Build release APK (R8-optimised, signed with the release signing config)
-        run: gradle assembleRelease --stacktrace
-
-      - name: Upload release APK
+      - name: Upload admin debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: darkroot-store-release-apk
-          path: app/build/outputs/apk/release/*.apk
+          name: darkstore-ADMIN-debug-apk
+          path: app/build/outputs/apk/admin/debug/*.apk
+          if-no-files-found: error
+
+      - name: Which APK to install
+        run: |
+          {
+            echo "### Which APK to install"
+            echo "- **darkstore-USER-RELEASE-apk** - the DarkStore marketplace for everyone (package com.darkstore.darkroot). Optimised (R8)."
+            echo "- **darkstore-ADMIN-RELEASE-apk** - DarkStore Admin, for the owner/admins only (package com.darkstore.darkroot.admin). Optimised (R8)."
+            echo "- The *-debug-apk artifacts are for developers only: debug Compose builds are several times slower."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build release APKs (user + admin)
+        run: gradle assembleUserRelease assembleAdminRelease --stacktrace
+
+      - name: Upload user release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: darkstore-USER-RELEASE-apk
+          path: app/build/outputs/apk/user/release/*.apk
+          if-no-files-found: error
+
+      - name: Upload admin release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: darkstore-ADMIN-RELEASE-apk
+          path: app/build/outputs/apk/admin/release/*.apk
           if-no-files-found: error

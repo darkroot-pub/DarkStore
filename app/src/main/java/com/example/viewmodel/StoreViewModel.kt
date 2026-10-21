@@ -1811,6 +1811,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loginAsGuest() {
+        if (com.example.utils.AppMode.isAdminApp) return // no guest mode in the Admin app
         com.example.utils.SecureStore.clearAuth(getApplication<Application>())
         FirebaseAuthService.activeToken = ""
         FirebaseAuthService.activeRefreshToken = ""
@@ -3826,6 +3827,15 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     init {
         runMainStartup()
         startStartupRefresh()
+        // The Admin app refused a non-admin account: forget the remembered Google account so another can be chosen.
+        viewModelScope.launch {
+            FirebaseAuthService.notAdminEvents.collect { refused ->
+                if (refused) {
+                    FirebaseAuthService.notAdminEvents.value = false
+                    forgetRememberedAccounts()
+                }
+            }
+        }
         // A suspended account tried to log in: forget it (so Google doesn't keep "remembering" it) and show the popup.
         viewModelScope.launch {
             FirebaseAuthService.suspensionEvents.collect { info ->

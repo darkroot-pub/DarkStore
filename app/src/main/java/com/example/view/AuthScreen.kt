@@ -437,7 +437,8 @@ fun AuthScreen(
                         )
                     }
                 } else {
-                    Row(
+                    // Admin accounts are created by the owner, never inside the Admin app.
+                    if (!com.example.utils.AppMode.isAdminApp) Row(
                         modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp),
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically

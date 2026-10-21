@@ -44,6 +44,23 @@ android {
         }
     }
 
+    // Two apps from one codebase:
+    //   user  = the DarkStore marketplace (com.darkstore.darkroot)        - no admin console in the APK
+    //   admin = DarkStore Admin (com.darkstore.darkroot.admin)             - only the admin tools
+    flavorDimensions += "role"
+    productFlavors {
+        create("user") {
+            dimension = "role"
+            buildConfigField("boolean", "IS_ADMIN_APP", "false")
+        }
+        create("admin") {
+            dimension = "role"
+            applicationIdSuffix = ".admin"
+            versionNameSuffix = "-admin"
+            buildConfigField("boolean", "IS_ADMIN_APP", "true")
+        }
+    }
+
     buildTypes {
         debug {
             signingConfig = signingConfigs.getByName("darkstoreRelease")
@@ -77,6 +94,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.8"

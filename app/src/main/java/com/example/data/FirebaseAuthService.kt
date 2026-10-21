@@ -87,6 +87,10 @@ object FirebaseAuthService {
     ): Triple<Boolean, String?, UserEntity?> = withContext(Dispatchers.IO) {
         val targetKey = if (apiKey.isBlank() || apiKey.startsWith("AIzaSy_placeholder")) DEFAULT_API_KEY else apiKey
 
+        if (com.example.utils.AppMode.isAdminApp) {
+            return@withContext Triple(false, "Admin accounts can't be created in the Admin app.", null)
+        }
+
         // Fake-account protection: temporary mailboxes can't create DarkStore accounts.
         if (com.example.utils.FraudRules.isDisposableEmail(email)) {
             return@withContext Triple(false, "Please sign up with a real email address (temporary email services aren't allowed).", null)
@@ -245,6 +249,7 @@ object FirebaseAuthService {
                         val reason = user.suspensionReason.ifBlank { suspReason }.ifBlank { "Please contact support." }
                         return@use suspendedLogin(reason, user.email, idToken)
                     }
+                    refuseNonAdmin(user.role)?.let { return@use it }
                     deviceGate(context, idToken)?.let { why -> return@use suspendedLogin(why, user.email, idToken) }
 
                     saveLocalUser(context, user, idToken, refreshToken)
@@ -415,6 +420,7 @@ object FirebaseAuthService {
                 .ifBlank { "Please contact support." }
             return@withContext suspendedLogin(msg, finalUser.email, "")
         }
+        refuseNonAdmin(finalUser.role)?.let { return@withContext it }
         saveUserInRealtimeDatabase(finalUser)
         saveLocalUser(context, finalUser, "google_oauth_token_$uid")
 
@@ -490,6 +496,7 @@ object FirebaseAuthService {
                             .ifBlank { "Please contact support." }
                         return@use suspendedLogin(msg, finalUser.email, token)
                     }
+                    refuseNonAdmin(finalUser.role)?.let { return@use it }
                     saveUserInRealtimeDatabase(finalUser)
                     deviceGate(context, token)?.let { why -> return@use suspendedLogin(why, finalUser.email, token) }
                     saveLocalUser(context, finalUser, token, refreshToken)
@@ -530,6 +537,7 @@ object FirebaseAuthService {
                             .ifBlank { "Please contact support." }
                         return@use suspendedLogin(msg, finalUser.email, "")
                     }
+                    refuseNonAdmin(finalUser.role)?.let { return@use it }
                     saveUserInRealtimeDatabase(finalUser)
                     saveLocalUser(context, finalUser, "fake_token_$uid")
                     Triple(true, "Authenticated via Google Account (offline compatibility).", finalUser)
@@ -573,6 +581,7 @@ object FirebaseAuthService {
                     .ifBlank { "Please contact support." }
                 return@withContext suspendedLogin(msg, finalUser.email, "")
             }
+            refuseNonAdmin(finalUser.role)?.let { return@withContext it }
             saveUserInRealtimeDatabase(finalUser)
             saveLocalUser(context, finalUser, "fake_token_$uid")
             Triple(true, "Google Sign-In offline fallback successful.", finalUser)
@@ -1270,6 +1279,22 @@ object FirebaseAuthService {
                 .put("emulator", com.example.utils.FraudRules.isEmulator())
         ) ?: return null
         return if (res.optBoolean("suspended")) res.optString("reason").ifBlank { "Only one account is allowed per phone." } else null
+    }
+
+
+    // ----------------------------------------------------
+    // DARKSTORE ADMIN APP: only admin accounts may sign in
+    // ----------------------------------------------------
+    /** Raised when the Admin app refused a non-admin account; the ViewModel forgets the remembered Google account. */
+    val notAdminEvents = kotlinx.coroutines.flow.MutableStateFlow(false)
+
+    /** null = allowed. In the Admin app every account whose role is not "admin" is refused (nothing is saved). */
+    private fun refuseNonAdmin(role: String): Triple<Boolean, String?, UserEntity?>? {
+        if (!com.example.utils.AppMode.isAdminApp || role.equals("admin", ignoreCase = true)) return null
+        activeToken = ""
+        activeRefreshToken = ""
+        notAdminEvents.value = true
+        return Triple(false, "This app is only for DarkStore admins. Please use the DarkStore app instead.", null)
     }
 
     /** da***e@gmail.com - never show a full address on the login screen. */

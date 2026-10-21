@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Parts that belong ONLY to the user app (merged on top of src/main/AndroidManifest.xml).
+     The Admin app deliberately has no share/invite deep links and no home-screen widget. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+
+        <activity android:name="com.example.MainActivity">
+            <!-- Share links: darkstore://app/<appId> (opened by the website's "Open in DarkStore") -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="darkstore" android:host="app" />
+            </intent-filter>
+            <!-- Invite links: darkstore://invite/<CODE> -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="darkstore" android:host="invite" />
+            </intent-filter>
+            <!-- Verified App Link: https://<site>/app.html?id=<appId> and /invite.html?ref=<CODE> -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="darkrootstore.vercel.app" android:pathPrefix="/app.html" />
+                <data android:scheme="https" android:host="darkrootstore.vercel.app" android:pathPrefix="/invite.html" />
+            </intent-filter>
+        </activity>
+
+        <!-- Homescreen Widget Receiver Registration -->
+        <receiver
+            android:name="com.example.widget.DarkStoreWidget"
+            android:exported="true"
+            android:label="Dark Store Widget">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info" />
+        </receiver>
+
+        <!-- Feeds the widget's featured-apps list -->
+        <service
+            android:name="com.example.widget.DarkStoreWidgetService"
+            android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+
+    </application>
+</manifest>

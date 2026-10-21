@@ -1,0 +1,264 @@
+{
+  "rules": {
+    "apps": {
+      ".read": true,
+      "$appId": {
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true) || (!data.exists() && newData.child('submittedBy').val() === auth.token.email && newData.child('isApproved').val() === false) || (data.exists() && data.child('submittedBy').val() === auth.token.email && newData.child('isApproved').val() === data.child('isApproved').val()))"
+      }
+    },
+    "users": {
+      ".indexOn": [
+        "role",
+        "email"
+      ],
+      ".read": "auth != null",
+      "$userId": {
+        ".read": "auth != null",
+        ".write": "auth != null && (auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))",
+        "role": {
+          ".validate": "newData.isString() && (newData.val() === 'user' || newData.val() === 'developer' || root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))"
+        },
+        "isPremiumMember": {
+          ".validate": "newData.isBoolean() && (newData.val() === false || data.val() === true || root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))"
+        },
+        "isSuspended": {
+          ".validate": "newData.isBoolean() && (newData.val() === data.val() || (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true)) || (newData.val() === false && data.val() !== true))"
+        }
+      }
+    },
+    "submissions": {
+      ".read": "auth != null",
+      "$submissionId": {
+        ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true) || (data.exists() && data.child('submittedBy').val() === auth.token.email))",
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true) || (!data.exists() && newData.child('submittedBy').val() === auth.token.email && newData.child('status').val() === 'Pending' && root.child('submissionLocks').child(newData.child('packageName').val().toLowerCase().replace('.', '_')).val() === auth.token.email) || (data.exists() && newData.exists() && data.child('submittedBy').val() === auth.token.email && newData.child('status').val() === data.child('status').val()) || (data.exists() && !newData.exists() && data.child('submittedBy').val() === auth.token.email && data.child('status').val() === 'Pending'))",
+        "packageName": {
+          ".validate": "data.exists() || newData.val().matches(/^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+$/)"
+        },
+        "createdAt": {
+          ".validate": "data.exists() || (newData.isNumber() && newData.val() <= now + 300000 && newData.val() >= now - 300000)"
+        }
+      }
+    },
+    "adminSecurity": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))"
+    },
+    "banners": {
+      ".read": "auth != null",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))"
+    },
+    "collections": {
+      ".read": "auth != null",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))"
+    },
+    "notices": {
+      ".read": true,
+      "$noticeId": {
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))"
+      }
+    },
+    "terms_agreements": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "app_policy": {
+      ".read": true,
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))"
+    },
+    "premiumConfig": {
+      ".read": true,
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))",
+      "isFree": {
+        ".read": true,
+        ".write": false
+      }
+    },
+    "followers": {
+      "$developerUid": {
+        ".read": true,
+        "$followerUid": {
+          ".write": "auth != null && auth.uid === $followerUid"
+        }
+      }
+    },
+    "following": {
+      "$uid": {
+        ".read": true,
+        "$developerUid": {
+          ".write": "auth != null && auth.uid === $uid"
+        }
+      }
+    },
+    "DarkStoreUpdate": {
+      ".read": true,
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))"
+    },
+    "unityAdsConfig": {
+      ".read": true,
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))",
+      "enabled": {
+        ".validate": "newData.isBoolean()"
+      },
+      "testMode": {
+        ".validate": "newData.isBoolean()"
+      },
+      "$other": {
+        ".validate": false
+      }
+    },
+    "notifierConfig": {
+      ".read": true,
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))"
+    },
+    "maintenanceConfig": {
+      ".read": true,
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))"
+    },
+    "auditLog": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))",
+      "$logId": {
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))"
+      }
+    },
+    "chats": {
+      "$chatId": {
+        "meta": {
+          ".read": "auth != null && ($chatId.beginsWith(auth.uid + '__') || $chatId.endsWith('__' + auth.uid))",
+          ".write": "auth != null && ($chatId.beginsWith(auth.uid + '__') || $chatId.endsWith('__' + auth.uid))"
+        },
+        "messages": {
+          ".read": "auth != null && ($chatId.beginsWith(auth.uid + '__') || $chatId.endsWith('__' + auth.uid))",
+          "$msgId": {
+            ".write": "auth != null && ($chatId.beginsWith(auth.uid + '__') || $chatId.endsWith('__' + auth.uid)) && ((!data.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && data.child('senderId').val() === auth.uid && (!newData.exists() || newData.child('senderId').val() === auth.uid)))",
+            ".validate": "!newData.exists() || !newData.child('text').exists() || (newData.child('text').isString() && newData.child('text').val().length <= 2000)",
+            "reactions": {
+              "$rUid": {
+                ".write": "auth != null && ($chatId.beginsWith(auth.uid + '__') || $chatId.endsWith('__' + auth.uid)) && auth.uid === $rUid"
+              }
+            }
+          }
+        }
+      }
+    },
+    "userChats": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        "$chatId": {
+          ".write": "auth != null && ($chatId.beginsWith(auth.uid + '__') || $chatId.endsWith('__' + auth.uid))"
+        }
+      }
+    },
+    "reviews": {
+      ".read": true,
+      "$appId": {
+        "$reviewId": {
+          ".write": "auth != null && ((!data.exists() && newData.child('userId').val() === auth.uid) || (data.exists() && data.child('userId').val() === auth.uid && newData.child('userId').val() === auth.uid))",
+          ".validate": "newData.hasChildren(['id','appId','userId','userName','msg','stars','timestamp']) && newData.child('stars').isNumber() && newData.child('stars').val() >= 1 && newData.child('stars').val() <= 5"
+        }
+      }
+    },
+    "typing": {
+      "$chatId": {
+        ".read": "auth != null && ($chatId.beginsWith(auth.uid + '__') || $chatId.endsWith('__' + auth.uid))",
+        "$tUid": {
+          ".write": "auth != null && ($chatId.beginsWith(auth.uid + '__') || $chatId.endsWith('__' + auth.uid)) && auth.uid === $tUid"
+        }
+      }
+    },
+    "chatReads": {
+      "$chatId": {
+        ".read": "auth != null && ($chatId.beginsWith(auth.uid + '__') || $chatId.endsWith('__' + auth.uid))",
+        "$tUid": {
+          ".write": "auth != null && ($chatId.beginsWith(auth.uid + '__') || $chatId.endsWith('__' + auth.uid)) && auth.uid === $tUid"
+        }
+      }
+    },
+    "globalChat": {
+      "messages": {
+        ".read": "auth != null",
+        "$msgId": {
+          ".write": "auth != null && ((!data.exists() && newData.child('senderId').val() === auth.uid) || (data.exists() && (data.child('senderId').val() === auth.uid || (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true)))))",
+          ".validate": "!newData.exists() || !newData.child('text').exists() || (newData.child('text').isString() && newData.child('text').val().length <= 600)",
+          "reactions": {
+            "$rUid": {
+              ".write": "auth != null && auth.uid === $rUid"
+            }
+          }
+        }
+      }
+    },
+    "submissionLocks": {
+      ".read": "auth != null",
+      "$pkg": {
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true) || (!data.exists() && newData.val() === auth.token.email) || (data.exists() && !newData.exists() && data.val() === auth.token.email))",
+        ".validate": "newData.isString()"
+      }
+    },
+    "darkstoreReports": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))",
+      "$reportId": {
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true) || (!data.exists() && newData.child('reporterUid').val() === auth.uid))",
+        ".validate": "newData.hasChildren(['id','category','message','reporterUid','createdAt']) && newData.child('message').isString() && newData.child('message').val().length >= 10 && newData.child('message').val().length <= 1000 && newData.child('category').isString() && newData.child('category').val().length <= 30 && newData.child('createdAt').isNumber() && newData.child('createdAt').val() <= now + 300000"
+      }
+    },
+    "referralCodes": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))"
+    },
+    "referrals": {
+      ".indexOn": [
+        "referrerUid"
+      ],
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))",
+      "$newUid": {
+        ".read": "auth != null && (auth.uid === $newUid || data.child('referrerUid').val() === auth.uid)",
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))"
+      }
+    },
+    "referralStats": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))",
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid"
+      }
+    },
+    "deviceRegistry": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))"
+    },
+    "fraudAlerts": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))"
+    },
+    "fraudStrikes": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))",
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid"
+      }
+    },
+    "userDevices": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))"
+    },
+    "deviceOwner": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))"
+    },
+    "deviceRedeemed": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))"
+    },
+    "premiumGrants": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))",
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid"
+      }
+    },
+    "userFlags": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || (auth.token.email === 'davidstha900@gmail.com' && auth.token.email_verified === true))"
+    }
+  }
+}
