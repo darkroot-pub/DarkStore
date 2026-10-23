@@ -1,0 +1,86 @@
+plugins {
+    id "com.android.application"
+    id "kotlin-android"
+    id "dev.flutter.flutter-gradle-plugin"
+    id "com.google.gms.google-services"
+}
+
+// ---- Release signing -------------------------------------------------------
+// Uses android/app/darkstore-release.keystore (the same key as the Kotlin
+// DarkStore, so Google Sign-In / Firebase SHA-1 keep working).
+// Passwords come from android/key.properties (local builds) or from the
+// KEYSTORE_PASSWORD / KEY_ALIAS / KEY_PASSWORD environment variables
+// (GitHub Actions secrets).
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+def releaseKeystore = keystoreProperties["storeFile"] ?
+        rootProject.file(keystoreProperties["storeFile"]) :
+        file("darkstore-release.keystore")
+def releaseStorePass = keystoreProperties["storePassword"] ?: System.getenv("KEYSTORE_PASSWORD")
+def releaseAlias = keystoreProperties["keyAlias"] ?: System.getenv("KEY_ALIAS") ?: "darkstore"
+def releaseKeyPass = keystoreProperties["keyPassword"] ?: System.getenv("KEY_PASSWORD") ?: releaseStorePass
+def hasReleaseKey = releaseKeystore.exists() && releaseStorePass
+
+android {
+    namespace = "com.darkstore.darkroot.admin"
+    compileSdk = 35
+    ndkVersion = flutter.ndkVersion
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
+    }
+
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_1_8
+    }
+
+    defaultConfig {
+        applicationId = "com.darkstore.darkroot.admin"
+        minSdk = 23
+        targetSdk = 34
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
+        multiDexEnabled = true
+    }
+
+    signingConfigs {
+        release {
+            if (hasReleaseKey) {
+                keyAlias releaseAlias
+                keyPassword releaseKeyPass
+                storeFile releaseKeystore
+                storePassword releaseStorePass
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            if (hasReleaseKey) {
+                signingConfig signingConfigs.release
+            } else if (System.getenv("CI")) {
+                // Never silently ship a debug-signed APK from CI: its SHA-1
+                // would not match Firebase and Google Sign-In would break.
+                throw new GradleException(
+                    "Release keystore password missing. Add the KEYSTORE_PASSWORD " +
+                    "secret (and KEY_ALIAS / KEY_PASSWORD if they differ).")
+            } else {
+                signingConfig signingConfigs.debug
+            }
+            minifyEnabled false
+            shrinkResources false
+        }
+    }
+}
+
+flutter {
+    source = "../.."
+}
+
+dependencies {
+    implementation platform('com.google.firebase:firebase-bom:33.5.1')
+}

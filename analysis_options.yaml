@@ -1,0 +1,8 @@
+analyzer:
+  errors:
+    unused_import: warning
+    unused_local_variable: warning
+  exclude: [build/**]
+linter:
+  rules:
+    prefer_const_constructors: false
