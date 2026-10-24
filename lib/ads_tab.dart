@@ -5,7 +5,7 @@ import 'tabs.dart';
 const _globalF = [
   F('enabled', 'Rewarded unlocks ON', 'bool'),
   F('unityGameId', 'Unity Game ID'),
-  F('rewardedPlacementId', 'Rewarded placement id (e.g. Rewarded_Android)'),
+  F('rewardedPlacementId', 'Rewarded placement id (e.g. BP_Rewarded_Android)'),
   F('defaultAppsPerReward', 'Default apps per reward', 'num'),
   F('requireS2S', 'Require Unity server-to-server verification (keep ON)', 'bool'),
   F('testMode', 'Unity test mode', 'bool'),
@@ -38,10 +38,10 @@ Future<Widget> adsTab(BuildContext c, VoidCallback rl) async {
     Card(child: Column(children: [
       ListTile(
         title: Text('Rewarded unlocks ${bo(g['enabled'] ?? true) ? 'ON' : 'OFF'}'),
-        subtitle: Text('Game ${g['unityGameId'] ?? '800395384'} · placement ${g['rewardedPlacementId'] ?? 'Rewarded_Android'} · ${g['defaultAppsPerReward'] ?? 3} apps per ad · S2S ${g['requireS2S'] == false ? 'OFF (insecure)' : 'required'}'),
+        subtitle: Text('Game ${g['unityGameId'] ?? '800408578'} · placement ${g['rewardedPlacementId'] ?? 'BP_Rewarded_Android'} · ${g['defaultAppsPerReward'] ?? 3} apps per ad · S2S ${g['requireS2S'] == false ? 'OFF (insecure)' : 'required'}'),
         trailing: const Icon(Icons.edit),
         onTap: () async {
-          final x = await editSheet(c, 'Rewarded ads settings', _globalF, {'enabled': true, 'unityGameId': '800395384', 'rewardedPlacementId': 'Rewarded_Android', 'defaultAppsPerReward': 3, 'requireS2S': true, ...g});
+          final x = await editSheet(c, 'Rewarded ads settings', _globalF, {'enabled': true, 'unityGameId': '800408578', 'rewardedPlacementId': 'BP_Rewarded_Android', 'defaultAppsPerReward': 3, 'requireS2S': true, ...g});
           if (x != null && c.mounted) act(c, () async { await Db.upd('adsConfig', only(x, _globalF)); await Db.audit('ADS_CONFIG', 'config', 'adsConfig', 'Rewarded ads'); }, rl, 'Saved');
         },
       ),
