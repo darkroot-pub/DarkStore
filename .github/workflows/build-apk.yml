@@ -52,7 +52,8 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: flutter build apk --release
+          IMGBB_API_KEY: ${{ secrets.IMGBB_API_KEY }}
+        run: flutter build apk --release --dart-define=IMGBB_API_KEY=$IMGBB_API_KEY
 
       - name: Print APK signing certificate
         run: |

@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'core.dart';
 import 'previews.dart';
+import 'uploader.dart';
 
 Map<String, Object?> only(Map<String, dynamic> r, List<F> f) => {for (final x in f) x.k: r[x.k]};
 
@@ -39,7 +40,7 @@ Future<Widget> homeTab(BuildContext c, VoidCallback rl) async {
     'Suspended apps': a.where((x) => bo(x['isSuspended'])).length, 'Upcoming': a.where((x) => bo(x['isUpcoming'])).length,
     'Users': u.length, 'Developers': u.where((x) => bo(x['isDeveloper'])).length, 'Premium': u.where((x) => bo(x['isPremiumMember'])).length,
     'Suspended users': u.where((x) => bo(x['isSuspended'])).length,
-    'Pending review': sb.where((x) => s(x['status']).isEmpty || x['status'] == 'pending').length,
+    'Pending review': sb.where((x) => s(x['status']).isEmpty || s(x['status']).toLowerCase() == 'pending').length,
     'App reports': a.where((x) => s(x['reportsJson']).isNotEmpty).length, 'Feedback': r[3].length,
   };
   return listPage([
@@ -52,16 +53,16 @@ Future<Widget> homeTab(BuildContext c, VoidCallback rl) async {
 // ───────────── Submissions ─────────────
 Future<Widget> subsTab(BuildContext c, VoidCallback rl) async {
   final L = await Db.list('submissions');
-  bool pend(Map x) => s(x['status']).isEmpty || x['status'] == 'pending';
+  bool pend(Map x) => s(x['status']).isEmpty || s(x['status']).toLowerCase() == 'pending';
   L.sort((a, b) => pend(a) != pend(b) ? (pend(a) ? -1 : 1) : ni(b['createdAt']).compareTo(ni(a['createdAt'])));
   return Searchable(L, (x) => '${x['name']} ${x['packageName']} ${x['submittedBy']}', (x) {
-    final st = pend(x) ? 'pending' : s(x['status']);
+    final st = pend(x) ? 'Pending' : s(x['status']);
     return Card(
       child: ListTile(
         leading: netImg(s(x['logo'])),
         title: Text(s(x['name'])),
         subtitle: Wrap(children: [Text('${x['packageName']} · v${x['version']}  ', style: const TextStyle(fontSize: 12)), if (bo(x['isUpdateSubmission'])) tagChip('UPDATE', Colors.orange), if (bo(x['isUpcoming'])) tagChip('UPCOMING', Colors.purple)]),
-        trailing: tagChip(st, st == 'approved' ? Colors.green : st == 'rejected' ? Colors.red : Colors.orange),
+        trailing: tagChip(st, st.toLowerCase() == 'approved' ? Colors.green : st.toLowerCase() == 'rejected' ? Colors.red : Colors.orange),
         onTap: () => subDetail(c, x, rl),
       ),
     );
@@ -69,7 +70,7 @@ Future<Widget> subsTab(BuildContext c, VoidCallback rl) async {
 }
 
 void subDetail(BuildContext c, Map<String, dynamic> x, VoidCallback rl) {
-  final pending = s(x['status']).isEmpty || x['status'] == 'pending';
+  final pending = s(x['status']).isEmpty || s(x['status']).toLowerCase() == 'pending';
   showModalBottomSheet(
     context: c, isScrollControlled: true, useSafeArea: true,
     builder: (d) => ListView(padding: const EdgeInsets.all(16), children: [
@@ -91,6 +92,15 @@ void subDetail(BuildContext c, Map<String, dynamic> x, VoidCallback rl) {
   );
 }
 
+/// Frees the per-package lock so the developer can send the next update (same key rule as the apps).
+Future<void> _releaseLock(String pkg) async {
+  final k = pkg.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9_-]'), '_');
+  if (k.isEmpty) return;
+  try {
+    await Db.del('submissionLocks/${k.length > 150 ? k.substring(0, 150) : k}');
+  } catch (_) {}
+}
+
 Future<void> approveSub(BuildContext c, Map<String, dynamic> x, VoidCallback rl) async {
   if (!await confirm(c, 'Approve ${x['name']}?', 'It goes live in the store now.')) return;
   if (!c.mounted) return;
@@ -105,7 +115,8 @@ Future<void> approveSub(BuildContext c, Map<String, dynamic> x, VoidCallback rl)
     final o = <String, Object?>{for (final k in keys) if (x[k] != null) k: x[k]};
     if (s(x['apkUrl']).isNotEmpty) o['isUpcoming'] = false;
     await Db.upd('apps/$aid', {...o, 'isApproved': true, 'versionHistoryJson': jsonEncode(hist)});
-    await Db.upd('submissions/${x['id']}', {'status': 'approved'});
+    await Db.upd('submissions/${x['id']}', {'status': 'Approved'});
+    await _releaseLock(s(x['packageName']));
     await Db.audit('APPROVE_SUBMISSION', 'submission', s(x['id']), s(x['name']), 'v${x['version']}');
   }, rl, 'Approved');
 }
@@ -114,7 +125,8 @@ Future<void> rejectSub(BuildContext c, Map<String, dynamic> x, VoidCallback rl) 
   final r = await editSheet(c, 'Reject ${x['name']}', const [F('feedback', 'Reason shown to the developer', 'area')], {});
   if (r == null || !c.mounted) return;
   await act(c, () async {
-    await Db.upd('submissions/${x['id']}', {'status': 'rejected', 'feedback': s(r['feedback'])});
+    await Db.upd('submissions/${x['id']}', {'status': 'Rejected', 'feedback': s(r['feedback'])});
+    await _releaseLock(s(x['packageName']));
     await Db.audit('REJECT_SUBMISSION', 'submission', s(x['id']), s(x['name']), s(r['feedback']));
   }, rl, 'Rejected');
 }
@@ -122,8 +134,8 @@ Future<void> rejectSub(BuildContext c, Map<String, dynamic> x, VoidCallback rl) 
 // ───────────── Live catalog ─────────────
 const appFields = [
   F('name', 'Name'), F('developer', 'Developer'), F('category', 'Category'), F('version', 'Version'), F('versionCode', 'Version code', 'num'),
-  F('size', 'Size'), F('description', 'Description', 'area'), F('changelog', 'Changelog', 'area'), F('apkUrl', 'APK URL'), F('logo', 'Logo URL'),
-  F('screenshots', 'Screenshot URLs (comma separated)', 'area'), F('videoUrl', 'Video URL'), F('expectedRelease', 'Expected release'),
+  F('size', 'Size'), F('description', 'Description', 'area'), F('changelog', 'Changelog', 'area'), F('apkUrl', 'APK URL'), F('logo', 'Logo URL', 'image'),
+  F('screenshots', 'Screenshots (links, or add from device)', 'images'), F('videoUrl', 'Video URL'), F('expectedRelease', 'Expected release'),
   F('isFeatured', 'Featured', 'bool'), F('isPopular', 'Popular', 'bool'), F('isRecent', 'Recent', 'bool'), F('isPremium', 'Premium', 'bool'),
   F('isUpcoming', 'Upcoming', 'bool'), F('isOnHold', 'On hold (hidden, data kept)', 'bool'), F('hasAds', 'Contains ads', 'bool'),
 ];
@@ -307,6 +319,8 @@ class NotifyTab extends StatefulWidget {
 class _NotifyTabState extends State<NotifyTab> {
   final v = <String, dynamic>{'audience': 'everyone', 'title': '', 'message': '', 'imageUrl': ''};
   final sel = <String>{};
+  final _img = TextEditingController();
+  bool _imgBusy = false;
   List<Map<String, dynamic>> users = [];
   bool busy = false;
   @override
@@ -327,13 +341,42 @@ class _NotifyTabState extends State<NotifyTab> {
       ),
       if (v['audience'] == 'selected')
         ListTile(title: Text('${sel.length} people selected'), trailing: const Icon(Icons.group_add), onTap: pick),
-      tf('title', 'Title'), tf('message', 'Message', lines: 2), tf('imageUrl', 'Image URL (optional)'),
+      tf('title', 'Title'), tf('message', 'Message', lines: 2),
+      Padding(
+        padding: const EdgeInsets.only(top: 10),
+        child: TextField(
+          controller: _img,
+          decoration: InputDecoration(
+            labelText: 'Image (optional): link or pick from device',
+            border: const OutlineInputBorder(),
+            suffixIcon: _imgBusy
+                ? const Padding(padding: EdgeInsets.all(12), child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)))
+                : IconButton(icon: const Icon(Icons.add_photo_alternate_outlined), onPressed: _pickImg),
+          ),
+          onChanged: (x) => setState(() => v['imageUrl'] = x),
+        ),
+      ),
       const SizedBox(height: 12),
       const Text('PREVIEW', style: TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.bold)),
       noticePrev(v),
       const SizedBox(height: 12),
       FilledButton.icon(onPressed: busy ? null : send, icon: const Icon(Icons.send), label: Text(busy ? 'Sending…' : 'Send push')),
     ]);
+  }
+
+  Future<void> _pickImg() async {
+    setState(() => _imgBusy = true);
+    try {
+      final f = await Uploader.one();
+      if (f != null) {
+        final u = await Uploader.upload(f, folder: 'notifications');
+        _img.text = u;
+        v['imageUrl'] = u;
+      }
+    } catch (e) {
+      if (mounted) toast(context, '$e');
+    }
+    if (mounted) setState(() => _imgBusy = false);
   }
 
   void pick() {
@@ -354,6 +397,7 @@ class _NotifyTabState extends State<NotifyTab> {
     if (res['ok'] != true) return toast(context, 'Not sent: ${res['error']}');
     toast(context, 'Delivered ${res['delivered'] ?? 'to all'} · failed ${res['failed'] ?? 0} · no token ${res['no_token'] ?? 0}');
     await Db.audit('NOTIFICATION_SENT', 'notification', s(v['audience']), s(v['title']));
+    _img.clear();
     setState(() { v['title'] = ''; v['message'] = ''; v['imageUrl'] = ''; });
   }
 }
@@ -361,7 +405,7 @@ class _NotifyTabState extends State<NotifyTab> {
 // ───────────── Events (new) ─────────────
 const evFields = [
   F('enabled', 'Event is ON', 'bool'), F('id', 'Event id (change it to show again to everyone)'), F('title', 'Title'), F('message', 'Message', 'area'),
-  F('mediaType', 'Media', 'select', ['none', 'image', 'video']), F('mediaUrl', 'Image link / YouTube link / .mp4'), F('buttonText', 'Button text'),
+  F('mediaType', 'Media', 'select', ['none', 'image', 'video']), F('mediaUrl', 'Image / YouTube link / .mp4 (or pick a photo)', 'image'), F('buttonText', 'Button text'),
   F('targetType', 'Button opens', 'select', ['none', 'app', 'link']), F('targetValue', 'App id or https link'),
   F('startAt', 'Starts at', 'date'), F('endAt', 'Ends at', 'date'), F('showOnce', 'Show only once per device', 'bool'),
 ];
@@ -419,7 +463,7 @@ Future<Widget> Function(BuildContext, VoidCallback) crud(String path, List<F> f,
   };
 }
 
-final bannersTab = crud('banners', const [F('title', 'Title'), F('subtitle', 'Subtitle'), F('imageUrl', 'Image URL'), F('buttonText', 'Button text'), F('targetType', 'Button opens', 'select', ['none', 'app', 'link']), F('targetValue', 'App id or link'), F('order', 'Order', 'num'), F('isActive', 'Active', 'bool')], bannerPrev, (x) => s(x['title']));
+final bannersTab = crud('banners', const [F('title', 'Title'), F('subtitle', 'Subtitle'), F('imageUrl', 'Image', 'image'), F('buttonText', 'Button text'), F('targetType', 'Button opens', 'select', ['none', 'app', 'link']), F('targetValue', 'App id or link'), F('order', 'Order', 'num'), F('isActive', 'Active', 'bool')], bannerPrev, (x) => s(x['title']));
 
 final collectionsTab = crud(
   'collections',

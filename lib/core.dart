@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'uploader.dart';
 
 const dbUrl = 'https://dark-store-6836d-default-rtdb.asia-southeast1.firebasedatabase.app';
 const ownerEmail = 'davidstha900@gmail.com';
@@ -120,6 +121,42 @@ class _Editor extends StatefulWidget {
 
 class _EditorState extends State<_Editor> {
   late Map<String, dynamic> v = {...widget.init};
+  final _ctl = <String, TextEditingController>{};
+  final _busy = <String>{};
+
+  @override
+  void dispose() {
+    for (final c in _ctl.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  TextEditingController _c(String k) => _ctl.putIfAbsent(k, () => TextEditingController(text: s(v[k])));
+
+  List<String> _urls(String k) => s(v[k]).split(RegExp(r'[,|\n]')).map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+
+  void _say(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+
+  /// Pick from the phone gallery and upload; [multi] appends to a comma separated list.
+  Future<void> _pick(F f, bool multi) async {
+    if (_busy.contains(f.k)) return;
+    setState(() => _busy.add(f.k));
+    try {
+      final files = multi ? await Uploader.many() : [if (await Uploader.one() case final x?) x];
+      final urls = multi ? _urls(f.k) : <String>[];
+      for (final x in files) {
+        urls.add(await Uploader.upload(x));
+      }
+      if (files.isNotEmpty) {
+        v[f.k] = multi ? urls.join(', ') : urls.first;
+        _c(f.k).text = '${v[f.k]}';
+      }
+    } catch (e) {
+      _say('$e');
+    }
+    if (mounted) setState(() => _busy.remove(f.k));
+  }
   @override
   Widget build(BuildContext c) {
     return Padding(
@@ -147,6 +184,56 @@ class _EditorState extends State<_Editor> {
   Widget _field(F f) {
     if (f.t == 'bool') {
       return SwitchListTile(contentPadding: EdgeInsets.zero, title: Text(f.l), value: bo(v[f.k]), onChanged: (x) => setState(() => v[f.k] = x));
+    }
+    if (f.t == 'image' || f.t == 'images') {
+      final multi = f.t == 'images';
+      final urls = multi ? _urls(f.k) : [if (s(v[f.k]).startsWith('http')) s(v[f.k])];
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          TextField(
+            controller: _c(f.k),
+            minLines: 1,
+            maxLines: multi ? 4 : 1,
+            decoration: InputDecoration(labelText: f.l, border: const OutlineInputBorder()),
+            onChanged: (x) => setState(() => v[f.k] = x),
+          ),
+          if (urls.isNotEmpty)
+            SizedBox(
+              height: 78,
+              child: ListView(scrollDirection: Axis.horizontal, children: [
+                for (var i = 0; i < urls.length; i++)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8, right: 8),
+                    child: Stack(clipBehavior: Clip.none, children: [
+                      netImg(urls[i], w: 64, h: 64, r: 8),
+                      if (multi)
+                        Positioned(
+                          top: -6,
+                          right: -6,
+                          child: GestureDetector(
+                            onTap: () => setState(() {
+                              final l = _urls(f.k)..removeAt(i);
+                              v[f.k] = l.join(', ');
+                              _c(f.k).text = '${v[f.k]}';
+                            }),
+                            child: const CircleAvatar(radius: 10, backgroundColor: Colors.black87, child: Icon(Icons.close, size: 12, color: Colors.white)),
+                          ),
+                        ),
+                    ]),
+                  ),
+              ]),
+            ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: _busy.contains(f.k) ? null : () => _pick(f, multi),
+              icon: _busy.contains(f.k) ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.add_photo_alternate_outlined),
+              label: Text(_busy.contains(f.k) ? 'Uploading…' : (multi ? 'Add photos from device (select many)' : 'Pick photo from device')),
+            ),
+          ),
+        ]),
+      );
     }
     if (f.t == 'date') {
       final n = ni(v[f.k]);

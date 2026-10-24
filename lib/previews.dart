@@ -99,7 +99,17 @@ Widget appPrev(Map<String, dynamic> v) => _frame(Column(crossAxisAlignment: Cros
       const SizedBox(height: 8),
       Text(s(v['description']), maxLines: 4, overflow: TextOverflow.ellipsis),
       if (shots(v['screenshots']).isNotEmpty)
-        SizedBox(height: 120, child: ListView(scrollDirection: Axis.horizontal, children: [for (final u in shots(v['screenshots'])) Padding(padding: const EdgeInsets.only(top: 8, right: 6), child: netImg(u, w: 70, h: 112, r: 8))])),
+        Builder(builder: (ctx) {
+          final l = shots(v['screenshots']);
+          return SizedBox(
+            height: 130,
+            child: ListView(scrollDirection: Axis.horizontal, children: [
+              for (var i = 0; i < l.length; i++)
+                Padding(padding: const EdgeInsets.only(top: 8, right: 6), child: GestureDetector(onTap: () => showShotViewer(ctx, l, i), child: AdaptiveShot(l[i], height: 120))),
+            ]),
+          );
+        }),
+      if (shots(v['screenshots']).isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4), child: Text('${shots(v['screenshots']).length} screenshot(s). Tap to view full size.', style: const TextStyle(fontSize: 11, color: Colors.grey))),
       if (s(v['changelog']).isNotEmpty) Padding(padding: const EdgeInsets.only(top: 8), child: Text("What's new: ${s(v['changelog'])}", style: const TextStyle(fontSize: 12))),
     ]));
 
@@ -134,3 +144,57 @@ Widget updatePrev(Map<String, dynamic> v) => _frame(Card(
         ]),
       ),
     ));
+
+/// Keeps each screenshot's own shape: tall phone shots stay tall, landscape games stay wide.
+class AdaptiveShot extends StatefulWidget {
+  final String url;
+  final double height;
+  const AdaptiveShot(this.url, {super.key, this.height = 120});
+  @override
+  State<AdaptiveShot> createState() => _AdaptiveShotState();
+}
+
+class _AdaptiveShotState extends State<AdaptiveShot> {
+  double _a = .56;
+  @override
+  void initState() {
+    super.initState();
+    final st = NetworkImage(widget.url).resolve(ImageConfiguration.empty);
+    late ImageStreamListener l;
+    l = ImageStreamListener((i, _) {
+      if (mounted && i.image.height > 0) setState(() => _a = i.image.width / i.image.height);
+      st.removeListener(l);
+    }, onError: (_, __) => st.removeListener(l));
+    st.addListener(l);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final a = _a.clamp(.4, 2.4).toDouble();
+    var h = widget.height, w = h * a;
+    final max = MediaQuery.of(context).size.width * .8;
+    if (w > max) {
+      w = max;
+      h = w / a;
+    }
+    return netImg(widget.url, w: w, h: h, r: 8);
+  }
+}
+
+void showShotViewer(BuildContext c, List<String> urls, int start) {
+  final pc = PageController(initialPage: start);
+  showDialog<void>(
+    context: c,
+    builder: (d) => Dialog.fullscreen(
+      backgroundColor: Colors.black,
+      child: Stack(children: [
+        PageView.builder(
+          controller: pc,
+          itemCount: urls.length,
+          itemBuilder: (_, i) => InteractiveViewer(maxScale: 5, child: Center(child: Image.network(urls[i], fit: BoxFit.contain, errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, color: Colors.white54, size: 48)))),
+        ),
+        SafeArea(child: Align(alignment: Alignment.topRight, child: IconButton(icon: const Icon(Icons.close, color: Colors.white), onPressed: () => Navigator.pop(d)))),
+      ]),
+    ),
+  );
+}

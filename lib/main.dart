@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter/material.dart';
 import 'core.dart';
 import 'tabs.dart' hide adsTab;
@@ -76,6 +77,28 @@ class _LoginPageState extends State<LoginPage> {
   final em = TextEditingController(), pw = TextEditingController();
   bool busy = false;
   String err = '';
+  // Web client id (client_type 3) from google-services.json: needed so Google returns an ID token for Firebase.
+  static const _webClientId = '210511589455-90vu807op09vmokh1g9niflgid076dfd.apps.googleusercontent.com';
+
+  Future<void> google() async {
+    setState(() { busy = true; err = ''; });
+    try {
+      final g = GoogleSignIn(serverClientId: _webClientId, scopes: ['email']);
+      await g.signOut(); // always show the account picker
+      final acc = await g.signIn();
+      if (acc == null) { if (mounted) setState(() => busy = false); return; }
+      final a = await acc.authentication;
+      await FirebaseAuth.instance.signInWithCredential(GoogleAuthProvider.credential(idToken: a.idToken, accessToken: a.accessToken));
+    } on FirebaseAuthException catch (e) {
+      err = e.message ?? e.code;
+    } catch (e) {
+      err = '$e'.contains('10') || '$e'.contains('sign_in_failed')
+          ? 'Google sign-in failed (error 10): this build\'s signing key is not registered in Firebase. Build with the release keystore or add this SHA-1 in Firebase settings.'
+          : 'Google sign-in failed: $e';
+    }
+    if (mounted) setState(() => busy = false);
+  }
+
   Future<void> go() async {
     setState(() { busy = true; err = ''; });
     try {
@@ -97,6 +120,10 @@ class _LoginPageState extends State<LoginPage> {
           TextField(controller: pw, obscureText: true, decoration: const InputDecoration(labelText: 'Password', border: OutlineInputBorder()), onSubmitted: (_) => go()),
           const SizedBox(height: 14),
           SizedBox(width: double.infinity, child: FilledButton(onPressed: busy ? null : go, child: Text(busy ? 'Signing in…' : 'Sign in'))),
+          const SizedBox(height: 10),
+          Row(children: const [Expanded(child: Divider()), Padding(padding: EdgeInsets.symmetric(horizontal: 10), child: Text('or', style: TextStyle(color: Colors.grey))), Expanded(child: Divider())]),
+          const SizedBox(height: 10),
+          SizedBox(width: double.infinity, child: OutlinedButton.icon(onPressed: busy ? null : google, icon: const Icon(Icons.account_circle_outlined), label: const Text('Continue with Google'))),
           if (err.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 10), child: Text(err, style: const TextStyle(color: Colors.red))),
         ])))),
       );
