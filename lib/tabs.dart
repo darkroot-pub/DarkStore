@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'core.dart';
+import 'fraud_tab.dart';
 import 'previews.dart';
 import 'uploader.dart';
 
@@ -33,13 +34,14 @@ class _SearchableState extends State<Searchable> {
 
 // ───────────── Home ─────────────
 Future<Widget> homeTab(BuildContext c, VoidCallback rl) async {
-  final r = await Future.wait([Db.list('apps'), Db.list('users'), Db.list('submissions'), Db.list('darkstoreReports')]);
+  final r = await Future.wait([Db.list('apps'), Db.list('users'), Db.list('submissions'), Db.list('darkstoreReports'), Db.list('fraudAlerts')]);
   final a = r[0], u = r[1], sb = r[2];
   final st = {
     'Apps': a.length, 'Live': a.where((x) => bo(x['isApproved']) && !bo(x['isSuspended']) && !bo(x['isOnHold'])).length,
     'Suspended apps': a.where((x) => bo(x['isSuspended'])).length, 'Upcoming': a.where((x) => bo(x['isUpcoming'])).length,
     'Users': u.length, 'Developers': u.where((x) => bo(x['isDeveloper'])).length, 'Premium': u.where((x) => bo(x['isPremiumMember'])).length,
     'Suspended users': u.where((x) => bo(x['isSuspended'])).length,
+    'Open fraud alerts': r[4].where((x) => s(x['status']) == 'open').length,
     'Pending review': sb.where((x) => s(x['status']).isEmpty || s(x['status']).toLowerCase() == 'pending').length,
     'App reports': a.where((x) => s(x['reportsJson']).isNotEmpty).length, 'Feedback': r[3].length,
   };
@@ -272,6 +274,7 @@ Future<Widget> usersTab(BuildContext c, VoidCallback rl) async {
             onSelected: (m) => userMenu(c, m, x, rl),
             itemBuilder: (_) => const [
               PopupMenuItem(value: 'edit', child: Text('Edit / suspend')),
+              PopupMenuItem(value: 'devices', child: Text('Devices & fraud')),
               PopupMenuItem(value: 'notify', child: Text('Send notification')),
               PopupMenuItem(value: 'grant', child: Text('Grant Premium')),
               PopupMenuItem(value: 'revoke', child: Text('Remove Premium')),
@@ -288,6 +291,8 @@ Future<void> userMenu(BuildContext c, String m, Map<String, dynamic> x, VoidCall
     final r = await editSheet(c, 'Edit $nm', f, {...x, 'role': x['role'] == 'admin' ? 'admin' : 'user'});
     if (r == null || !c.mounted) return;
     await act(c, () async { await Db.upd('users/$id', only(r, f)); await Db.audit('EDIT_USER', 'user', id, nm, 'role=${r['role']} suspended=${r['isSuspended']}'); }, rl);
+  } else if (m == 'devices') {
+    await showUserSecurity(c, id, rl);
   } else if (m == 'notify') {
     const f = [F('title', 'Title'), F('message', 'Message', 'area')];
     final r = await editSheet(c, 'Notify $nm', f, {}, preview: noticePrev);

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'core.dart';
 import 'tabs.dart' hide adsTab;
 import 'ads_tab.dart';
+import 'fraud_tab.dart';
 
 // NOTE: this admin app never asks for / saves an FCM token. The user app already
 // stores each person's token; the admin only SENDS pushes through the server.
@@ -139,6 +140,8 @@ class Shell extends StatelessWidget {
       ('Catalog', Icons.store, FutureTab(catalogTab)),
       ('Update', Icons.system_update, FutureTab(updateTab)),
       ('Users', Icons.people, FutureTab(usersTab)),
+      ('Fraud', Icons.gpp_maybe, FutureTab(fraudTab)),
+      ('Devices', Icons.devices, FutureTab(devicesTab)),
       ('Notify', Icons.notifications, const NotifyTab()),
       ('Events', Icons.celebration, FutureTab(eventsTab)),
       ('Banners', Icons.view_carousel, FutureTab(bannersTab)),
