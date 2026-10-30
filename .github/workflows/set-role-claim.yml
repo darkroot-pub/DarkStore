@@ -1,0 +1,39 @@
+# Give EVERY existing Firebase user the claim role=authenticated (needed by Supabase).
+# Run it once: GitHub repo -> Actions -> "Set Supabase role claim" -> Run workflow.
+# Needs one secret: FIREBASE_SERVICE_ACCOUNT (the whole service-account JSON).
+name: Set Supabase role claim
+on: workflow_dispatch
+
+jobs:
+  claims:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install firebase-admin
+        run: npm install firebase-admin@12
+      - name: Write script
+        run: |
+          cat > set_role_claim.js <<'JS'
+          const admin = require("firebase-admin");
+          admin.initializeApp({ credential: admin.credential.cert(JSON.parse(process.env.SA)) });
+          (async () => {
+            let token, done = 0, skipped = 0;
+            do {
+              const page = await admin.auth().listUsers(1000, token);
+              for (const u of page.users) {
+                const claims = u.customClaims || {};
+                if (claims.role === "authenticated") { skipped++; continue; }
+                await admin.auth().setCustomUserClaims(u.uid, { ...claims, role: "authenticated" });
+                done++;
+              }
+              token = page.pageToken;
+            } while (token);
+            console.log(`claim set for ${done} users, already had it: ${skipped}`);
+          })().catch((e) => { console.error(e); process.exit(1); });
+          JS
+      - name: Run
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node set_role_claim.js
