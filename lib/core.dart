@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'sb.dart';
 import 'uploader.dart';
 
 const dbUrl = 'https://dark-store-6836d-default-rtdb.asia-southeast1.firebasedatabase.app';
@@ -25,16 +26,27 @@ String when(Object? t) {
 }
 
 class Db {
+  /// Firebase Realtime Database is only kept for the store's own update
+  /// (DarkStoreUpdate) and the notifier address; everything else is Supabase.
+  static bool _fb(String p) => p.startsWith('DarkStoreUpdate') || p.startsWith('notifierConfig');
+
   static DatabaseReference r(String p) => FirebaseDatabase.instance.ref(p);
-  static Future<Map<String, dynamic>> map(String p) async => _m((await r(p).get()).value);
-  static Future<List<Map<String, dynamic>>> list(String p) async => (await map(p))
-      .entries
-      .map((e) => e.value is Map ? <String, dynamic>{...e.value as Map<String, dynamic>, 'id': e.key} : <String, dynamic>{'id': e.key, 'value': e.value})
-      .toList();
-  static Future<void> upd(String p, Map<String, Object?> v) => r(p).update(v);
-  static Future<void> put(String p, Object? v) => r(p).set(v);
-  static Future<void> del(String p) => r(p).remove();
-  static Future<void> push(String p, Map<String, Object?> v) => r(p).push().set(v);
+
+  static Future<Map<String, dynamic>> map(String p) async =>
+      _fb(p) ? _m((await r(p).get()).value) : SbDb.map(p);
+
+  static Future<List<Map<String, dynamic>>> list(String p) async {
+    if (!_fb(p)) return SbDb.list(p);
+    return (await map(p))
+        .entries
+        .map((e) => e.value is Map ? <String, dynamic>{...e.value as Map<String, dynamic>, 'id': e.key} : <String, dynamic>{'id': e.key, 'value': e.value})
+        .toList();
+  }
+
+  static Future<void> upd(String p, Map<String, Object?> v) => _fb(p) ? r(p).update(v) : SbDb.upd(p, v);
+  static Future<void> put(String p, Object? v) => r(p).set(v); // only used for notifierConfig/baseUrl
+  static Future<void> del(String p) => _fb(p) ? r(p).remove() : SbDb.del(p);
+  static Future<void> push(String p, Map<String, Object?> v) => _fb(p) ? r(p).push().set(v) : SbDb.push(p, v);
   static Future<void> audit(String action, String type, String id, String name, [String d = '']) async {
     final u = FirebaseAuth.instance.currentUser;
     try {

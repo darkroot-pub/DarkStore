@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'core.dart';
+import 'sb.dart';
 import 'fraud_tab.dart';
 import 'previews.dart';
 import 'uploader.dart';
@@ -107,18 +108,9 @@ Future<void> approveSub(BuildContext c, Map<String, dynamic> x, VoidCallback rl)
   if (!await confirm(c, 'Approve ${x['name']}?', 'It goes live in the store now.')) return;
   if (!c.mounted) return;
   await act(c, () async {
-    final apps = await Db.list('apps');
-    final old = apps.where((a) => a['packageName'] == x['packageName']).toList();
-    final aid = old.isNotEmpty ? s(old.first['id']) : s(x['id']);
-    var hist = <dynamic>[];
-    try { hist = jsonDecode(s(old.isNotEmpty ? old.first['versionHistoryJson'] : '[]')); } catch (_) {}
-    hist.add({'version': x['version'], 'versionCode': ni(x['versionCode']), 'changelog': s(x['changelog']), 'apkUrl': x['apkUrl'], 'date': ms()});
-    const keys = ['name', 'packageName', 'logo', 'apkUrl', 'version', 'versionCode', 'category', 'description', 'developer', 'screenshots', 'videoUrl', 'changelog', 'hasAds', 'submittedBy', 'isUpcoming', 'expectedRelease'];
-    final o = <String, Object?>{for (final k in keys) if (x[k] != null) k: x[k]};
-    if (s(x['apkUrl']).isNotEmpty) o['isUpcoming'] = false;
-    await Db.upd('apps/$aid', {...o, 'isApproved': true, 'versionHistoryJson': jsonEncode(hist)});
-    await Db.upd('submissions/${x['id']}', {'status': 'Approved'});
-    await _releaseLock(s(x['packageName']));
+    // One server-side step: publishes / updates the app, appends the version
+    // history, takes the developer name from users.dev_name and releases the package.
+    await Sb.c.rpc('approve_submission', params: {'p_id': s(x['id']), 'p_feedback': ''});
     await Db.audit('APPROVE_SUBMISSION', 'submission', s(x['id']), s(x['name']), 'v${x['version']}');
   }, rl, 'Approved');
 }
@@ -135,7 +127,7 @@ Future<void> rejectSub(BuildContext c, Map<String, dynamic> x, VoidCallback rl) 
 
 // ───────────── Live catalog ─────────────
 const appFields = [
-  F('name', 'Name'), F('developer', 'Developer'), F('category', 'Category'), F('version', 'Version'), F('versionCode', 'Version code', 'num'),
+  F('name', 'Name'), F('category', 'Category'), F('version', 'Version'), F('versionCode', 'Version code', 'num'),
   F('size', 'Size'), F('description', 'Description', 'area'), F('changelog', 'Changelog', 'area'), F('apkUrl', 'APK URL'), F('logo', 'Logo URL', 'image'),
   F('screenshots', 'Screenshots (links, or add from device)', 'images'), F('videoUrl', 'Video URL'), F('expectedRelease', 'Expected release'),
   F('isFeatured', 'Featured', 'bool'), F('isPopular', 'Popular', 'bool'), F('isRecent', 'Recent', 'bool'), F('isPremium', 'Premium', 'bool'),
@@ -302,14 +294,22 @@ Future<void> userMenu(BuildContext c, String m, Map<String, dynamic> x, VoidCall
   } else if (m == 'grant') {
     final r = await editSheet(c, 'Grant Premium', const [F('days', 'Days (0 = lifetime)', 'num')], {'days': 30});
     if (r == null || !c.mounted) return;
-    final res = await Api.call('/admin/premium', body: {'uid': id, 'enabled': true, 'days': ni(r['days'])});
-    if (c.mounted) toast(c, s(res?['message'] ?? res?['error'] ?? 'No answer from server'));
-    await Db.audit('GRANT_PREMIUM', 'user', id, nm, '${r['days']} days');
+    try {
+      await Sb.c.rpc('admin_set_premium', params: {'p_uid': id, 'p_enabled': true, 'p_days': ni(r['days'])});
+      if (c.mounted) toast(c, 'Premium granted');
+      await Db.audit('GRANT_PREMIUM', 'user', id, nm, '${r['days']} days');
+    } catch (e) {
+      if (c.mounted) toast(c, 'Failed: $e');
+    }
     rl();
   } else if (m == 'revoke') {
-    final res = await Api.call('/admin/premium', body: {'uid': id, 'enabled': false});
-    if (c.mounted) toast(c, s(res?['message'] ?? res?['error'] ?? 'No answer from server'));
-    await Db.audit('REMOVE_PREMIUM', 'user', id, nm);
+    try {
+      await Sb.c.rpc('admin_set_premium', params: {'p_uid': id, 'p_enabled': false, 'p_days': 0});
+      if (c.mounted) toast(c, 'Premium removed');
+      await Db.audit('REMOVE_PREMIUM', 'user', id, nm);
+    } catch (e) {
+      if (c.mounted) toast(c, 'Failed: $e');
+    }
     rl();
   }
 }
@@ -549,7 +549,16 @@ Future<Widget> serverTab(BuildContext c, VoidCallback rl) async {
       OutlinedButton(onPressed: () => run('/admin/test-push', 'Test push'), child: const Text('Test push to me')),
       OutlinedButton(onPressed: () => run('/admin/backfill', 'Backfill users'), child: const Text('Backfill users')),
       OutlinedButton(onPressed: () => run('/admin/fraud-scan', 'Fraud scan'), child: const Text('Fraud scan')),
-      OutlinedButton(onPressed: () => run('/admin/premium-sweep', 'Premium sweep'), child: const Text('Premium sweep')),
+      OutlinedButton(onPressed: () async {
+        try {
+          final n = await Sb.c.rpc('premium_sweep');
+          if (c.mounted) toast(c, 'Premium sweep: $n expired');
+          await Db.audit('SERVER_ACTION', 'config', 'premium_sweep', 'Premium sweep', '$n expired');
+        } catch (e) {
+          if (c.mounted) toast(c, 'Failed: $e');
+        }
+        rl();
+      }, child: const Text('Premium sweep')),
       OutlinedButton(onPressed: () async { final x = await editSheet(c, 'Server URL', const [F('baseUrl', 'https://…bot-keep.xyz')], {'baseUrl': r[3]}); if (x != null && c.mounted) act(c, () => Db.put('notifierConfig/baseUrl', s(x['baseUrl']).trim()), rl); }, child: const Text('Change server URL')),
     ]),
     const SizedBox(height: 10),

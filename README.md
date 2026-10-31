@@ -26,3 +26,16 @@ Ads tab: global config, per-app Ads ON/OFF (+ available / unlockable / apps per 
 - **Users tab → Devices & fraud**: for one account, every phone it used, the other accounts on those phones, its alerts, and Reset strikes.
 - Home shows **Open fraud alerts**. Every suspend / unsuspend / dismiss / reset is written to the Audit log.
 - Database rules: admins need read access to `deviceRegistry`, `deviceOwner`, `userDevices`, `fraudStrikes`, `fraudAlerts` and write access to `fraudAlerts`, `fraudStrikes` and `users/<uid>/isSuspended`.
+
+---
+## Supabase edition
+Data now comes from **Supabase**; login is still Firebase. Firebase Realtime Database is kept only for the store's own
+update (`DarkStoreUpdate`) and the server address (`notifierConfig/baseUrl`).
+
+1. Run `06_admin.sql` (in the `supabase` folder) in the Supabase SQL editor (after 01-05).
+2. Add the GitHub secrets `SUPABASE_URL` and `SUPABASE_ANON_KEY` (publishable key) to THIS repo too.
+3. Your admin account needs `role = 'admin'` in `public.users` and the Firebase claim `role: authenticated` (already set).
+4. Approve = `approve_submission()`; Premium = `admin_set_premium()` / `premium_sweep()`; users' role/suspension = `admin_update_user()`.
+
+Still on the old notifier server (it reads Firebase, so it does not see new data yet): Notify (`/admin/send`), Ads stats/history,
+Backfill users, Fraud scan. Those need the server moved to Supabase.

@@ -4,6 +4,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter/material.dart';
 import 'core.dart';
+import 'sb.dart';
 import 'tabs.dart' hide adsTab;
 import 'ads_tab.dart';
 import 'fraud_tab.dart';
@@ -13,7 +14,8 @@ import 'fraud_tab.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
-  FirebaseDatabase.instance.databaseURL = dbUrl;
+  FirebaseDatabase.instance.databaseURL = dbUrl; // DarkStoreUpdate + notifier address only
+  await Sb.init();
   runApp(const AdminApp());
 }
 
@@ -52,11 +54,7 @@ class Gate extends StatelessWidget {
 
 Future<bool> isAdmin(User u) async {
   if (u.email == ownerEmail && u.emailVerified) return true;
-  try {
-    return (await Db.r('users/${u.uid}/role').get()).value == 'admin';
-  } catch (_) {
-    return false;
-  }
+  return SbDb.isAdminUid(u.uid);
 }
 
 class NotAdmin extends StatelessWidget {
