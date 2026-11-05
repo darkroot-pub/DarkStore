@@ -9,7 +9,10 @@ window.DS = (function () {
     BACKEND: "https://darkstore.bot-keep.xyz",
     PACKAGE: "com.darkstore.darkroot", SCHEME: "darkstore",
     SUPABASE: "https://mjhuwxmpbxmqgtfkqvsc.supabase.co",
-    ANON: "sb_publishable_1cVwbCsAjrY3cHStxiULpw_Z2d-sWqc"
+    ANON: "sb_publishable_1cVwbCsAjrY3cHStxiULpw_Z2d-sWqc",
+    /* Other stores that carry DarkRoot Store. Paste the listing link here, or set fdroidUrl / orionUrl in Firebase
+       DarkStoreUpdate (no redeploy needed; Firebase wins). Empty = the card shows "Coming soon". */
+    STORES: { fdroid: "", orion: "" }
   };
   var KEY = "ds_release_v1", CK = "ds_catalog_v1";
   function store(k, v) { try { if (v === undefined) return JSON.parse(localStorage.getItem(k)); localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} return null; }
@@ -66,6 +69,24 @@ window.DS = (function () {
       });
       Array.prototype.forEach.call(document.querySelectorAll("[data-ver]"), function (e) { e.textContent = r && r.latestVersionName ? "Version " + r.latestVersionName : ""; });
       return r;
+    });
+  }
+  // Listing links for the other stores. Fills every [data-store="fdroid|orion"] card/link on the page.
+  function stores() {
+    return release().then(function (r) {
+      var out = {};
+      ["fdroid", "orion"].forEach(function (k) {
+        var u = (r && r[k + "Url"]) || C.STORES[k] || "";
+        out[k] = /^https:\/\//i.test(u) ? u : "";
+      });
+      Array.prototype.forEach.call(document.querySelectorAll("[data-store]"), function (a) {
+        var u = out[a.dataset.store]; a.classList.toggle("soon", !u);
+        if (u) { a.href = u; a.target = "_blank"; a.rel = "noopener"; a.removeAttribute("aria-disabled"); }
+        else { a.removeAttribute("href"); a.setAttribute("aria-disabled", "true"); }
+        var l = a.querySelector("[data-slabel]"); if (l) l.textContent = u ? (a.dataset.open || "Open") : "Coming soon";
+      });
+      Array.prototype.forEach.call(document.querySelectorAll("[data-if-store]"), function (e) { e.hidden = !(out.fdroid || out.orion); });
+      return out;
     });
   }
   document.addEventListener("click", function (e) {
@@ -151,5 +172,5 @@ window.DS = (function () {
     }
   });
 
-  return { C: C, get: get, release: release, bind: bind, apps: apps, cachedApps: cachedApps, app: app, img: img, icon: icon, el: el, copy: copy, direct: direct, toast: toast, shots: shots, rate: rate, stars: stars, theme: theme };
+  return { C: C, get: get, release: release, bind: bind, stores: stores, apps: apps, cachedApps: cachedApps, app: app, img: img, icon: icon, el: el, copy: copy, direct: direct, toast: toast, shots: shots, rate: rate, stars: stars, theme: theme };
 })();

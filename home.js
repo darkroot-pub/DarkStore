@@ -5,6 +5,7 @@
 
   if (!/Android/i.test(navigator.userAgent)) $("desktopHint").hidden = false;
 
+  DS.stores();
   DS.bind().then(function (r) {
     if (r && (r.updateTitle || r.updateMessage)) {
       $("relTitle").textContent = r.updateTitle || "DarkRoot Store";

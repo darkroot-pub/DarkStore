@@ -3,7 +3,7 @@
   var id = (new URLSearchParams(location.search).get("id") || "").trim();
   function bad() { $("loading").hidden = true; $("app").hidden = true; $("bad").hidden = false; document.title = "App not found · DarkRoot Store"; }
   if (!/^[A-Za-z0-9_.\-]{1,120}$/.test(id)) { bad(); return; }
-  DS.bind();
+  DS.bind(); DS.stores();
   var android = /Android/i.test(navigator.userAgent);
   var shareUrl = location.origin + location.pathname + "?id=" + encodeURIComponent(id);
   var intent = "intent://app/" + encodeURIComponent(id) + "#Intent;scheme=" + DS.C.SCHEME + ";package=" + DS.C.PACKAGE + ";end";
