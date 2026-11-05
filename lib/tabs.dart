@@ -294,13 +294,17 @@ Future<void> userMenu(BuildContext c, String m, Map<String, dynamic> x, VoidCall
       if (res != null && res['ok'] == true) {
         await Db.audit('DELETE_USER', 'user', id, nm, 'apps=${bo(r['deleteApps'])}');
         if (c.mounted) toast(c, 'Account deleted${s(res['authError']).isEmpty ? '' : ' (login account: ${res['authError']})'}');
-      } else if (res != null) {
-        throw s(res['error']).isEmpty ? 'server refused' : s(res['error']);
+      } else if (res != null && s(res['error']).isNotEmpty && s(res['error']) != 'admin only') {
+        throw s(res['error']);
       } else {
-        // server offline: remove the data directly; the login stays until deleted in Firebase
-        await Sb.c.rpc('admin_delete_user', params: {'p_uid': id, 'p_delete_apps': bo(r['deleteApps'])});
-        await Db.audit('DELETE_USER', 'user', id, nm, 'data only (server offline)');
-        if (c.mounted) toast(c, 'Data deleted. Server offline: also delete this login in Firebase Console > Authentication.');
+        // server offline or not accepting this admin: the database itself checks that you are an admin
+        final out = await Sb.c.rpc('admin_delete_user', params: {'p_uid': id, 'p_delete_apps': bo(r['deleteApps'])});
+        await Db.audit('DELETE_USER', 'user', id, nm, 'data only (server unavailable)');
+        if (c.mounted) {
+          toast(c, out is Map && out['ok'] == true
+              ? 'Data deleted. The server is not reachable as admin, so also delete this login in Firebase Console > Authentication.'
+              : 'Nothing was deleted (no profile row). Delete the login in Firebase Console > Authentication.');
+        }
       }
     } catch (e) {
       if (c.mounted) toast(c, 'Failed: $e');
