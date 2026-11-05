@@ -52,10 +52,22 @@
     <div class="more-apps" id="related" hidden><h2>More apps</h2><div class="grid" id="relGrid"></div></div>
   </article>
 
-  <section id="bad" hidden style="border:0;text-align:center;padding:90px 0">
-    <h1 style="font-size:32px">This app isn't available</h1>
-    <p class="muted">It may have been removed, or the link is wrong.</p>
-    <a class="btn" href="./#store" style="margin-top:8px">Browse all apps</a>
+  <section id="fallback" hidden class="fb-page">
+    <img class="fb-logo" src="icon.png" alt="DarkRoot Store" width="96" height="96">
+    <h1>Open in DarkRoot Store</h1>
+    <p class="muted" id="fbText">The app opens inside DarkRoot Store, where you will find its screenshots, reviews and install button.</p>
+    <div class="acts" style="justify-content:center">
+      <a class="btn" id="fbOpen" href="#">Open in DarkRoot Store</a>
+      <a class="btn ghost" href="./#store">Browse apps</a>
+    </div>
+    <p class="small muted" id="fbStatus" role="status" style="margin:14px 0 0"></p>
+    <div class="fb-get"><p class="small muted">Don't have DarkRoot Store yet?</p>
+      <a class="btn ghost" data-dl data-text="Download DarkRoot Store" href="#"><span data-label>Download DarkRoot Store</span></a>
+      <div class="alt" data-if-store hidden>
+        <a class="btn ghost sm" data-store="fdroid" data-open="Get it on F-Droid" aria-disabled="true"><span data-slabel>F-Droid</span></a>
+        <a class="btn ghost sm" data-store="orion" data-open="Get it on Orion Store" aria-disabled="true"><span data-slabel>Orion Store</span></a></div>
+    </div>
+    <button class="linkbtn" id="fbCopy" type="button">Copy link</button>
   </section>
 </main>
 

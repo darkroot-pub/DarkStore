@@ -1,18 +1,32 @@
 (function () {
   var $ = function (i) { return document.getElementById(i); };
   var id = (new URLSearchParams(location.search).get("id") || "").trim();
-  function bad() { $("loading").hidden = true; $("app").hidden = true; $("bad").hidden = false; document.title = "App not found · DarkRoot Store"; }
-  if (!/^[A-Za-z0-9_.\-]{1,120}$/.test(id)) { bad(); return; }
   DS.bind(); DS.stores();
   var android = /Android/i.test(navigator.userAgent);
-  var shareUrl = location.origin + location.pathname + "?id=" + encodeURIComponent(id);
-  var intent = "intent://app/" + encodeURIComponent(id) + "#Intent;scheme=" + DS.C.SCHEME + ";package=" + DS.C.PACKAGE + ";end";
-  $("open").href = android ? intent : DS.C.SCHEME + "://app/" + encodeURIComponent(id);
+  // The id is only passed on to the app when it looks like a normal id (any source: DarkRoot, F-Droid package, Orion ...)
+  var valid = /^[A-Za-z0-9_.\-]{1,120}$/.test(id);
+  var path = valid ? "app/" + encodeURIComponent(id) : "";
+  var shareUrl = location.origin + location.pathname + (valid ? "?id=" + encodeURIComponent(id) : "");
+  var intent = "intent://" + path + "#Intent;scheme=" + DS.C.SCHEME + ";package=" + DS.C.PACKAGE + ";end";
+  var deep = android ? intent : DS.C.SCHEME + "://" + path;
+  $("open").href = deep; $("fbOpen").href = deep;
+  var fell = false;
+  // Details could not be loaded (not in the database, offline, any source): never a dead end, hand over to the store app.
+  function fallback() {
+    if (fell) return; fell = true;
+    $("loading").hidden = true; $("app").hidden = true; $("fallback").hidden = false;
+    document.title = "Open in DarkRoot Store";
+    $("fbStatus").textContent = android ? "Opening the app… if nothing happens, install DarkRoot Store first." : "DarkRoot Store is an Android app. Open this link on your Android phone.";
+    if (!android) $("fbOpen").hidden = true;
+  }
+  $("fbCopy").addEventListener("click", function () { DS.copy(shareUrl).then(function () { DS.toast("Link copied"); }); });
+  if (!valid) { fallback(); if (android) setTimeout(function () { location.href = intent; }, 400); return; }
+  if (android) setTimeout(function () { location.href = intent; }, 700);   // best effort: open the app straight away, whatever the data says
 
   function fact(k, v) { if (!v) return; var d = DS.el("div"); d.appendChild(DS.el("dt", "", k)); d.appendChild(DS.el("dd", "", v)); $("facts").appendChild(d); }
 
   DS.app(id).then(function (a) {
-    if (!a || a.isApproved === false || a.isSuspended === true || !a.name) { bad(); return; }
+    if (!a || a.isApproved === false || a.isSuspended === true || !a.name) { fallback(); return; }
     $("loading").hidden = true; $("app").hidden = false;
     document.title = a.name + " on DarkRoot Store";
     var d = document.querySelector('meta[name="description"]'); if (d) d.content = (a.description || "").slice(0, 150) || d.content;
@@ -54,8 +68,7 @@
       });
       $("related").hidden = false;
     });
-    if (android) setTimeout(function () { location.href = intent; }, 400);   // best effort: open the app straight away
-  });
+  }).catch(fallback);
 
   $("share").addEventListener("click", function () {
     var t = $("name").textContent;
