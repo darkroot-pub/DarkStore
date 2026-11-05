@@ -270,6 +270,7 @@ Future<Widget> usersTab(BuildContext c, VoidCallback rl) async {
               PopupMenuItem(value: 'notify', child: Text('Send notification')),
               PopupMenuItem(value: 'grant', child: Text('Grant Premium')),
               PopupMenuItem(value: 'revoke', child: Text('Remove Premium')),
+              PopupMenuItem(value: 'delete', child: Text('Delete account', style: TextStyle(color: Colors.red))),
             ],
           ),
         ),
@@ -283,6 +284,28 @@ Future<void> userMenu(BuildContext c, String m, Map<String, dynamic> x, VoidCall
     final r = await editSheet(c, 'Edit $nm', f, {...x, 'role': x['role'] == 'admin' ? 'admin' : 'user'});
     if (r == null || !c.mounted) return;
     await act(c, () async { await Db.upd('users/$id', only(r, f)); await Db.audit('EDIT_USER', 'user', id, nm, 'role=${r['role']} suspended=${r['isSuspended']}'); }, rl);
+  } else if (m == 'delete') {
+    if (x['role'] == 'admin') return toast(c, 'This is an admin. Remove the admin role first (Edit / suspend).');
+    final r = await editSheet(c, 'Delete $nm', const [F('deleteApps', "Also delete this user's apps", 'bool')], {'deleteApps': false});
+    if (r == null || !c.mounted) return;
+    if (!await confirm(c, 'Delete $nm permanently?', 'Profile, chats, reviews, followers, devices and the login account are removed. This cannot be undone.') || !c.mounted) return;
+    try {
+      final res = await Api.call('/admin/delete-user', body: {'uid': id, 'deleteApps': bo(r['deleteApps'])});
+      if (res != null && res['ok'] == true) {
+        await Db.audit('DELETE_USER', 'user', id, nm, 'apps=${bo(r['deleteApps'])}');
+        if (c.mounted) toast(c, 'Account deleted${s(res['authError']).isEmpty ? '' : ' (login account: ${res['authError']})'}');
+      } else if (res != null) {
+        throw s(res['error']).isEmpty ? 'server refused' : s(res['error']);
+      } else {
+        // server offline: remove the data directly; the login stays until deleted in Firebase
+        await Sb.c.rpc('admin_delete_user', params: {'p_uid': id, 'p_delete_apps': bo(r['deleteApps'])});
+        await Db.audit('DELETE_USER', 'user', id, nm, 'data only (server offline)');
+        if (c.mounted) toast(c, 'Data deleted. Server offline: also delete this login in Firebase Console > Authentication.');
+      }
+    } catch (e) {
+      if (c.mounted) toast(c, 'Failed: $e');
+    }
+    rl();
   } else if (m == 'devices') {
     await showUserSecurity(c, id, rl);
   } else if (m == 'notify') {

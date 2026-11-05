@@ -1,6 +1,8 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'core.dart';
+import 'sb.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Security: fraud alerts + device / account map.
@@ -21,7 +23,19 @@ class _Sec {
   final Map<String, int> strikes;
   final Map<String, Map<String, int>> devices; // device hash -> (uid -> first seen)
   final Map<String, String> owner; // device hash -> owner uid
-  _Sec(this.users, this.alerts, this.strikes, this.devices, this.owner);
+  final Map<String, Map<String, Map<String, dynamic>>> info; // device -> uid -> login details (admin_device_details)
+  _Sec(this.users, this.alerts, this.strikes, this.devices, this.owner, this.info);
+
+  Map<String, dynamic>? infoOf(String h, String u) => info[h]?[u];
+  String modelOf(String h) {
+    for (final r in (info[h] ?? const <String, Map<String, dynamic>>{}).values) {
+      if (s(r['model']).isNotEmpty) return s(r['model']);
+    }
+    return '';
+  }
+
+  bool banned(String h) => (info[h] ?? const <String, Map<String, dynamic>>{}).values.any((r) => bo(r['is_banned']));
+  bool emulator(String h) => (info[h] ?? const <String, Map<String, dynamic>>{}).values.any((r) => bo(r['is_emulator']));
 
   Map<String, dynamic>? user(String uid) => users[uid];
   bool suspended(String uid) => bo(users[uid]?['isSuspended']);
@@ -58,6 +72,7 @@ Future<_Sec> _load() async {
     Db.map('deviceRegistry'),
     Db.map('deviceOwner'),
     Db.map('userDevices'),
+    _deviceDetails(),
   ]);
   final users = {for (final u in r[0] as List<Map<String, dynamic>>) s(u['id']): u};
   final alerts = r[1] as List<Map<String, dynamic>>;
@@ -71,7 +86,54 @@ Future<_Sec> _load() async {
     if (v is Map) v.forEach((h, t) => (dev['$h'] ??= {}).putIfAbsent(u, () => ni(t)));
   });
   final owner = {for (final e in (r[4] as Map<String, dynamic>).entries) e.key: s(e.value)};
-  return _Sec(users, alerts, strikes, dev, owner);
+  final info = <String, Map<String, Map<String, dynamic>>>{};
+  for (final row in r[6] as List<Map<String, dynamic>>) {
+    (info[s(row['device_id'])] ??= {})[s(row['uid'])] = row;
+    // a phone that only the details know about still shows up in the lists
+    (dev[s(row['device_id'])] ??= {}).putIfAbsent(s(row['uid']), () => _ms(row['first_seen']));
+  }
+  return _Sec(users, alerts, strikes, dev, owner, info);
+}
+
+int _ms(Object? iso) => DateTime.tryParse('$iso')?.millisecondsSinceEpoch ?? 0;
+
+/// Login count, last login and FCM token of every account on every phone.
+Future<List<Map<String, dynamic>>> _deviceDetails() async {
+  try {
+    final x = await Sb.c.rpc('admin_device_details') as List;
+    return [for (final e in x) Map<String, dynamic>.from(e as Map)];
+  } catch (_) {
+    return <Map<String, dynamic>>[]; // 07_devices_delete_notify.sql not run yet
+  }
+}
+
+Widget _loginInfo(BuildContext c, Map<String, dynamic>? r) {
+  if (r == null) return const SizedBox.shrink();
+  final tok = s(r['fcm_token']);
+  return Padding(
+    padding: const EdgeInsets.only(left: 46, bottom: 8),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('${ni(r['login_count'])} login${ni(r['login_count']) == 1 ? '' : 's'} · last ${when(_ms(r['last_seen']))} · first ${when(_ms(r['first_seen']))}',
+          style: const TextStyle(fontSize: 11, color: Colors.grey)),
+      Row(children: [
+        Expanded(
+          child: Text(tok.isEmpty ? 'FCM token: none yet (user must open the updated app)' : 'FCM: ${_short(tok)}',
+              style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: tok.isEmpty ? Colors.orange : null)),
+        ),
+        if (tok.isNotEmpty)
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            iconSize: 16,
+            tooltip: 'Copy full FCM token',
+            icon: const Icon(Icons.copy),
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: tok));
+              toast(c, 'FCM token copied');
+            },
+          ),
+      ]),
+    ]),
+  );
 }
 
 String _short(String h) => h.length > 14 ? '${h.substring(0, 7)}…${h.substring(h.length - 5)}' : h;
@@ -152,6 +214,21 @@ Future<void> _suspendOthers(BuildContext c, _Sec d, String hash, VoidCallback rl
   }, rl, 'Suspended ${targets.length}');
 }
 
+Future<void> _banDevice(BuildContext c, _Sec d, String hash, bool ban, VoidCallback rl) async {
+  var why = '';
+  if (ban) {
+    final r = await editSheet(c, 'Ban this device', const [F('reason', 'Reason shown to the users', 'area')], {'reason': 'This device is blocked because of fraud.'});
+    if (r == null || !c.mounted) return;
+    why = s(r['reason']);
+  } else if (!await confirm(c, 'Unban this device?', 'New logins on it are allowed again. Suspended accounts stay suspended until you unsuspend them.') || !c.mounted) {
+    return;
+  }
+  await act(c, () async {
+    await Sb.c.rpc('admin_ban_device', params: {'p_hash': hash, 'p_ban': ban, 'p_reason': why});
+    await Db.audit(ban ? 'BAN_DEVICE' : 'UNBAN_DEVICE', 'device', hash, _short(hash), why);
+  }, rl, ban ? 'Device banned, its accounts are suspended' : 'Device unbanned');
+}
+
 Future<void> _setAlertStatus(BuildContext c, Map<String, dynamic> a, String status, VoidCallback rl) => act(c, () async {
       await Db.upd('fraudAlerts/${a['id']}', {'status': status, 'reviewedBy': FirebaseAuth.instance.currentUser?.email ?? '', 'reviewedAt': ms()});
       await Db.audit('FRAUD_ALERT_${status.toUpperCase()}', 'fraudAlert', s(a['id']), s(a['email']), s(a['type']));
@@ -159,9 +236,9 @@ Future<void> _setAlertStatus(BuildContext c, Map<String, dynamic> a, String stat
 
 // ───────────── Account rows + sheets ─────────────
 
-Widget _acctTile(BuildContext sheet, BuildContext tab, _Sec d, String uid, VoidCallback rl, {int ts = 0, bool owner = false, bool showDevices = false}) {
+Widget _acctTile(BuildContext sheet, BuildContext tab, _Sec d, String uid, VoidCallback rl, {int ts = 0, bool owner = false, bool showDevices = false, Widget? extra}) {
   final sus = d.suspended(uid);
-  return ListTile(
+  final tile = ListTile(
     dense: true,
     contentPadding: EdgeInsets.zero,
     leading: netImg(s(d.user(uid)?['profilePhotoUrl']), w: 36, h: 36, r: 18),
@@ -187,6 +264,7 @@ Widget _acctTile(BuildContext sheet, BuildContext tab, _Sec d, String uid, VoidC
       ],
     ),
   );
+  return extra == null ? tile : Column(children: [tile, extra]);
 }
 
 void _openUserDevices(BuildContext c, _Sec d, String uid, VoidCallback rl) {
@@ -289,8 +367,11 @@ void _openDevice(BuildContext c, _Sec d, String hash, VoidCallback rl) {
       ]),
       const SizedBox(height: 4),
       SelectableText(hash, style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+      if (d.modelOf(hash).isNotEmpty) Text(d.modelOf(hash), style: const TextStyle(fontSize: 13)),
       const SizedBox(height: 6),
       Wrap(children: [
+        if (d.banned(hash)) tagChip('BANNED', Colors.red),
+        if (d.emulator(hash)) tagChip('EMULATOR', Colors.orange),
         tagChip('${accts.length} account${accts.length == 1 ? '' : 's'}', accts.length > 1 ? Colors.red : Colors.green),
         if (suspended > 0) tagChip('$suspended suspended', Colors.red),
       ]),
@@ -307,9 +388,22 @@ void _openDevice(BuildContext c, _Sec d, String hash, VoidCallback rl) {
             ),
           ),
         ),
+      Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: OutlinedButton.icon(
+            icon: Icon(d.banned(hash) ? Icons.lock_open : Icons.gpp_bad),
+            label: Text(d.banned(hash) ? 'Unban this device' : 'Ban this device'),
+            onPressed: () { Navigator.pop(sheet); _banDevice(c, d, hash, !d.banned(hash), rl); },
+          ),
+        ),
+      ),
       const Divider(height: 24),
       const Text('Accounts logged in on this phone', style: TextStyle(fontWeight: FontWeight.bold)),
-      for (final u in accts) _acctTile(sheet, c, d, u, rl, ts: d.devices[hash]![u] ?? 0, owner: d.owner[hash] == u, showDevices: true),
+      for (final u in accts)
+        _acctTile(sheet, c, d, u, rl,
+            ts: d.devices[hash]![u] ?? 0, owner: d.owner[hash] == u, showDevices: true, extra: _loginInfo(c, d.infoOf(hash, u))),
     ]),
   );
 }
@@ -511,7 +605,7 @@ class _DevicesViewState extends State<_DevicesView> {
               ]),
             ),
           if (accts.length > 4) Text('+${accts.length - 4} more', style: const TextStyle(fontSize: 11, color: Colors.grey)),
-          Text('last login ${when(_latest(d, h))}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+          Text('${d.modelOf(h).isEmpty ? '' : '${d.modelOf(h)} · '}last login ${when(_latest(d, h))}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
         ]),
         isThreeLine: true,
         trailing: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
