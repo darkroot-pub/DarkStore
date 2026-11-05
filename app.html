@@ -40,7 +40,7 @@
   var intent = "intent://app/" + encodeURIComponent(id) + "#Intent;scheme=" + DS.C.SCHEME + ";package=" + DS.C.PACKAGE + ";end";
   $("open").href = android ? intent : DS.C.SCHEME + "://app/" + encodeURIComponent(id);
   function generic(){ $("ico").classList.add("fb"); $("logo").src = "icon.png"; }
-  DS.get("apps/" + encodeURIComponent(id)).then(function(a){
+  DS.app(id).then(function(a){
     if (!a || a.isApproved === false || a.isSuspended === true || !a.name) { generic(); return; }
     document.title = a.name + " on DarkRoot Store"; $("name").textContent = a.name;
     if (a.developer) $("by").textContent = "by " + a.developer;

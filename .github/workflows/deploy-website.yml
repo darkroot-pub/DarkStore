@@ -1,0 +1,68 @@
+# Publishes the website to GitHub Pages and puts the Supabase settings from the repository secrets
+# (the same SUPABASE_URL / SUPABASE_ANON_KEY the APK build uses) into site.js.
+# One-time: repository Settings > Pages > Build and deployment > Source = "GitHub Actions".
+name: Deploy website
+
+on:
+  push:
+    branches: [main]
+    paths: ["Website/**", ".github/workflows/deploy-website.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+env:
+  SITE_DIR: Website   # folder with index.html / site.js (use "." if the site is at the repo root)
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Put the Supabase settings into site.js
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          python3 - <<'PY'
+          import base64, json, os, sys
+          url = os.environ.get("SUPABASE_URL", "").strip().rstrip("/")
+          key = os.environ.get("SUPABASE_ANON_KEY", "").strip()
+          if not url or not key:
+              sys.exit("::error::Repository secrets SUPABASE_URL and SUPABASE_ANON_KEY must be set")
+          # a website is public: refuse a secret/service key
+          bad = key.startswith("sb_secret_")
+          if key.count(".") == 2:
+              try:
+                  p = key.split(".")[1]; p += "=" * (-len(p) % 4)
+                  bad = bad or json.loads(base64.urlsafe_b64decode(p)).get("role") == "service_role"
+              except Exception:
+                  pass
+          if bad:
+              sys.exit("::error::SUPABASE_ANON_KEY is a SECRET/service key. Use the publishable/anon key.")
+          path = os.path.join(os.environ["SITE_DIR"], "site.js")
+          s = open(path, encoding="utf-8").read()
+          if "__SUPABASE_URL__" not in s or "__SUPABASE_ANON_KEY__" not in s:
+              sys.exit("::error::site.js has no placeholders to fill")
+          s = s.replace("__SUPABASE_URL__", url).replace("__SUPABASE_ANON_KEY__", key)
+          open(path, "w", encoding="utf-8").write(s)
+          print("site.js configured for", url)
+          PY
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ env.SITE_DIR }}
+      - id: deployment
+        uses: actions/deploy-pages@v4
