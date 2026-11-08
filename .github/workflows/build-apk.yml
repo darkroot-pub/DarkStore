@@ -55,7 +55,8 @@ jobs:
           IMGBB_API_KEY: ${{ secrets.IMGBB_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-        run: flutter build apk --release --dart-define=IMGBB_API_KEY=$IMGBB_API_KEY --dart-define=SUPABASE_URL=$SUPABASE_URL --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY
+          SECURITY_API: ${{ secrets.SECURITY_API }}
+        run: flutter build apk --release --dart-define=IMGBB_API_KEY=$IMGBB_API_KEY --dart-define=SUPABASE_URL=$SUPABASE_URL --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY --dart-define=SECURITY_API=$SECURITY_API
 
       - name: Print APK signing certificate
         run: |

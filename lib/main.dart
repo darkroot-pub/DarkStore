@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'core.dart';
 import 'sb.dart';
 import 'tabs.dart' hide adsTab;
+import 'security_tab.dart';
 import 'ads_tab.dart';
 import 'fraud_tab.dart';
 
@@ -135,6 +136,7 @@ class Shell extends StatelessWidget {
     final tabs = <(String, IconData, Widget)>[
       ('Home', Icons.dashboard, FutureTab(homeTab)),
       ('Submissions', Icons.inbox, FutureTab(subsTab)),
+      ('Security', Icons.shield_moon, const SecurityTab()),
       ('Catalog', Icons.store, FutureTab(catalogTab)),
       ('Update', Icons.system_update, FutureTab(updateTab)),
       ('Users', Icons.people, FutureTab(usersTab)),

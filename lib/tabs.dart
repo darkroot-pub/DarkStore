@@ -5,6 +5,8 @@ import 'core.dart';
 import 'sb.dart';
 import 'fraud_tab.dart';
 import 'previews.dart';
+import 'security_api.dart';
+import 'security_tab.dart';
 import 'uploader.dart';
 
 Map<String, Object?> only(Map<String, dynamic> r, List<F> f) => {for (final x in f) x.k: r[x.k]};
@@ -46,6 +48,14 @@ Future<Widget> homeTab(BuildContext c, VoidCallback rl) async {
     'Pending review': sb.where((x) => s(x['status']).isEmpty || s(x['status']).toLowerCase() == 'pending').length,
     'App reports': a.where((x) => s(x['reportsJson']).isNotEmpty).length, 'Feedback': r[3].length,
   };
+  // security backend (optional): what needs a human and what failed
+  try {
+    if (await SecApi.configured()) {
+      final sec = await SecApi.overview();
+      st['Needs security review'] = ni(sec['needs_review']);
+      st['Security failures'] = ni(sec['failed']);
+    }
+  } catch (_) {}
   return listPage([
     Wrap(spacing: 8, runSpacing: 8, children: [
       for (final e in st.entries) SizedBox(width: 105, child: Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('${e.value}', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800)), Text(e.key, style: const TextStyle(fontSize: 11, color: Colors.grey))])))),
@@ -58,13 +68,22 @@ Future<Widget> subsTab(BuildContext c, VoidCallback rl) async {
   final L = await Db.list('submissions');
   bool pend(Map x) => s(x['status']).isEmpty || s(x['status']).toLowerCase() == 'pending';
   L.sort((a, b) => pend(a) != pend(b) ? (pend(a) ? -1 : 1) : ni(b['createdAt']).compareTo(ni(a['createdAt'])));
+  // latest security status of the newest 100 checked submissions (one call)
+  var sec = <String, Map<String, dynamic>>{};
+  try {
+    if (await SecApi.configured()) {
+      final r = await SecApi.list(limit: 100);
+      sec = {for (final it in asMaps(r['items'])) s(it['submission_id']): it};
+    }
+  } catch (_) {}
   return Searchable(L, (x) => '${x['name']} ${x['packageName']} ${x['submittedBy']}', (x) {
     final st = pend(x) ? 'Pending' : s(x['status']);
     return Card(
       child: ListTile(
         leading: netImg(s(x['logo'])),
         title: Text(s(x['name'])),
-        subtitle: Wrap(children: [Text('${x['packageName']} · v${x['version']}  ', style: const TextStyle(fontSize: 12)), if (bo(x['isUpdateSubmission'])) tagChip('UPDATE', Colors.orange), if (bo(x['isUpcoming'])) tagChip('UPCOMING', Colors.purple)]),
+        subtitle: Wrap(children: [Text('${x['packageName']} · v${x['version']}  ', style: const TextStyle(fontSize: 12)), if (bo(x['isUpdateSubmission'])) tagChip('UPDATE', Colors.orange), if (bo(x['isUpcoming'])) tagChip('UPCOMING', Colors.purple),
+          if (sec[s(x['id'])] != null) tagChip('SECURITY: ${statusV(s(sec[s(x['id'])]!['status'])).label.toUpperCase()}', statusV(s(sec[s(x['id'])]!['status'])).color)]),
         trailing: tagChip(st, st.toLowerCase() == 'approved' ? Colors.green : st.toLowerCase() == 'rejected' ? Colors.red : Colors.orange),
         onTap: () => subDetail(c, x, rl),
       ),
@@ -86,6 +105,12 @@ void subDetail(BuildContext c, Map<String, dynamic> x, VoidCallback rl) {
       if (s(x['videoUrl']).isNotEmpty) Text('Video: ${x['videoUrl']}', style: const TextStyle(fontSize: 12)),
       if (s(x['feedback']).isNotEmpty) Text('Feedback: ${x['feedback']}'),
       const SizedBox(height: 12),
+      OutlinedButton.icon(
+        onPressed: () { Navigator.pop(d); openSecurityReport(c, x); },
+        icon: const Icon(Icons.shield_moon_rounded),
+        label: const Text('Security report (scan, signature, permissions)'),
+      ),
+      const SizedBox(height: 10),
       if (pending) Row(children: [
         Expanded(child: FilledButton(style: FilledButton.styleFrom(backgroundColor: Colors.green), onPressed: () { Navigator.pop(d); approveSub(c, x, rl); }, child: const Text('Approve'))),
         const SizedBox(width: 10),
