@@ -107,7 +107,7 @@ String toCsv(List<Map<String, dynamic>> rows, List<String> cols, {Set<String> da
 }
 
 /// Settings rows that can be backed up and restored (one JSON row each in `app_config`).
-const backupKeys = ['adsConfig', 'unityAdsConfig', 'maintenanceConfig', 'premiumConfig', 'eventConfig', 'profileUiConfig'];
+const backupKeys = ['adsConfig', 'unityAdsConfig', 'maintenanceConfig', 'premiumConfig', 'eventConfig', 'profileUiConfig', 'navUiConfig'];
 
 Future<Widget> toolsTab(BuildContext c, VoidCallback rl) async {
   Future<void> exportCsv(String what, String path, List<String> cols) async {
@@ -170,7 +170,7 @@ Future<Widget> toolsTab(BuildContext c, VoidCallback rl) async {
     tool(Icons.apps, 'Apps', 'name, package, version, category, developer, status flags', () => exportCsv('Apps', 'apps', const ['id', 'name', 'packageName', 'version', 'versionCode', 'category', 'developer', 'submittedBy', 'isApproved', 'isSuspended', 'isFeatured', 'isPremium', 'createdAt'])),
     tool(Icons.inbox_outlined, 'Submissions', 'every submission with its status and who sent it', () => exportCsv('Submissions', 'submissions', const ['id', 'name', 'packageName', 'version', 'versionCode', 'status', 'submittedBy', 'createdAt'])),
     head('Settings backup'),
-    tool(Icons.save_alt, 'Copy all settings', 'Ads, maintenance, premium, event popup and the profile card design as JSON', backup),
+    tool(Icons.save_alt, 'Copy all settings', 'Ads, maintenance, premium, event popup, profile card and bottom bar designs as JSON', backup),
     tool(Icons.restore, 'Restore settings from clipboard', 'Paste a backup made above, then confirm', restore),
     const Padding(
       padding: EdgeInsets.all(8),

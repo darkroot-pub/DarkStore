@@ -10,6 +10,7 @@ import 'security_tab.dart';
 import 'ads_tab.dart';
 import 'fraud_tab.dart';
 import 'profile_ui_tab.dart';
+import 'nav_ui_tab.dart';
 import 'tools_tab.dart';
 
 // NOTE: this admin app never asks for / saves an FCM token. The user app already
@@ -148,6 +149,7 @@ class Shell extends StatelessWidget {
       ('Events', Icons.celebration, FutureTab(eventsTab)),
       ('Banners', Icons.view_carousel, FutureTab(bannersTab)),
       ('Profile UI', Icons.badge, const ProfileUiTab()),
+      ('Nav bar', Icons.view_day, const NavUiTab()),
       ('Collections', Icons.collections, FutureTab(collectionsTab)),
       ('Ads', Icons.campaign, FutureTab(adsTab)),
       ('Feedback', Icons.flag, FutureTab(feedbackTab)),

@@ -130,7 +130,7 @@ const _tables = <String, _T>{
 };
 
 /// Settings stored as one JSON row each in `app_config`.
-const _configs = {'adsConfig', 'unityAdsConfig', 'maintenanceConfig', 'premiumConfig', 'eventConfig', 'profileUiConfig'};
+const _configs = {'adsConfig', 'unityAdsConfig', 'maintenanceConfig', 'premiumConfig', 'eventConfig', 'profileUiConfig', 'navUiConfig'};
 
 dynamic _from(dynamic v, String t) {
   switch (t) {
