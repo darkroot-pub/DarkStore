@@ -5,6 +5,7 @@ import 'core.dart';
 import 'sb.dart';
 import 'fraud_tab.dart';
 import 'previews.dart';
+import 'tools_tab.dart';
 import 'security_api.dart';
 import 'security_tab.dart';
 import 'uploader.dart';
@@ -60,6 +61,7 @@ Future<Widget> homeTab(BuildContext c, VoidCallback rl) async {
     Wrap(spacing: 8, runSpacing: 8, children: [
       for (final e in st.entries) SizedBox(width: 105, child: Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('${e.value}', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800)), Text(e.key, style: const TextStyle(fontSize: 11, color: Colors.grey))])))),
     ]),
+    ...homeInsights(a, u, sb),
   ]);
 }
 
