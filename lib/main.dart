@@ -12,6 +12,7 @@ import 'fraud_tab.dart';
 import 'profile_ui_tab.dart';
 import 'nav_ui_tab.dart';
 import 'tools_tab.dart';
+import 'control_tabs.dart';
 
 // NOTE: this admin app never asks for / saves an FCM token. The user app already
 // stores each person's token; the admin only SENDS pushes through the server.
@@ -141,15 +142,18 @@ class Shell extends StatelessWidget {
       ('Submissions', Icons.inbox, FutureTab(subsTab)),
       ('Security', Icons.shield_moon, const SecurityTab()),
       ('Catalog', Icons.store, FutureTab(catalogTab)),
-      ('Update', Icons.system_update, FutureTab(updateTab)),
+      ('Push update', Icons.system_update, FutureTab(updateTab)),
       ('Users', Icons.people, FutureTab(usersTab)),
       ('Fraud', Icons.gpp_maybe, FutureTab(fraudTab)),
+      ('Guard', Icons.security, FutureTab(guardTab)),
       ('Devices', Icons.devices, FutureTab(devicesTab)),
       ('Notify', Icons.notifications, const NotifyTab()),
       ('Events', Icons.celebration, FutureTab(eventsTab)),
       ('Banners', Icons.view_carousel, FutureTab(bannersTab)),
       ('Profile UI', Icons.badge, const ProfileUiTab()),
       ('Nav bar', Icons.view_day, const NavUiTab()),
+      ('Announce', Icons.announcement, FutureTab(announceTab)),
+      ('Features', Icons.toggle_on, FutureTab(featuresTab)),
       ('Collections', Icons.collections, FutureTab(collectionsTab)),
       ('Ads', Icons.campaign, FutureTab(adsTab)),
       ('Feedback', Icons.flag, FutureTab(feedbackTab)),

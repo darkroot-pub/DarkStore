@@ -136,6 +136,8 @@ Widget updatePrev(Map<String, dynamic> v) => _frame(Card(
           const SizedBox(height: 8),
           Text(s(v['updateTitle']).isEmpty ? 'Update available' : s(v['updateTitle']), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
           Text(s(v['updateMessage']).isEmpty ? 'A new version (${s(v['latestVersionName'])}) is available.' : s(v['updateMessage']), textAlign: TextAlign.center),
+          for (final l in s(v['releaseNotes']).split('\n').where((x) => x.trim().isNotEmpty).take(5))
+            Align(alignment: Alignment.centerLeft, child: Padding(padding: const EdgeInsets.only(top: 3), child: Text('•  ${l.trim()}', style: const TextStyle(fontSize: 12)))),
           const SizedBox(height: 10),
           Row(mainAxisAlignment: MainAxisAlignment.center, children: [
             if (!bo(v['forceUpdate'])) TextButton(onPressed: () {}, child: const Text('Later')),

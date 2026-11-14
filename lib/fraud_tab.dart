@@ -192,7 +192,7 @@ Future<void> _setSuspended(BuildContext c, _Sec d, String uid, bool on, VoidCall
     final r = await editSheet(c, 'Suspend $label', const [F('reason', 'Reason shown to the user', 'area')], {'reason': reason});
     if (r == null || !c.mounted) return;
     why = s(r['reason']);
-  } else if (!await confirm(c, 'Unsuspend $label?', 'They can sign in and use the app again.') || !c.mounted) {
+  } else if (!await confirm(c, 'Unsuspend $label?', 'They can sign in and use the app again, and the automatic security rules will not suspend them again (see the Guard tab for how long).') || !c.mounted) {
     return;
   }
   await act(c, () async {

@@ -236,7 +236,7 @@ Future<void> appMenu(BuildContext c, String m, Map<String, dynamic> x, VoidCallb
 }
 
 // ───────────── Push update / maintenance / premium ─────────────
-const updFields = [F('latestVersionName', 'Latest version name'), F('latestVersionCode', 'Latest version code', 'num'), F('apkDownloadUrl', 'APK download URL'), F('updateTitle', 'Dialog title'), F('updateMessage', 'Dialog message', 'area'), F('forceUpdate', 'Force update (cannot be skipped)', 'bool')];
+const updFields = [F('latestVersionName', 'Latest version name'), F('latestVersionCode', 'Latest version code', 'num'), F('apkDownloadUrl', 'APK download URL'), F('updateTitle', 'Dialog title'), F('updateMessage', 'Dialog message', 'area'), F('forceUpdate', 'Force update (cannot be skipped)', 'bool'), F('minVersionCode', 'Minimum version code (older apps MUST update, 0 = off)', 'num'), F('releaseNotes', 'What is new (one point per line)', 'area'), F('remindHours', 'After "Later", ask again after (hours, 0 = every start)', 'num')];
 
 Future<Widget> updateTab(BuildContext c, VoidCallback rl) async {
   final r = await Future.wait([Db.map('DarkStoreUpdate'), Db.map('maintenanceConfig'), Db.map('premiumConfig'), Db.map('app_policy')]);

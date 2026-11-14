@@ -80,6 +80,7 @@ const _users = _T('users', 'uid', {
   'profilePhotoUrl': _C('profile_photo_url'), 'role': _C('role'), 'isDeveloper': _C('is_developer', 'b'),
   'isPremiumMember': _C('is_premium_member', 'b'), 'isEmailVerified': _C('is_email_verified', 'b'),
   'isSuspended': _C('is_suspended', 'b'), 'suspensionReason': _C('suspension_reason'), 'createdAt': _C('created_at', 'ts'),
+  'guardExemptUntil': _C('guard_exempt_until', 'ts'),
 });
 
 const _subs = _T('submissions', 'id', {
@@ -130,7 +131,15 @@ const _tables = <String, _T>{
 };
 
 /// Settings stored as one JSON row each in `app_config`.
-const _configs = {'adsConfig', 'unityAdsConfig', 'maintenanceConfig', 'premiumConfig', 'eventConfig', 'profileUiConfig', 'navUiConfig'};
+const _configs = {'adsConfig', 'unityAdsConfig', 'maintenanceConfig', 'premiumConfig', 'eventConfig', 'profileUiConfig', 'navUiConfig', 'announceConfig', 'featureFlags'};
+
+/// device_guard_config (one row): suspension settings, edited in the admin Guard tab.
+const _guardCols = <String, _C>{
+  'autoSuspend': _C('auto_suspend', 'b'), 'maxAccounts': _C('max_accounts', 'i'), 'blockEmulators': _C('block_emulators', 'b'),
+  'warningsBeforeSuspend': _C('warnings_before_suspend', 'i'), 'warnCooldownMinutes': _C('warn_cooldown_minutes', 'i'),
+  'exemptAfterUnsuspend': _C('exempt_after_unsuspend', 'b'), 'exemptDays': _C('exempt_days', 'i'),
+  'resetStrikesOnUnsuspend': _C('reset_strikes_on_unsuspend', 'b'), 'warningMessage': _C('warning_message'),
+};
 
 dynamic _from(dynamic v, String t) {
   switch (t) {
@@ -212,7 +221,7 @@ class SbDb {
     final r = _root(p);
     return _tables.containsKey(r) ||
         _configs.contains(r) ||
-        const {'app_policy', 'fraudStrikes', 'deviceRegistry', 'deviceOwner', 'userDevices', 'submissionLocks'}.contains(r);
+        const {'app_policy', 'guardConfig', 'fraudWarnings', 'fraudStrikes', 'deviceRegistry', 'deviceOwner', 'userDevices', 'submissionLocks'}.contains(r);
   }
 
   static Future<List<Map<String, dynamic>>> _all(String from, {String? order, bool asc = false}) async {
@@ -260,6 +269,14 @@ class SbDb {
       return v is Map ? Map<String, dynamic>.from(v) : <String, dynamic>{};
     }
     switch (r) {
+      case 'guardConfig':
+        {
+          final x = await Sb.c.from('device_guard_config').select().eq('id', 1).limit(1) as List;
+          final row = x.isEmpty ? <String, dynamic>{} : Map<String, dynamic>.from(x.first as Map);
+          return {for (final e in _guardCols.entries) e.key: _from(row[e.value.col], e.value.t)};
+        }
+      case 'fraudWarnings':
+        return {for (final x in await _all('fraud_strikes')) if ((x['warnings'] ?? 0) is num && (x['warnings'] ?? 0) > 0) '${x['uid']}': x['warnings']};
       case 'app_policy':
         return _policy();
       case 'appAds':
@@ -310,6 +327,17 @@ class SbDb {
     if (_configs.contains(r)) {
       final cur = await map(r);
       await Sb.c.from('app_config').upsert({'key': r, 'value': {...cur, ...v}}, onConflict: 'key');
+      return;
+    }
+    if (r == 'guardConfig') {
+      final row = <String, dynamic>{'id': 1};
+      v.forEach((k, x) {
+        final c = _guardCols[k];
+        if (c == null) return;
+        final y = _to(x, c.t);
+        row[c.col] = y is int ? (c.col == 'max_accounts' ? (y < 1 ? 1 : y) : (y < 0 ? 0 : y)) : y;
+      });
+      await Sb.c.from('device_guard_config').upsert(row, onConflict: 'id');
       return;
     }
     if (r == 'app_policy') {
