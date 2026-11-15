@@ -339,6 +339,7 @@ const _features = <(String, String, String, IconData)>[
 Future<Widget> featuresTab(BuildContext c, VoidCallback rl) async {
   final e = await Db.map('featureFlags');
   bool isOn(String k) => e[k] != false && s(e[k]) != 'false';
+  int pct(String k) => e['${k}Pct'] == null ? 100 : ni(e['${k}Pct']).clamp(0, 100).toInt();
   final off = _features.where((f) => !isOn(f.$1)).length;
 
   return listPage([
@@ -348,7 +349,7 @@ Future<Widget> featuresTab(BuildContext c, VoidCallback rl) async {
     const SizedBox(height: 8),
     Card(
       child: Column(children: [
-        for (final f in _features)
+        for (final f in _features) ...[
           SwitchListTile(
             secondary: Icon(f.$4),
             title: Text(f.$2),
@@ -359,6 +360,24 @@ Future<Widget> featuresTab(BuildContext c, VoidCallback rl) async {
               await Db.audit('FEATURE_FLAG', 'config', 'featureFlags', f.$2, v ? 'on' : 'off');
             }, rl, v ? '${f.$2} is ON' : '${f.$2} is OFF for everyone'),
           ),
+          if (isOn(f.$1))
+            ListTile(
+              dense: true,
+              contentPadding: const EdgeInsetsDirectional.only(start: 72, end: 16),
+              title: Text(pct(f.$1) >= 100 ? 'Available to everyone' : 'Gradual rollout: ${pct(f.$1)}% of people'),
+              subtitle: pct(f.$1) >= 100 ? null : const Text('The same people every time; raise it step by step'),
+              trailing: const Icon(Icons.tune, size: 18),
+              onTap: () async {
+                final x = await editSheet(c, '${f.$2}: share of people (0-100)', [F('${f.$1}Pct', 'Percent of people who get it', 'num')], {'${f.$1}Pct': pct(f.$1)});
+                if (x == null || !c.mounted) return;
+                final n = ni(x['${f.$1}Pct']).clamp(0, 100).toInt();
+                await act(c, () async {
+                  await Db.upd('featureFlags', {'${f.$1}Pct': n});
+                  await Db.audit('FEATURE_ROLLOUT', 'config', 'featureFlags', f.$2, '$n%');
+                }, rl, '${f.$2}: $n% of people');
+              },
+            ),
+        ],
         ListTile(
           leading: const Icon(Icons.message_outlined),
           title: const Text('Message shown when a feature is off'),
@@ -374,7 +393,8 @@ Future<Widget> featuresTab(BuildContext c, VoidCallback rl) async {
     const SizedBox(height: 10),
     const Text(
       'Switching a feature off takes effect in the store app within a minute or two, without a new build. '
-      'Admins are not exempt, so test with care. Turn it back on the same way.',
+      'A rollout below 100% gives the feature to that share of people (always the same people), so you can release slowly and stop if something goes wrong. '
+      'Admins are not exempt, so test with care.',
       style: TextStyle(fontSize: 12, color: Colors.grey, height: 1.4),
     ),
   ]);

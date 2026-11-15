@@ -32,3 +32,12 @@ Settings backup (Tools) now includes the announcement and feature switches.
 Files in this zip: `lib/control_tabs.dart` (new), `lib/sb.dart`, `lib/main.dart`, `lib/tabs.dart`,
 `lib/previews.dart`, `lib/tools_tab.dart`, `lib/fraud_tab.dart`, `supabase/08_guard_settings.sql`.
 Copy them over the same names in your admin project. Not compiled here: send the first `Error:` line if CI complains.
+
+---
+# Added later: Support, Help / FAQ, rollout
+- **Support** tab: Telegram (default t.me/davidstha01, already saved in the database), e-mail, website, privacy/terms links,
+  one extra button, response note, suspension page title/message, show/hide on the suspension page. Live preview.
+- **Help / FAQ** tab: add, edit, reorder, hide, delete questions; shown in the store app under Settings > About > Help & support.
+- **Features** tab: each switch now has a **rollout %** (give a feature to 10%, then 50%, then everyone).
+- Settings backup (Tools) includes support and FAQ.
+Extra files in this zip: `lib/help_tabs.dart` (new).
