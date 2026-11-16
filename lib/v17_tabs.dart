@@ -261,7 +261,7 @@ Future<Widget> reviewsAdminTab(BuildContext c, VoidCallback rl) async {
             if (reports > 0) tagChip('$reports REPORT${reports == 1 ? '' : 'S'}', Colors.red),
           ]),
           const SizedBox(height: 2),
-          Text('${x['user']} · ${'★' * ni(x['stars'])}${'☆' * (5 - ni(x['stars']).clamp(0, 5))} · ${ni(x['helpful'])} helpful', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+          Text('${x['user']} · ${'★' * ni(x['stars'])}${'☆' * (5 - ni(x['stars']).clamp(0, 5).toInt())} · ${ni(x['helpful'])} helpful', style: const TextStyle(fontSize: 12, color: Colors.grey)),
           if (s(x['msg']).isNotEmpty) Padding(padding: const EdgeInsets.only(top: 6), child: Text(s(x['msg']))),
           if (counts.isNotEmpty)
             Padding(

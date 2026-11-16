@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>DarkStore API for developers</title><meta name="description" content="Show every app published on DarkStore inside your own store or site with a simple JSON API.">
+<meta name="theme-color" content="#f5f8fc">
+<link rel="icon" href="favicon.png"><link rel="apple-touch-icon" href="apple-touch-icon.png">
+<script>try{var t=localStorage.getItem("ds_theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="site.css">
+<style>
+.doc{max-width:820px;margin:0 auto;padding:30px 0 70px}
+.doc h1{font:800 clamp(30px,5vw,44px)/1.1 var(--display);margin:0 0 10px}
+.doc h2{font:700 24px var(--display);margin:38px 0 8px}
+.doc p,.doc li{line-height:1.6;color:var(--steel)}
+.doc pre{background:var(--soft);border:1px solid var(--line);border-radius:14px;padding:14px 16px;overflow:auto;font:13px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ink)}
+.doc code{font:13px ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--soft);padding:2px 6px;border-radius:6px;color:var(--ink)}
+.doc pre code{background:none;padding:0}
+.doc table{width:100%;border-collapse:collapse;font-size:14px;margin:8px 0}
+.doc th,.doc td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top;color:var(--steel)}
+.doc th{color:var(--ink)}
+.pill{display:inline-block;font:700 12px var(--body);padding:3px 9px;border-radius:99px;background:var(--soft);color:var(--blue);margin-right:6px}
+.live{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:12px 0}
+#apistate{font-weight:600}
+</style>
+</head><body>
+<header class="nav"><div class="wrap">
+  <a class="brand" href="./"><img src="favicon.png" alt="" width="34" height="34">DarkRoot Store</a>
+  <span style="flex:1"></span>
+  <button class="iconbtn" type="button" data-theme-toggle><svg class="ico-s sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4l1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><svg class="ico-s moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+</div></header>
+
+<main class="wrap"><div class="doc">
+  <h1>DarkStore API</h1>
+  <p>Show every app published on DarkStore in your own store, website or app. You get JSON with names, icons, screenshots, versions, ratings and (if allowed for your key) the APK download link. Apps appear here only after they passed DarkStore's review, and the list updates by itself.</p>
+  <div class="live"><span class="pill">Status</span><span id="apistate">checking…</span></div>
+
+  <h2>1. Get a key</h2>
+  <p>Ask the DarkStore team for an API key (see our <a href="https://github.com/darkrootiding-hub" rel="noopener">GitHub</a>). Every key has its own speed limit and can be paused at any time. Keep it secret: call the API from your server, not from public JavaScript.</p>
+
+  <h2>2. Make a request</h2>
+  <p>Base address:</p>
+  <pre><code id="base">https://mjhuwxmpbxmqgtfkqvsc.supabase.co/functions/v1/store-api/v1</code></pre>
+  <p>Send the key in the <code>X-API-Key</code> header (or <code>Authorization: Bearer &lt;key&gt;</code>). Only <code>GET</code> is supported.</p>
+<pre><code>curl -H "X-API-Key: YOUR_KEY" \
+  "https://mjhuwxmpbxmqgtfkqvsc.supabase.co/functions/v1/store-api/v1/apps?limit=20&amp;sort=rating"</code></pre>
+
+  <h2>Endpoints</h2>
+  <table>
+    <tr><th>Endpoint</th><th>What it returns</th></tr>
+    <tr><td><code>GET /apps</code></td><td>A page of published apps.</td></tr>
+    <tr><td><code>GET /apps/{packageName}</code></td><td>One app, e.g. <code>/apps/com.example.app</code>.</td></tr>
+    <tr><td><code>GET /categories</code></td><td>Categories with the number of apps in each.</td></tr>
+    <tr><td><code>GET /status</code></td><td>Whether the API is on. No key needed.</td></tr>
+  </table>
+  <h2>Parameters for /apps</h2>
+  <table>
+    <tr><th>Name</th><th>Meaning</th></tr>
+    <tr><td><code>q</code></td><td>Search words (name, package, developer, description). Needs the "search" permission on your key.</td></tr>
+    <tr><td><code>category</code></td><td>Only this category.</td></tr>
+    <tr><td><code>sort</code></td><td><code>updated</code> (default), <code>rating</code>, <code>name</code> or <code>new</code>.</td></tr>
+    <tr><td><code>limit</code></td><td>Apps per page (default 20, usually up to 100).</td></tr>
+    <tr><td><code>offset</code></td><td>How many apps to skip (for the next page).</td></tr>
+    <tr><td><code>updated_since</code></td><td>ISO date. Only apps changed since then, so you can sync cheaply, e.g. <code>2026-01-31T00:00:00Z</code>.</td></tr>
+  </table>
+
+  <h2>Example answer</h2>
+<pre><code>{
+  "data": [{
+    "id": "app_1794760376500_339",
+    "packageName": "air.strike.one",
+    "name": "AIR STRIKE",
+    "developer": "Example Dev",
+    "category": "Tools",
+    "version": "1.0.0", "versionCode": 1, "size": "6.3 MB",
+    "rating": 5, "logo": "https://…/logo.png",
+    "description": "…", "screenshots": ["https://…"], "video": "",
+    "changelog": "", "hasAds": false, "featured": false,
+    "createdAt": "2026-11-15T16:32:56Z", "updatedAt": "2026-11-16T09:38:23Z",
+    "download": { "url": "https://…/app.apk" }
+  }],
+  "meta": { "total": 39, "limit": 20, "offset": 0, "count": 20, "hasMore": true }
+}</code></pre>
+  <p><code>download</code> is only present if DarkStore allows it for your key and for that app. Some fields (description, screenshots, video, changelog) can be switched off by DarkStore.</p>
+
+  <h2>Limits and errors</h2>
+  <p>Every answer carries <code>X-RateLimit-Limit</code> and <code>X-RateLimit-Remaining</code> (per minute). When you go over, you get <code>429</code> with a <code>Retry-After</code> header. Cache the list on your side and use <code>updated_since</code>.</p>
+  <table>
+    <tr><th>Status</th><th><code>error.code</code></th><th>Meaning</th></tr>
+    <tr><td>400</td><td>bad_request</td><td>A parameter is wrong.</td></tr>
+    <tr><td>401</td><td>key_required / invalid_key</td><td>No key, or the key is wrong, paused or expired.</td></tr>
+    <tr><td>403</td><td>scope / ip_not_allowed / origin_not_allowed</td><td>Your key may not do this, or not from here.</td></tr>
+    <tr><td>404</td><td>not_found</td><td>No published app with that package name.</td></tr>
+    <tr><td>429</td><td>rate_limited</td><td>Too many requests. Wait and retry.</td></tr>
+    <tr><td>503</td><td>api_disabled / unavailable</td><td>The API is switched off or busy. Try again later.</td></tr>
+  </table>
+
+  <h2>More examples</h2>
+<pre><code># JavaScript (Node 18+)
+const r = await fetch(BASE + "/apps?limit=50", { headers: { "X-API-Key": process.env.DARKSTORE_KEY } });
+const { data, meta } = await r.json();
+
+# Python
+import os, requests
+r = requests.get(BASE + "/apps", params={"limit": 50}, headers={"X-API-Key": os.environ["DARKSTORE_KEY"]})
+apps = r.json()["data"]</code></pre>
+
+  <h2>Please</h2>
+  <ul>
+    <li>Link back to the app's DarkStore page or say the apps come from DarkStore.</li>
+    <li>Do not re-host APK files; use the <code>download.url</code> we give you.</li>
+    <li>Remove apps from your store when they disappear from the API (they were unpublished or suspended).</li>
+  </ul>
+</div></main>
+<footer><div class="wrap"><span>© DarkRoot Organizations</span><a href="./">Home</a><span class="r" data-ver></span></div></footer>
+<script src="site.js"></script>
+<script>
+(function(){var b=document.getElementById("base").textContent.trim(),el=document.getElementById("apistate");
+fetch(b+"/status").then(function(r){return r.json()}).then(function(j){el.textContent=j.enabled?"API is online":(j.message||"API is switched off")}).catch(function(){el.textContent="could not check right now"})})();
+</script>
+</body></html>
