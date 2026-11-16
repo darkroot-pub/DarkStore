@@ -131,7 +131,7 @@ const _tables = <String, _T>{
 };
 
 /// Settings stored as one JSON row each in `app_config`.
-const _configs = {'adsConfig', 'unityAdsConfig', 'maintenanceConfig', 'premiumConfig', 'eventConfig', 'profileUiConfig', 'navUiConfig', 'announceConfig', 'featureFlags', 'supportConfig', 'faqConfig', 'limitsConfig', 'chatRules', 'recommendConfig', 'homeLayout', 'shareConfig'};
+const _configs = {'adsConfig', 'unityAdsConfig', 'maintenanceConfig', 'premiumConfig', 'eventConfig', 'profileUiConfig', 'navUiConfig', 'announceConfig', 'featureFlags', 'supportConfig', 'faqConfig', 'limitsConfig', 'chatRules', 'recommendConfig', 'homeLayout', 'shareConfig', 'searchConfig', 'reviewConfig', 'appBoxUiConfig'};
 
 /// device_guard_config (one row): suspension settings, edited in the admin Guard tab.
 const _guardCols = <String, _C>{

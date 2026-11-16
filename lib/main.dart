@@ -15,6 +15,8 @@ import 'tools_tab.dart';
 import 'control_tabs.dart';
 import 'help_tabs.dart';
 import 'v16_tabs.dart';
+import 'v17_tabs.dart';
+import 'app_box_tab.dart';
 
 // NOTE: this admin app never asks for / saves an FCM token. The user app already
 // stores each person's token; the admin only SENDS pushes through the server.
@@ -160,6 +162,9 @@ class Shell extends StatelessWidget {
       ('Help / FAQ', Icons.quiz, FutureTab(faqTab)),
       ('Rules', Icons.gavel, FutureTab(rulesTab)),
       ('Suggestions', Icons.auto_awesome, FutureTab(suggestTab)),
+      ('Search', Icons.manage_search, FutureTab(searchAdminTab)),
+      ('Reviews', Icons.rate_review, FutureTab(reviewsAdminTab)),
+      ('App box', Icons.dashboard_customize, const AppBoxTab()),
       ('Home layout', Icons.view_agenda, FutureTab(homeLayoutTab)),
       ('Share text', Icons.share, FutureTab(shareTab)),
       ('Collections', Icons.collections, FutureTab(collectionsTab)),

@@ -66,10 +66,17 @@ Future<Widget> homeTab(BuildContext c, VoidCallback rl) async {
 }
 
 // ───────────── Submissions ─────────────
+String _subState(Map<String, dynamic> x) {
+  final v = s(x['status']).toLowerCase();
+  return v.isEmpty ? 'pending' : v;
+}
+
 Future<Widget> subsTab(BuildContext c, VoidCallback rl) async {
   final L = await Db.list('submissions');
-  bool pend(Map x) => s(x['status']).isEmpty || s(x['status']).toLowerCase() == 'pending';
-  L.sort((a, b) => pend(a) != pend(b) ? (pend(a) ? -1 : 1) : ni(b['createdAt']).compareTo(ni(a['createdAt'])));
+  L.sort((a, b) {
+    final pa = _subState(a) == 'pending', pb = _subState(b) == 'pending';
+    return pa != pb ? (pa ? -1 : 1) : ni(b['createdAt']).compareTo(ni(a['createdAt']));
+  });
   // latest security status of the newest 100 checked submissions (one call)
   var sec = <String, Map<String, dynamic>>{};
   try {
@@ -78,23 +85,86 @@ Future<Widget> subsTab(BuildContext c, VoidCallback rl) async {
       sec = {for (final it in asMaps(r['items'])) s(it['submission_id']): it};
     }
   } catch (_) {}
-  return Searchable(L, (x) => '${x['name']} ${x['packageName']} ${x['submittedBy']}', (x) {
-    final st = pend(x) ? 'Pending' : s(x['status']);
+  return SubsView(L, sec, c, rl);
+}
+
+/// Submission list with All / Pending / Rejected / Approved filters and search.
+class SubsView extends StatefulWidget {
+  final List<Map<String, dynamic>> items;
+  final Map<String, Map<String, dynamic>> sec;
+  final BuildContext ctx;
+  final VoidCallback rl;
+  const SubsView(this.items, this.sec, this.ctx, this.rl, {super.key});
+  @override
+  State<SubsView> createState() => _SubsViewState();
+}
+
+class _SubsViewState extends State<SubsView> {
+  String q = '';
+  String f = 'all';
+
+  @override
+  Widget build(BuildContext context) {
+    final all = widget.items;
+    int count(String k) => k == 'all' ? all.length : all.where((x) => _subState(x) == k).length;
+    final low = q.toLowerCase();
+    final L = all
+        .where((x) => (f == 'all' || _subState(x) == f) &&
+            '${x['name']} ${x['packageName']} ${x['submittedBy']}'.toLowerCase().contains(low))
+        .toList();
+    return listPage([
+      TextField(
+        decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'Search…', border: OutlineInputBorder()),
+        onChanged: (v) => setState(() => q = v),
+      ),
+      const SizedBox(height: 8),
+      Wrap(spacing: 8, children: [
+        for (final k in const ['all', 'pending', 'rejected', 'approved'])
+          ChoiceChip(
+            label: Text('${k[0].toUpperCase()}${k.substring(1)} (${count(k)})'),
+            selected: f == k,
+            onSelected: (_) => setState(() => f = k),
+          ),
+      ]),
+      Padding(padding: const EdgeInsets.symmetric(vertical: 6), child: Text('${L.length} shown', style: const TextStyle(color: Colors.grey))),
+      ...L.map(_tile),
+    ]);
+  }
+
+  Widget _tile(Map<String, dynamic> x) {
+    final k = _subState(x);
+    final st = k == 'pending' ? 'Pending' : s(x['status']);
+    final secRow = widget.sec[s(x['id'])];
+    final col = k == 'approved' ? Colors.green : k == 'rejected' ? Colors.red : Colors.orange;
     return Card(
       child: ListTile(
         leading: netImg(s(x['logo'])),
         title: Text(s(x['name'])),
-        subtitle: Wrap(children: [Text('${x['packageName']} · v${x['version']}  ', style: const TextStyle(fontSize: 12)), if (bo(x['isUpdateSubmission'])) tagChip('UPDATE', Colors.orange), if (bo(x['isUpcoming'])) tagChip('UPCOMING', Colors.purple),
-          if (sec[s(x['id'])] != null) tagChip('SECURITY: ${statusV(s(sec[s(x['id'])]!['status'])).label.toUpperCase()}', statusV(s(sec[s(x['id'])]!['status'])).color)]),
-        trailing: tagChip(st, st.toLowerCase() == 'approved' ? Colors.green : st.toLowerCase() == 'rejected' ? Colors.red : Colors.orange),
-        onTap: () => subDetail(c, x, rl),
+        subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Wrap(children: [
+            Text('${x['packageName']} · v${x['version']}  ', style: const TextStyle(fontSize: 12)),
+            if (bo(x['isUpdateSubmission'])) tagChip('UPDATE', Colors.orange),
+            if (bo(x['isUpcoming'])) tagChip('UPCOMING', Colors.purple),
+            if (secRow != null) tagChip('SECURITY: ${statusV(s(secRow['status'])).label.toUpperCase()}', statusV(s(secRow['status'])).color),
+          ]),
+          if (k == 'rejected') ...[
+            if (s(x['feedback']).isNotEmpty)
+              Text('Reason: ${x['feedback']}', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: Colors.red)),
+            const Text('Tap to approve anyway', style: TextStyle(fontSize: 11, color: Colors.green, fontWeight: FontWeight.w600)),
+          ],
+        ]),
+        isThreeLine: k == 'rejected',
+        trailing: tagChip(st, col),
+        onTap: () => subDetail(widget.ctx, x, widget.rl),
       ),
     );
-  });
+  }
 }
 
 void subDetail(BuildContext c, Map<String, dynamic> x, VoidCallback rl) {
-  final pending = s(x['status']).isEmpty || s(x['status']).toLowerCase() == 'pending';
+  final k = _subState(x);
+  final pending = k == 'pending';
+  final rejected = k == 'rejected';
   showModalBottomSheet(
     context: c, isScrollControlled: true, useSafeArea: true,
     builder: (d) => ListView(padding: const EdgeInsets.all(16), children: [
@@ -105,7 +175,15 @@ void subDetail(BuildContext c, Map<String, dynamic> x, VoidCallback rl) {
       Text('By ${x['submittedBy']} · versionCode ${x['versionCode']} · ads: ${bo(x['hasAds'])}'),
       Text('APK: ${x['apkUrl']}', style: const TextStyle(fontSize: 12)),
       if (s(x['videoUrl']).isNotEmpty) Text('Video: ${x['videoUrl']}', style: const TextStyle(fontSize: 12)),
-      if (s(x['feedback']).isNotEmpty) Text('Feedback: ${x['feedback']}'),
+      if (rejected)
+        Container(
+          margin: const EdgeInsets.only(top: 10),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(color: Colors.red.withOpacity(0.08), borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.red.withOpacity(0.4))),
+          child: Text(s(x['feedback']).isEmpty ? 'Rejected (no reason was written).' : 'Rejected: ${x['feedback']}', style: const TextStyle(color: Colors.red)),
+        )
+      else if (s(x['feedback']).isNotEmpty)
+        Text('Feedback: ${x['feedback']}'),
       const SizedBox(height: 12),
       OutlinedButton.icon(
         onPressed: () { Navigator.pop(d); openSecurityReport(c, x); },
@@ -118,6 +196,20 @@ void subDetail(BuildContext c, Map<String, dynamic> x, VoidCallback rl) {
         const SizedBox(width: 10),
         Expanded(child: FilledButton(style: FilledButton.styleFrom(backgroundColor: Colors.red), onPressed: () { Navigator.pop(d); rejectSub(c, x, rl); }, child: const Text('Reject'))),
       ]),
+      if (rejected) ...[
+        FilledButton.icon(
+          style: FilledButton.styleFrom(backgroundColor: Colors.green),
+          onPressed: () { Navigator.pop(d); approveSub(c, x, rl); },
+          icon: const Icon(Icons.check_circle_outline),
+          label: const Text('Approve anyway'),
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: () { Navigator.pop(d); reopenSub(c, x, rl); },
+          icon: const Icon(Icons.undo_rounded),
+          label: const Text('Move back to Pending'),
+        ),
+      ],
     ]),
   );
 }
@@ -131,15 +223,78 @@ Future<void> _releaseLock(String pkg) async {
   } catch (_) {}
 }
 
+/// Things worth knowing before a REJECTED submission goes live (empty = nothing unusual).
+Future<List<String>> _approveWarnings(Map<String, dynamic> x) async {
+  final out = <String>[];
+  try {
+    final pkg = s(x['packageName']).toLowerCase();
+    final code = ni(x['versionCode']);
+    final subs = await Db.list('submissions');
+    final newer = subs.where((y) =>
+        s(y['id']) != s(x['id']) &&
+        s(y['packageName']).toLowerCase() == pkg &&
+        ni(y['createdAt']) > ni(x['createdAt']) &&
+        _subState(y) != 'rejected').toList();
+    if (newer.isNotEmpty) {
+      out.add('The developer has sent ${newer.length} newer submission(s) for this package (${newer.map((y) => 'v${y['version']} ${_subState(y)}').join(', ')}). Approving this older one could replace them.');
+    }
+    final apps = await Db.list('apps');
+    final live = apps.where((y) => s(y['packageName']).toLowerCase() == pkg).toList();
+    if (live.isNotEmpty && code > 0 && ni(live.first['versionCode']) >= code) {
+      out.add('The live app is already v${live.first['version']} (code ${live.first['versionCode']}). This would roll it back to v${x['version']} (code $code).');
+    }
+  } catch (_) {}
+  return out;
+}
+
 Future<void> approveSub(BuildContext c, Map<String, dynamic> x, VoidCallback rl) async {
-  if (!await confirm(c, 'Approve ${x['name']}?', 'It goes live in the store now.')) return;
-  if (!c.mounted) return;
+  final wasRejected = _subState(x) == 'rejected';
+  var note = '';
+  if (wasRejected) {
+    final warns = await _approveWarnings(x);
+    if (!c.mounted) return;
+    final r = await editSheet(
+      c,
+      'Approve ${x['name']} after rejection?',
+      const [F('feedback', 'Message to the developer (optional)', 'area')],
+      {'feedback': ''},
+      preview: (_) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('It was rejected${s(x['feedback']).isEmpty ? '' : ': ${x['feedback']}'}.\nApproving publishes it now and replaces the rejection with an approval.',
+            style: const TextStyle(fontSize: 13)),
+        for (final w in warns)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Icon(Icons.warning_amber_rounded, size: 18, color: Colors.orange),
+              const SizedBox(width: 6),
+              Expanded(child: Text(w, style: const TextStyle(fontSize: 12, color: Colors.orange))),
+            ]),
+          ),
+      ]),
+    );
+    if (r == null || !c.mounted) return;
+    note = s(r['feedback']).trim();
+  } else {
+    if (!await confirm(c, 'Approve ${x['name']}?', 'It goes live in the store now.')) return;
+    if (!c.mounted) return;
+  }
   await act(c, () async {
     // One server-side step: publishes / updates the app, appends the version
     // history, takes the developer name from users.dev_name and releases the package.
-    await Sb.c.rpc('approve_submission', params: {'p_id': s(x['id']), 'p_feedback': ''});
-    await Db.audit('APPROVE_SUBMISSION', 'submission', s(x['id']), s(x['name']), 'v${x['version']}');
-  }, rl, 'Approved');
+    await Sb.c.rpc('approve_submission', params: {'p_id': s(x['id']), 'p_feedback': note});
+    await Db.audit(wasRejected ? 'APPROVE_AFTER_REJECT' : 'APPROVE_SUBMISSION', 'submission', s(x['id']), s(x['name']),
+        wasRejected ? 'v${x['version']} (was rejected: ${s(x['feedback'])})' : 'v${x['version']}');
+  }, rl, wasRejected ? 'Approved — it is live now' : 'Approved');
+}
+
+/// Puts a rejected submission back in the review queue without publishing it.
+Future<void> reopenSub(BuildContext c, Map<String, dynamic> x, VoidCallback rl) async {
+  if (!await confirm(c, 'Move ${x['name']} back to Pending?', 'It returns to the review queue. Nothing is published yet.')) return;
+  if (!c.mounted) return;
+  await act(c, () async {
+    await Db.upd('submissions/${x['id']}', {'status': 'Pending'});
+    await Db.audit('REOPEN_SUBMISSION', 'submission', s(x['id']), s(x['name']), 'was rejected: ${s(x['feedback'])}');
+  }, rl, 'Moved to Pending');
 }
 
 Future<void> rejectSub(BuildContext c, Map<String, dynamic> x, VoidCallback rl) async {
