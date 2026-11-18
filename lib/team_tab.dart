@@ -12,12 +12,10 @@ import 'shell.dart';
 const _roleColors = ['#1F6FEB', '#0EA5A5', '#16A34A', '#F59E0B', '#F97316', '#EF4444', '#A855F7', '#64748B'];
 
 Future<Widget> teamTab(BuildContext c, VoidCallback rl) async {
-  final r = await Future.wait([
-    Sb.c.from('staff_roles').select().order('label'),
-    Sb.c.rpc('staff_list'),
-  ]);
-  final roles = asMaps(r[0]);
-  final staff = asMaps(r[1]);
+  final Object? rolesRaw = await Sb.c.from('staff_roles').select().order('label');
+  final Object? staffRaw = await Sb.c.rpc('staff_list');
+  final roles = asMaps(rolesRaw);
+  final staff = asMaps(staffRaw);
   final cs = Theme.of(c).colorScheme;
   final roleByKey = {for (final x in roles) s(x['key']): x};
   int members(String k) => staff.where((x) => s(x['staff_role']) == k).length;
