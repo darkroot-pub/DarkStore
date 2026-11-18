@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'core.dart';
 import 'sb.dart';
 import 'fraud_tab.dart';
@@ -161,6 +162,40 @@ class _SubsViewState extends State<SubsView> {
   }
 }
 
+/// What an admin may correct on a submission before (or after) a decision. The package name stays fixed:
+/// the per-package lock and the version history depend on it.
+const subFields = [
+  F('name', 'App name'), F('category', 'Category'), F('version', 'Version'), F('versionCode', 'Version code', 'num'),
+  F('size', 'Size'), F('description', 'Description', 'area'), F('changelog', 'What\'s new', 'area'),
+  F('apkUrl', 'APK URL'), F('logo', 'Logo URL', 'image'), F('screenshots', 'Screenshots (links, or add from device)', 'images'),
+  F('videoUrl', 'Video URL'), F('expectedRelease', 'Expected release'),
+  F('hasAds', 'Contains ads', 'bool'), F('isUpcoming', 'Upcoming', 'bool'),
+];
+
+Future<void> editSub(BuildContext c, Map<String, dynamic> x, VoidCallback rl) async {
+  final init = {...x, 'screenshots': shots(x['screenshots']).join(', ')};
+  final r = await editSheet(c, 'Edit submission: ${x['name']}', subFields, init, preview: appPrev);
+  if (r == null || !c.mounted) return;
+  final patch = only(r, subFields);
+  final changed = <String>[
+    for (final f in subFields)
+      if ('${patch[f.k] ?? ''}' != '${init[f.k] ?? ''}') f.k,
+  ];
+  if (changed.isEmpty) {
+    toast(c, 'Nothing changed');
+    return;
+  }
+  await act(c, () async {
+    await Db.upd('submissions/${x['id']}', patch);
+    await Db.audit('EDIT_SUBMISSION', 'submission', s(x['id']), s(patch['name'] ?? x['name']), 'changed: ${changed.join(', ')}');
+  }, rl, 'Saved: ${changed.length} field(s) updated');
+}
+
+void _copy(BuildContext c, String label, String v) {
+  Clipboard.setData(ClipboardData(text: v));
+  toast(c, '$label copied');
+}
+
 void subDetail(BuildContext c, Map<String, dynamic> x, VoidCallback rl) {
   final k = _subState(x);
   final pending = k == 'pending';
@@ -185,6 +220,17 @@ void subDetail(BuildContext c, Map<String, dynamic> x, VoidCallback rl) {
       else if (s(x['feedback']).isNotEmpty)
         Text('Feedback: ${x['feedback']}'),
       const SizedBox(height: 12),
+      Wrap(spacing: 8, children: [
+        OutlinedButton.icon(onPressed: () => _copy(c, 'APK link', s(x['apkUrl'])), icon: const Icon(Icons.link_rounded, size: 18), label: const Text('Copy APK link')),
+        OutlinedButton.icon(onPressed: () => _copy(c, 'Package name', s(x['packageName'])), icon: const Icon(Icons.copy_rounded, size: 18), label: const Text('Copy package')),
+      ]),
+      const SizedBox(height: 8),
+      FilledButton.tonalIcon(
+        onPressed: () { Navigator.pop(d); editSub(c, x, rl); },
+        icon: const Icon(Icons.edit_rounded),
+        label: Text(k == 'approved' ? 'Edit submission details (live app is not changed)' : 'Edit submission details'),
+      ),
+      const SizedBox(height: 8),
       OutlinedButton.icon(
         onPressed: () { Navigator.pop(d); openSecurityReport(c, x); },
         icon: const Icon(Icons.shield_moon_rounded),
@@ -298,12 +344,29 @@ Future<void> reopenSub(BuildContext c, Map<String, dynamic> x, VoidCallback rl) 
 }
 
 Future<void> rejectSub(BuildContext c, Map<String, dynamic> x, VoidCallback rl) async {
-  final r = await editSheet(c, 'Reject ${x['name']}', const [F('feedback', 'Reason shown to the developer', 'area')], {});
+  const none = '— write my own reason —';
+  const templates = [
+    none,
+    'The app could not be installed or crashes on start.',
+    'The app description or screenshots do not match the app.',
+    'The app asks for permissions it does not need.',
+    'The app looks like a copy of another app. Please submit your own work.',
+    'The APK link does not work or is not a direct download.',
+    'The app contains harmful or deceptive behaviour.',
+  ];
+  final r = await editSheet(c, 'Reject ${x['name']}',
+      const [F('template', 'Quick reason', 'select', templates), F('feedback', 'Add your own message (optional)', 'area')], {'template': none});
   if (r == null || !c.mounted) return;
+  final tpl = s(r['template']);
+  final reason = [if (tpl.isNotEmpty && tpl != none) tpl, s(r['feedback']).trim()].where((e) => e.isNotEmpty).join('\n');
+  if (reason.isEmpty) {
+    toast(c, 'Please choose or write a reason so the developer knows what to fix.');
+    return;
+  }
   await act(c, () async {
-    await Db.upd('submissions/${x['id']}', {'status': 'Rejected', 'feedback': s(r['feedback'])});
+    await Db.upd('submissions/${x['id']}', {'status': 'Rejected', 'feedback': reason});
     await _releaseLock(s(x['packageName']));
-    await Db.audit('REJECT_SUBMISSION', 'submission', s(x['id']), s(x['name']), s(r['feedback']));
+    await Db.audit('REJECT_SUBMISSION', 'submission', s(x['id']), s(x['name']), reason);
   }, rl, 'Rejected');
 }
 

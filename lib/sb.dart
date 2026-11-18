@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:http/http.dart' as http;
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -34,12 +35,31 @@ class Sb {
     }
   }
 
+  /// Edge function that puts `role = authenticated` on the caller's Firebase account (same one the store app uses).
+  static Future<bool> _requestClaim(String idToken) async {
+    try {
+      final r = await http.post(Uri.parse('$_url/functions/v1/ensure-firebase-role'),
+          headers: {'apikey': _key, 'Authorization': 'Bearer $_key', 'x-firebase-token': idToken}).timeout(const Duration(seconds: 10));
+      if (r.statusCode == 200) return true;
+      debugPrint('ensure-firebase-role HTTP ${r.statusCode}');
+    } catch (e) {
+      debugPrint('ensure-firebase-role failed: $e');
+    }
+    return false;
+  }
+
   static Future<String?> _token() async {
     final u = FirebaseAuth.instance.currentUser;
     if (u == null) return null;
     try {
       var t = await u.getIdToken();
-      if (!_hasRole(t)) t = await u.getIdToken(true);
+      if (_hasRole(t)) return t;
+      // A staff account that never opened the store app has no claim yet: set it now, then refresh the token.
+      if (t != null && await _requestClaim(t)) {
+        t = await u.getIdToken(true);
+        if (_hasRole(t)) return t;
+      }
+      t = await u.getIdToken(true);
       return _hasRole(t) ? t : null;
     } catch (_) {
       return null;
