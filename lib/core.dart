@@ -93,8 +93,16 @@ Future<bool> confirm(BuildContext c, String title, String msg) async =>
             ])) ??
     false;
 
+/// True while the open screen is view-only for this person's role (set by the shell).
+final ValueNotifier<bool> viewOnly = ValueNotifier<bool>(false);
+const viewOnlyMsg = 'View only: your role cannot change this.';
+
 /// Runs a write, shows result, then refreshes the tab.
 Future<void> act(BuildContext c, Future<void> Function() f, VoidCallback reload, [String ok = 'Done']) async {
+  if (viewOnly.value) {
+    toast(c, viewOnlyMsg);
+    return;
+  }
   try {
     await f();
     if (c.mounted) toast(c, ok);
@@ -113,6 +121,10 @@ class F {
 /// Bottom-sheet editor with a LIVE PREVIEW (the preview rebuilds on every keystroke).
 Future<Map<String, dynamic>?> editSheet(BuildContext c, String title, List<F> fields, Map<String, dynamic> init,
     {Widget Function(Map<String, dynamic>)? preview}) {
+  if (viewOnly.value) {
+    toast(c, viewOnlyMsg);
+    return Future.value(null);
+  }
   return showModalBottomSheet<Map<String, dynamic>>(
     context: c,
     isScrollControlled: true,

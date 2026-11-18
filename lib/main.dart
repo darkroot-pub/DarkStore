@@ -5,19 +5,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter/material.dart';
 import 'core.dart';
 import 'sb.dart';
-import 'tabs.dart' hide adsTab;
-import 'security_tab.dart';
-import 'ads_tab.dart';
-import 'fraud_tab.dart';
-import 'profile_ui_tab.dart';
-import 'nav_ui_tab.dart';
-import 'tools_tab.dart';
-import 'control_tabs.dart';
-import 'help_tabs.dart';
-import 'v16_tabs.dart';
-import 'v17_tabs.dart';
-import 'api_tab.dart';
-import 'app_box_tab.dart';
+import 'shell.dart';
 
 // NOTE: this admin app never asks for / saves an FCM token. The user app already
 // stores each person's token; the admin only SENDS pushes through the server.
@@ -36,44 +24,83 @@ class AdminApp extends StatelessWidget {
         title: 'DarkStore Admin',
         debugShowCheckedModeBanner: false,
         themeMode: ThemeMode.system,
-        theme: ThemeData(colorSchemeSeed: accent, useMaterial3: true),
-        darkTheme: ThemeData(colorSchemeSeed: accent, brightness: Brightness.dark, useMaterial3: true),
+        theme: adminTheme(Brightness.light),
+        darkTheme: adminTheme(Brightness.dark),
         home: const Gate(),
       );
 }
 
-class Gate extends StatelessWidget {
+class Gate extends StatefulWidget {
   const Gate({super.key});
+  @override
+  State<Gate> createState() => _GateState();
+}
+
+class _GateState extends State<Gate> {
+  int _try = 0; // bump to re-check the role (after the owner gave this person one)
   @override
   Widget build(BuildContext context) => StreamBuilder<User?>(
         stream: FirebaseAuth.instance.authStateChanges(),
         builder: (_, snap) {
-          if (snap.connectionState == ConnectionState.waiting) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          if (snap.connectionState == ConnectionState.waiting) return const _Splash();
           final u = snap.data;
-          if (u == null) return const LoginPage();
-          return FutureBuilder<bool>(
-            future: isAdmin(u),
+          if (u == null) {
+            myAccess = Access.none;
+            return const LoginPage();
+          }
+          return FutureBuilder<Access>(
+            key: ValueKey('${u.uid}-$_try'),
+            future: Access.load(u),
             builder: (_, a) {
-              if (!a.hasData) return const Scaffold(body: Center(child: CircularProgressIndicator()));
-              return a.data! ? const Shell() : NotAdmin();
+              if (!a.hasData) return const _Splash();
+              myAccess = a.data!;
+              return myAccess.isStaff ? const Shell() : NotAdmin(onRetry: () => setState(() => _try++));
             },
           );
         },
       );
 }
 
-Future<bool> isAdmin(User u) async {
-  if (u.email == ownerEmail && u.emailVerified) return true;
-  return SbDb.isAdminUid(u.uid);
+class _Splash extends StatelessWidget {
+  const _Splash();
+  @override
+  Widget build(BuildContext context) => const Scaffold(body: Center(child: CircularProgressIndicator()));
 }
 
 class NotAdmin extends StatelessWidget {
-  NotAdmin({super.key});
+  final VoidCallback onRetry;
+  const NotAdmin({super.key, required this.onRetry});
   @override
-  Widget build(BuildContext c) => Scaffold(body: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        const Icon(Icons.lock, size: 48), const SizedBox(height: 8), const Text('This account is not an admin.'),
-        TextButton(onPressed: () => FirebaseAuth.instance.signOut(), child: const Text('Sign out')),
-      ])));
+  Widget build(BuildContext c) {
+    final cs = Theme.of(c).colorScheme;
+    final email = FirebaseAuth.instance.currentUser?.email ?? '';
+    return Scaffold(
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(28),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 400),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.lock_outline_rounded, size: 56, color: cs.primary),
+              const SizedBox(height: 16),
+              const Text('No access yet', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 8),
+              Text(
+                '${email.isEmpty ? 'This account' : email} does not have a role in the DarkStore admin panel.\n\n'
+                'Ask the owner to add you under Team & roles. You must have signed into the DarkStore app at least once.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: cs.onSurfaceVariant, height: 1.4),
+              ),
+              const SizedBox(height: 22),
+              SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: onRetry, icon: const Icon(Icons.refresh_rounded), label: const Text('Check again'))),
+              const SizedBox(height: 10),
+              SizedBox(width: double.infinity, child: OutlinedButton(onPressed: () => FirebaseAuth.instance.signOut(), child: const Text('Sign out'))),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class LoginPage extends StatefulWidget {
@@ -121,12 +148,19 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext c) => Scaffold(
         body: Center(child: SingleChildScrollView(padding: const EdgeInsets.all(24), child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 380), child: Column(children: [
-          const Icon(Icons.admin_panel_settings, size: 64, color: accent),
+          Container(
+            width: 72, height: 72,
+            decoration: BoxDecoration(color: accent, borderRadius: BorderRadius.circular(22)),
+            child: const Icon(Icons.admin_panel_settings_rounded, size: 40, color: Colors.white),
+          ),
+          const SizedBox(height: 14),
           const Text('DarkStore Admin', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800)),
-          const SizedBox(height: 20),
-          TextField(controller: em, keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(labelText: 'Admin email', border: OutlineInputBorder())),
+          const SizedBox(height: 4),
+          const Text('Sign in with your staff account', style: TextStyle(color: Colors.grey)),
+          const SizedBox(height: 24),
+          TextField(controller: em, keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(labelText: 'Email', prefixIcon: Icon(Icons.mail_outline_rounded))),
           const SizedBox(height: 10),
-          TextField(controller: pw, obscureText: true, decoration: const InputDecoration(labelText: 'Password', border: OutlineInputBorder()), onSubmitted: (_) => go()),
+          TextField(controller: pw, obscureText: true, decoration: const InputDecoration(labelText: 'Password', prefixIcon: Icon(Icons.lock_outline_rounded)), onSubmitted: (_) => go()),
           const SizedBox(height: 14),
           SizedBox(width: double.infinity, child: FilledButton(onPressed: busy ? null : go, child: Text(busy ? 'Signing in…' : 'Sign in'))),
           const SizedBox(height: 10),
@@ -136,56 +170,4 @@ class _LoginPageState extends State<LoginPage> {
           if (err.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 10), child: Text(err, style: const TextStyle(color: Colors.red))),
         ])))),
       );
-}
-
-class Shell extends StatelessWidget {
-  const Shell({super.key});
-  @override
-  Widget build(BuildContext c) {
-    final tabs = <(String, IconData, Widget)>[
-      ('Home', Icons.dashboard, FutureTab(homeTab)),
-      ('Submissions', Icons.inbox, FutureTab(subsTab)),
-      ('Security', Icons.shield_moon, const SecurityTab()),
-      ('Catalog', Icons.store, FutureTab(catalogTab)),
-      ('Push update', Icons.system_update, FutureTab(updateTab)),
-      ('Users', Icons.people, FutureTab(usersTab)),
-      ('Fraud', Icons.gpp_maybe, FutureTab(fraudTab)),
-      ('Guard', Icons.security, FutureTab(guardTab)),
-      ('Devices', Icons.devices, FutureTab(devicesTab)),
-      ('Notify', Icons.notifications, const NotifyTab()),
-      ('Events', Icons.celebration, FutureTab(eventsTab)),
-      ('Banners', Icons.view_carousel, FutureTab(bannersTab)),
-      ('Profile UI', Icons.badge, const ProfileUiTab()),
-      ('Nav bar', Icons.view_day, const NavUiTab()),
-      ('Announce', Icons.announcement, FutureTab(announceTab)),
-      ('Features', Icons.toggle_on, FutureTab(featuresTab)),
-      ('Support', Icons.support_agent, FutureTab(supportTab)),
-      ('Help / FAQ', Icons.quiz, FutureTab(faqTab)),
-      ('Rules', Icons.gavel, FutureTab(rulesTab)),
-      ('Suggestions', Icons.auto_awesome, FutureTab(suggestTab)),
-      ('API', Icons.api, FutureTab(apiAdminTab)),
-      ('Search', Icons.manage_search, FutureTab(searchAdminTab)),
-      ('Reviews', Icons.rate_review, FutureTab(reviewsAdminTab)),
-      ('App box', Icons.dashboard_customize, const AppBoxTab()),
-      ('Home layout', Icons.view_agenda, FutureTab(homeLayoutTab)),
-      ('Share text', Icons.share, FutureTab(shareTab)),
-      ('Collections', Icons.collections, FutureTab(collectionsTab)),
-      ('Ads', Icons.campaign, FutureTab(adsTab)),
-      ('Feedback', Icons.flag, FutureTab(feedbackTab)),
-      ('Tools', Icons.build_circle, FutureTab(toolsTab)),
-      ('Audit', Icons.history, FutureTab(auditTab)),
-      ('Server', Icons.cloud, FutureTab(serverTab)),
-    ];
-    return DefaultTabController(
-      length: tabs.length,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('DarkStore Admin'),
-          actions: [IconButton(tooltip: 'Sign out', icon: const Icon(Icons.logout), onPressed: () => FirebaseAuth.instance.signOut())],
-          bottom: TabBar(isScrollable: true, tabAlignment: TabAlignment.start, tabs: [for (final t in tabs) Tab(icon: Icon(t.$2, size: 18), text: t.$1)]),
-        ),
-        body: TabBarView(children: [for (final t in tabs) t.$3]),
-      ),
-    );
-  }
 }
