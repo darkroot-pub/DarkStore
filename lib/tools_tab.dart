@@ -107,7 +107,7 @@ String toCsv(List<Map<String, dynamic>> rows, List<String> cols, {Set<String> da
 }
 
 /// Settings rows that can be backed up and restored (one JSON row each in `app_config`).
-const backupKeys = ['adsConfig', 'unityAdsConfig', 'maintenanceConfig', 'premiumConfig', 'eventConfig', 'profileUiConfig', 'navUiConfig', 'announceConfig', 'featureFlags', 'supportConfig', 'faqConfig', 'limitsConfig', 'chatRules', 'recommendConfig', 'homeLayout', 'shareConfig', 'searchConfig', 'reviewConfig', 'appBoxUiConfig', 'apiConfig'];
+const backupKeys = ['adsConfig', 'unityAdsConfig', 'maintenanceConfig', 'premiumConfig', 'eventConfig', 'profileUiConfig', 'premiumUiConfig', 'navUiConfig', 'announceConfig', 'featureFlags', 'supportConfig', 'faqConfig', 'limitsConfig', 'chatRules', 'recommendConfig', 'homeLayout', 'shareConfig', 'searchConfig', 'reviewConfig', 'appBoxUiConfig', 'apiConfig'];
 
 Future<Widget> toolsTab(BuildContext c, VoidCallback rl) async {
   Future<void> exportCsv(String what, String path, List<String> cols) async {

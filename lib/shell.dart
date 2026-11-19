@@ -18,6 +18,7 @@ import 'v17_tabs.dart';
 import 'api_tab.dart';
 import 'app_box_tab.dart';
 import 'team_tab.dart';
+import 'premium_ui_tab.dart';
 
 // ───────────── Who is signed in, and what may they do ─────────────
 
@@ -133,6 +134,7 @@ List<NavItem> _allItems() => [
       NavItem('ads', 'Ads', 'Growth & messaging', Icons.ads_click_rounded, 'Ad placement', () => FutureTab(adsTab), area: 'ads'),
       NavItem('suggest', 'Suggestions', 'Growth & messaging', Icons.auto_awesome_rounded, 'Recommendation settings', () => FutureTab(suggestTab), area: 'design'),
       NavItem('profileui', 'Profile screen', 'App design', Icons.badge_rounded, 'Profile page layout', () => const ProfileUiTab(), area: 'design'),
+      NavItem('premiumui', 'Premium card', 'App design', Icons.workspace_premium_rounded, 'Design the Premium card members see', () => const PremiumUiTab(), area: 'design'),
       NavItem('navui', 'Navigation bar', 'App design', Icons.view_day_rounded, 'Bottom bar items', () => const NavUiTab(), area: 'design'),
       NavItem('homelayout', 'Home layout', 'App design', Icons.view_agenda_rounded, 'Order of home sections', () => FutureTab(homeLayoutTab), area: 'design'),
       NavItem('appbox', 'App box', 'App design', Icons.dashboard_customize_rounded, 'App card design', () => const AppBoxTab(), area: 'design'),
