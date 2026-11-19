@@ -15,27 +15,11 @@
       },
       "oauth_client": [
         {
-          "client_id": "210511589455-7q7t0hlith2eokqjcieedjv3eph9jlek.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.darkstore.darkroot",
-            "certificate_hash": "3dee5c6517ef91e8a031081e5d0c13f830586191"
-          }
-        },
-        {
           "client_id": "210511589455-em69ulq82cc9eho1uegm552rnrnqme4d.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.darkstore.darkroot",
             "certificate_hash": "4072cfadad844e591f8d58c096038554f5ffad3d"
-          }
-        },
-        {
-          "client_id": "210511589455-gu0ruvb126d0t7b6ac2e8ue37buoi9tt.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.darkstore.darkroot",
-            "certificate_hash": "2a69eab58b0c6a17d51972489d2691be8fc7cd94"
           }
         },
         {
@@ -60,6 +44,14 @@
           "android_info": {
             "package_name": "com.darkstore.darkroot",
             "certificate_hash": "f78dc3ccefa37f9f5737ddfc08308e1280a0092b"
+          }
+        },
+        {
+          "client_id": "210511589455-s8pb1n586kjaloneai4clbpf1qeofrp4.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.darkstore.darkroot",
+            "certificate_hash": "e07e8819229ffda063d58c2c5eeb6f1e0b764801"
           }
         },
         {
