@@ -145,3 +145,30 @@ a[data-store].soon{opacity:.55;cursor:default;pointer-events:none}
 .fb-page h1{font-size:clamp(28px,5vw,38px);margin-bottom:10px}.fb-page>p{margin:0 0 22px}
 .fb-get{margin-top:34px;padding-top:22px;border-top:1px solid var(--line)}.fb-get p{margin:0 0 10px}
 .fb-get .alt{display:flex;gap:8px;justify-content:center;margin-top:10px}
+
+/* invite page: the download action is the primary focus */
+.invite-card{max-width:520px;padding:32px 30px 26px;text-align:left}
+.invite-top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.invite-card .ico{width:56px;height:56px;margin:0;border-radius:14px}
+.invite-card .ico img{width:100%;height:100%;object-fit:contain}
+.invite-badge{font:700 11px var(--body);letter-spacing:.14em;text-transform:uppercase;color:var(--blue);background:var(--soft);padding:7px 11px;border-radius:99px}
+.invite-card h1{font-size:clamp(23px,5vw,30px);line-height:1.14;margin:16px 0 6px}
+.invite-card #sub{font-size:16px;margin:0 0 18px}
+.code-row{display:flex;align-items:center;gap:10px;border:1.5px dashed var(--line);background:var(--paper);border-radius:14px;padding:10px 12px;margin:0 0 20px}
+.code-row .code{margin:0;padding:0;background:none;color:var(--ink);font-size:19px;letter-spacing:.1em;flex:1;min-width:0;text-align:left}
+.code-copy{display:inline-flex;align-items:center;gap:6px;border:1.5px solid var(--line);background:var(--plate);color:var(--ink);border-radius:10px;padding:8px 11px;font:600 14px var(--body);cursor:pointer;white-space:nowrap}
+.code-copy:hover,.code-copy.done{border-color:var(--blue);color:var(--blue)}
+.invite-cta{display:flex;flex-direction:column;gap:9px;margin:0 0 4px}
+.invite-cta .btn{width:100%;margin:0}
+.hero-dl{padding:15px 20px;border-radius:14px;font-size:17px;text-align:left;background:linear-gradient(135deg,color-mix(in srgb,var(--blue) 92%,#fff),var(--blue));box-shadow:0 14px 30px -14px var(--blue)}
+.hero-dl:hover{box-shadow:0 18px 36px -14px var(--blue)}
+.dl-stack{display:flex;flex-direction:column;align-items:flex-start;line-height:1.2}
+.dl-stack b{font-weight:700}.dl-stack small{font:500 12.5px var(--body);opacity:.85;margin-top:3px}
+.dl-stack [data-ver]:not(:empty)::before{content:" · "}
+.open-app{background:transparent;color:var(--steel);border:1.5px solid var(--line);font-size:14px;padding:11px}
+.copied-note{display:flex;gap:9px;align-items:flex-start;background:var(--soft);color:var(--ink);border-radius:12px;padding:11px 13px;font-size:13px;margin:14px 0 0}
+.copied-note svg{width:18px;height:18px;flex:none;fill:none;stroke:var(--blue);stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;margin-top:2px}
+.trust{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0 0}.trust span{font:600 12px var(--body);color:var(--ok);background:color-mix(in srgb,var(--ok) 10%,transparent);border-radius:99px;padding:6px 10px}
+.invite-card .how{margin:16px 0 0;padding:14px 16px 14px 36px;background:var(--paper);border:1px solid var(--line);border-radius:14px}
+.invite-card #bad{text-align:center}
+@media(max-width:480px){.invite-card{padding:24px 18px}.code-row .code{font-size:16px}}
