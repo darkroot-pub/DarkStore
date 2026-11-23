@@ -1,0 +1,92 @@
+/* DarkRoot Store: professional UI layer. Loads after site.css on every page (home, app, API, invite). */
+:root{--paper:#f6f8fb;--plate:#fff;--ink:#0a1220;--steel:#55627a;--line:#e1e7f0;--blue:#1d6bf3;--soft:#eaf1ff;--r-s:10px;--r-m:14px;--r-l:20px;
+--sh-1:0 1px 2px rgba(10,18,32,.05),0 6px 16px -10px rgba(10,18,32,.16);--sh-2:0 2px 4px rgba(10,18,32,.05),0 22px 44px -26px rgba(10,18,32,.3);--code:#0c1424;--code-ink:#dbe6fb}
+:root[data-theme=dark]{--paper:#070a11;--plate:#0e141e;--ink:#eef2fa;--steel:#97a3b8;--line:#1b2434;--blue:#4b93ff;--soft:#0e1b33;--sh-1:0 1px 2px rgba(0,0,0,.4);--sh-2:0 24px 50px -28px #000;--code:#060a12}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--paper:#070a11;--plate:#0e141e;--ink:#eef2fa;--steel:#97a3b8;--line:#1b2434;--blue:#4b93ff;--soft:#0e1b33;--sh-1:0 1px 2px rgba(0,0,0,.4);--sh-2:0 24px 50px -28px #000;--code:#060a12}}
+body{font-size:16.5px;line-height:1.65;text-rendering:optimizeLegibility}
+.wrap{max-width:1120px}
+
+/* header */
+.nav{background:color-mix(in srgb,var(--paper) 82%,transparent);backdrop-filter:saturate(1.6) blur(16px);-webkit-backdrop-filter:saturate(1.6) blur(16px);box-shadow:none}
+.nav .wrap{height:66px}
+.menu{gap:6px}.menu a.l{padding:8px 12px;border-radius:var(--r-s);font-size:14.5px}
+.menu a.l::after{display:none}.menu a.l:hover{background:var(--soft);color:var(--ink)}.menu a.l[aria-current]{background:var(--soft);color:var(--blue)}
+.brand{letter-spacing:-.03em}.brand img{box-shadow:var(--sh-1);border:1px solid var(--line)}
+
+/* buttons and inputs: one height, one radius */
+.btn{border-radius:var(--r-m);min-height:48px;padding:12px 22px;font-weight:600;box-shadow:var(--sh-1)}
+.btn.sm{min-height:40px;padding:8px 16px;border-radius:var(--r-s)}
+.btn:hover{transform:translateY(-1px)}.btn:active{transform:none}
+.btn.ghost{background:var(--plate);border:1px solid var(--line)}.btn.ghost:hover{border-color:var(--blue);color:var(--blue)}
+.iconbtn{border-radius:var(--r-s);background:var(--plate)}
+.search input,select{border:1px solid var(--line);border-radius:var(--r-m);height:48px;box-shadow:var(--sh-1)}
+.search input:focus,select:focus{border-color:var(--blue);box-shadow:0 0 0 4px color-mix(in srgb,var(--blue) 18%,transparent)}
+
+/* section headings: sentence case, no shouting labels */
+h2[data-eyebrow]::before{text-transform:none;letter-spacing:0;font:600 14px/1 var(--body);margin-bottom:12px}
+.eyebrow,.invite-badge{text-transform:none;letter-spacing:0;font-size:13px;font-weight:600}
+.footer-grid h4,.docnav h4{text-transform:none;letter-spacing:0;font-size:14px}
+section{padding:84px 0}.sub{font-size:17.5px}
+
+/* hero */
+.hero{background:radial-gradient(60% 70% at 85% 30%,color-mix(in srgb,var(--blue) 14%,transparent),transparent 70%),linear-gradient(var(--line) 1px,transparent 1px) 0 0/100% 56px;-webkit-mask:none;border-radius:0 0 36px 36px;padding-top:76px}
+.hero h1{font-size:clamp(40px,6.2vw,68px);letter-spacing:-.05em;line-height:1.02}
+.facts li{border-radius:var(--r-s);box-shadow:var(--sh-1)}
+.phone{border-radius:40px;box-shadow:var(--sh-2)}
+
+/* cards share one surface */
+.tile,.store,.rel,.side,.docnav,details,.card,.note{background:var(--plate);border:1px solid var(--line);border-radius:var(--r-l);box-shadow:var(--sh-1)}
+.tile{border-radius:var(--r-m);padding:12px 12px 12px 14px}
+.tile:hover,.store:hover{border-color:color-mix(in srgb,var(--blue) 50%,var(--line));box-shadow:var(--sh-2)}
+.tile-dl{background:var(--soft);border-color:transparent;border-radius:var(--r-s)}
+.ic{border-radius:12px}
+.store.primary{border-color:var(--blue);background:linear-gradient(180deg,var(--soft),var(--plate) 60%)}
+.pill{border-radius:var(--r-s);min-height:38px}.pill[aria-pressed=true]{box-shadow:var(--sh-1)}
+.note{background:var(--soft);border-radius:var(--r-m);box-shadow:none}
+details{border-radius:var(--r-m)}summary{font-size:16.5px}
+.steps li::before{border-radius:var(--r-s);width:38px;height:38px}
+.steps li:not(:last-child)::after{top:19px;border-top:2px dashed var(--line);background:none;height:0}
+dl.feat>div{border-top:1px solid var(--line)}
+
+/* app page */
+.ahead{background:var(--plate);box-shadow:var(--sh-1);border-radius:var(--r-l);padding:28px}
+.ic.xl{border-radius:26px;box-shadow:var(--sh-2)}
+.chip{border-radius:var(--r-s)}
+.shots img{border-radius:var(--r-m);box-shadow:var(--sh-1)}
+.side{box-shadow:var(--sh-2)}
+
+/* invite page */
+body.card-page{background:radial-gradient(70% 50% at 50% 0,color-mix(in srgb,var(--blue) 14%,transparent),transparent 70%),var(--paper)}
+.invite-card{border-radius:28px;box-shadow:var(--sh-2)}
+.hero-dl{border-radius:var(--r-m)}.code-row{border-radius:var(--r-m)}
+.trust span{border-radius:var(--r-s)}
+
+/* API docs: code, tables, status (these had no base styles) */
+.doc{min-width:0}.doc h1{font-size:clamp(34px,5vw,52px);margin:16px 0 0}
+.doc h2{padding-top:12px;margin-top:48px;border-top:1px solid var(--line)}
+.doc code{font:500 .86em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--soft);color:var(--blue);padding:.15em .45em;border-radius:6px}
+.doc pre{background:var(--code);color:var(--code-ink);border:1px solid #1d2a44;border-radius:var(--r-m);box-shadow:var(--sh-1)}
+.doc pre code{background:none;color:inherit;padding:0;font-size:13.5px;line-height:1.7}
+.copy-code{background:#16203a;border-color:#2a3a5e;color:#b9c9ea;border-radius:8px}
+.keybox{background:var(--plate);border-radius:var(--r-m);box-shadow:var(--sh-1)}.keybox code{background:none;color:var(--ink)}
+.table-wrap{background:var(--plate);border-radius:var(--r-m);box-shadow:var(--sh-1)}
+.doc table{border-collapse:collapse;font-size:14.5px}
+.doc th,.doc td{text-align:left;padding:12px 16px;border-bottom:1px solid var(--line);vertical-align:top}
+.doc th{background:var(--soft);font-weight:600;white-space:nowrap}
+.live{display:inline-flex;align-items:center;gap:10px;margin:0 0 16px;font-size:14px;color:var(--steel)}
+.live .pill{min-height:0;padding:3px 10px;border-radius:99px;cursor:default;color:var(--ok);border-color:color-mix(in srgb,var(--ok) 35%,var(--line))}
+.docnav a{border-radius:var(--r-s)}.docnav a:hover{background:var(--soft)}
+.doc .callout{border-radius:var(--r-m)}
+
+/* footer */
+footer{background:var(--plate);border-top:1px solid var(--line)}
+.footer-grid a:hover{color:var(--blue)}
+
+@media(max-width:820px){section{padding:56px 0}.hero{border-radius:0;background:radial-gradient(70% 40% at 50% 100%,color-mix(in srgb,var(--blue) 14%,transparent),transparent)}.ahead{padding:18px}.nav{backdrop-filter:blur(14px)}}
+@media(prefers-reduced-motion:reduce){.btn:hover{transform:none}}
+
+/* Fix: the invisible menu backdrop covered the page and caught every tap, opening the menu. */
+#menuBackdrop{pointer-events:none}
+#menuBackdrop.show,header:has(#menuBtn[aria-expanded="true"]) ~ #menuBackdrop{pointer-events:auto}
+/* Fix: desktop nav links were hidden by the mobile menu's visibility rule. */
+@media(min-width:821px){.menu{visibility:visible;opacity:1;transform:none}#menuBackdrop{display:none!important}}

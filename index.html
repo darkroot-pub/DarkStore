@@ -9,7 +9,7 @@
 <script>try{var t=localStorage.getItem("ds_theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
 <link rel="preload" href="assets/fonts/bricolage-grotesque-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="assets/fonts/ibm-plex-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="site.css">
+<link rel="stylesheet" href="site.css"><link rel="stylesheet" href="theme.css">
 </head><body class="has-dock">
 <a class="skip" href="#main">Skip to content</a>
 <header class="nav"><div class="wrap">
@@ -21,6 +21,7 @@
   <button class="iconbtn" type="button" data-theme-toggle><svg class="ico-s sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4l1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><svg class="ico-s moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
   <button class="iconbtn" type="button" id="menuBtn" aria-label="Menu" aria-expanded="false" aria-controls="menu"><svg class="ico-s" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
 </div></header>
+<div id="menuBackdrop" aria-hidden="true"></div>
 
 <main id="main">
 <div class="wrap hero">
@@ -148,4 +149,22 @@
 
 <script src="site.js"></script>
 <script src="home.js"></script>
+<script>
+/* Mobile menu backdrop wiring — no changes to site.js needed */
+(function(){
+  document.addEventListener('DOMContentLoaded', function(){
+    var btn = document.getElementById('menuBtn');
+    var bd  = document.getElementById('menuBackdrop');
+    if (!btn || !bd) return;
+    var obs = new MutationObserver(function(){
+      var open = btn.getAttribute('aria-expanded') === 'true';
+      bd.classList.toggle('show', open);
+    });
+    obs.observe(btn, {attributes: true, attributeFilter: ['aria-expanded']});
+    bd.addEventListener('click', function(){
+      btn.click(); // close menu on backdrop tap
+    });
+  });
+})();
+</script>
 </body></html>

@@ -26,7 +26,7 @@ window.DS = (function () {
     var root = document.documentElement;
     if (next) { root.setAttribute("data-theme", next); try { localStorage.setItem("ds_theme", next); } catch (e) {} }
     var cur = root.getAttribute("data-theme") || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-    var m = document.querySelector('meta[name="theme-color"]'); if (m) m.content = cur === "dark" ? "#080b12" : "#f5f8fc";
+    var m = document.querySelector('meta[name="theme-color"]'); if (m) m.content = cur === "dark" ? "#080b12" : "#f6f8fb";
     return cur;
   }
   function initThemeButtons() {
