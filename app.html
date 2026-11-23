@@ -34,9 +34,11 @@
         <p class="by" id="by"></p>
         <div class="chips" id="chips"></div>
         <div class="acts">
-          <a class="btn" id="open" href="#">Open in DarkRoot Store</a>
+          <a class="btn" id="apkdl" data-api-dl data-id="" data-apk-text="Download APK" href="#"><svg class="ico-s" viewBox="0 0 24 24"><path d="M12 3v12m0 0l-5-5m5 5l5-5M5 21h14"/></svg><span data-apk-label>Download APK</span></a>
+          <a class="btn ghost" id="open" href="#">Open in app</a>
           <button class="btn ghost" id="share" type="button"><svg class="ico-s" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>Share</button>
         </div>
+        <p class="hint small muted" id="dlhint" hidden>Direct APK link from the verified catalog — you don't need the store app to install.</p>
         <p class="hint small muted" id="status" role="status"></p>
       </div>
     </div>
@@ -63,7 +65,8 @@
     <h1>Open in DarkRoot Store</h1>
     <p class="muted" id="fbText">The app opens inside DarkRoot Store, where you will find its screenshots, reviews and install button.</p>
     <div class="acts" style="justify-content:center">
-      <a class="btn" id="fbOpen" href="#">Open in DarkRoot Store</a>
+      <a class="btn" id="fbDl" data-api-dl data-id="" data-apk-text="Download APK" href="#"><svg class="ico-s" viewBox="0 0 24 24"><path d="M12 3v12m0 0l-5-5m5 5l5-5M5 21h14"/></svg><span data-apk-label>Download APK</span></a>
+      <a class="btn ghost" id="fbOpen" href="#">Open in DarkRoot Store</a>
       <a class="btn ghost" href="./#store">Browse apps</a>
     </div>
     <p class="small muted" id="fbStatus" role="status" style="margin:14px 0 0"></p>

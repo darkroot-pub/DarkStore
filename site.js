@@ -10,6 +10,10 @@ window.DS = (function () {
     PACKAGE: "com.darkstore.darkroot", SCHEME: "darkstore",
     SUPABASE: "https://mjhuwxmpbxmqgtfkqvsc.supabase.co",
     ANON: "sb_publishable_1cVwbCsAjrY3cHStxiULpw_Z2d-sWqc",
+    /* Published catalog API. This is the DEFAULT PUBLIC key: it is rate-limited and meant for
+       read-only demo use. Issue a scoped private key for production and keep that one server-side. */
+    API: "https://mjhuwxmpbxmqgtfkqvsc.supabase.co/functions/v1/store-api/v1",
+    API_KEY: "dsk_4be1239d1f9532e99d545f3eab1e3a1023df8d0114c6a121",
     /* Other stores that carry DarkRoot Store. Paste the listing link here, or set fdroidUrl / orionUrl in Firebase
        DarkStoreUpdate (no redeploy needed; Firebase wins). Empty = the card shows "Coming soon". */
     STORES: { fdroid: "", orion: "" }
@@ -71,6 +75,55 @@ window.DS = (function () {
       return r;
     });
   }
+  /* ---------- Published catalog API: direct APK links for website visitors ---------- */
+  var AK = "ds_api_apps_v1", apiP = null;
+  function apiList() {
+    var cache = store(AK);
+    return timed(C.API + "/apps?limit=100", { headers: { "X-API-Key": C.API_KEY } }, 9000)
+      .then(function (r) { return r.ok ? r.json() : null; }, function () { return null; })
+      .then(function (j) {
+        var l = (j && Array.isArray(j.data)) ? j.data.filter(function (a) {
+          return a && a.id && a.download && /^https:\/\//i.test(a.download.url || "");
+        }) : null;
+        if (l && l.length) { store(AK, l); return l; }
+        return Array.isArray(cache) && cache.length ? cache : [];
+      })
+      .catch(function () { return Array.isArray(cache) && cache.length ? cache : []; });
+  }
+  function apiApps() { if (!apiP) apiP = apiList(); return apiP; }
+  function apiUrl(id) {
+    return apiApps().then(function (l) {
+      for (var i = 0; i < l.length; i++) if (l[i].id === id) return direct(l[i].download.url);
+      return null;
+    });
+  }
+  // Fills every [data-api-dl][data-id] link with the verified APK url from the API.
+  function bindApiDownloads() {
+    var links = document.querySelectorAll("[data-api-dl]");
+    Array.prototype.forEach.call(links, function (a) { if (!a.dataset.ready) a.classList.add("busy"); });
+    return apiApps().then(function (list) {
+      var map = {};
+      list.forEach(function (a) { map[a.id] = a; });
+      Array.prototype.forEach.call(links, function (a) {
+        var app = map[a.dataset.id], u = app && app.download && app.download.url;
+        a.classList.remove("busy");
+        if (u && /^https:\/\//i.test(u)) {
+          a.href = direct(u); a.setAttribute("download", ""); a.setAttribute("target", "_blank"); a.setAttribute("rel", "noopener");
+          a.dataset.ready = "1"; a.removeAttribute("aria-disabled");
+        } else {
+          a.href = "#"; a.dataset.ready = ""; a.setAttribute("aria-disabled", "true");
+        }
+        var l = a.querySelector("[data-apk-label]");
+        if (l) l.textContent = u ? (a.dataset.apkText || "Download APK") : "Download unavailable";
+      });
+      return list;
+    });
+  }
+  document.addEventListener("click", function (e) {
+    var a = e.target.closest && e.target.closest("[data-api-dl]");
+    if (a && !a.dataset.ready) { e.preventDefault(); bindApiDownloads(); }
+  });
+
   // Listing links for the other stores. Fills every [data-store="fdroid|orion"] card/link on the page.
   function stores() {
     return release().then(function (r) {
@@ -172,5 +225,7 @@ window.DS = (function () {
     }
   });
 
-  return { C: C, get: get, release: release, bind: bind, stores: stores, apps: apps, cachedApps: cachedApps, app: app, img: img, icon: icon, el: el, copy: copy, direct: direct, toast: toast, shots: shots, rate: rate, stars: stars, theme: theme };
+  return { C: C, get: get, release: release, bind: bind, stores: stores, apps: apps, cachedApps: cachedApps, app: app,
+    apiApps: apiApps, apiUrl: apiUrl, bindApiDownloads: bindApiDownloads,
+    img: img, icon: icon, el: el, copy: copy, direct: direct, toast: toast, shots: shots, rate: rate, stars: stars, theme: theme };
 })();

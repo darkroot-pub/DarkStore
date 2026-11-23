@@ -2,6 +2,9 @@
   var $ = function (i) { return document.getElementById(i); };
   var id = (new URLSearchParams(location.search).get("id") || "").trim();
   DS.bind(); DS.stores();
+  // Direct APK links come from the published catalog API, keyed by the same app id.
+  ["apkdl", "fbDl"].forEach(function (i) { var e = $(i); if (e) e.dataset.id = id; });
+  DS.bindApiDownloads().then(function () { var h = $("dlhint"); if (h) h.hidden = false; });
   var android = /Android/i.test(navigator.userAgent);
   // The id is only passed on to the app when it looks like a normal id (any source: DarkRoot, F-Droid package, Orion ...)
   var valid = /^[A-Za-z0-9_.\-]{1,120}$/.test(id);

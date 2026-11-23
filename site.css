@@ -302,3 +302,19 @@ footer .wrap{display:block}
 }
 @media(max-width:520px){.footer-grid{grid-template-columns:1fr}.footer-grid .f-end{text-align:left}}
 @media(prefers-reduced-motion:reduce){.store:hover,.tile:hover,.shots img{transform:none}}
+
+/* direct APK downloads from the published catalog */
+.tile{padding:12px 12px 12px 14px;gap:10px}
+.tile-main{display:flex;gap:13px;align-items:center;flex:1;min-width:0;text-decoration:none}
+.tile-main>div{min-width:0;flex:1}
+.tile-dl{flex:none;width:38px;height:38px;display:grid;place-items:center;border-radius:11px;border:1px solid var(--line);background:var(--paper);color:var(--blue);text-decoration:none;font:700 19px/1 var(--body);transition:background .15s,color .15s,border-color .15s,transform .15s}
+.tile-dl:hover{background:var(--blue);color:var(--blue-ink);border-color:var(--blue);transform:translateY(-1px)}
+.tile-dl.busy,.tile-dl[aria-disabled=true]{opacity:.45;pointer-events:none}
+.tile.sk-t .tile-dl{display:none}
+#apkdl,#fbDl{flex:1;min-width:160px}
+.btn.busy{opacity:.65;pointer-events:none}
+.keybox{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:12px 0}
+.keybox code{font:600 13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ink);overflow-wrap:anywhere;flex:1;min-width:0}
+.keybox .copy-code{position:static;flex:none}
+.doc .callout strong{color:var(--ink)}
+@media(max-width:480px){.tile-dl{width:34px;height:34px}.tile-main{gap:10px}}

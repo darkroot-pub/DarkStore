@@ -23,12 +23,19 @@
   var grid = $("grid"), status = $("status"), q = $("q"), sort = $("sort"), more = $("more");
 
   function tile(a) {
-    var t = DS.el("a", "tile"); t.href = "app.html?id=" + encodeURIComponent(a.id);
-    t.appendChild(DS.icon(a, "m"));
+    var t = DS.el("div", "tile");
+    var m = DS.el("a", "tile-main"); m.href = "app.html?id=" + encodeURIComponent(a.id);
+    m.appendChild(DS.icon(a, "m"));
     var d = DS.el("div"); d.appendChild(DS.el("b", "", a.name)); d.appendChild(DS.el("small", "", a.developer || a.category || "App"));
     if (a.developer && a.category) d.appendChild(DS.el("small", "", a.category));
-    t.appendChild(d);
-    if (DS.stars(a)) t.appendChild(DS.el("span", "rt", "★ " + DS.stars(a)));
+    m.appendChild(d);
+    if (DS.stars(a)) m.appendChild(DS.el("span", "rt", "★ " + DS.stars(a)));
+    t.appendChild(m);
+    // Direct APK download from the published catalog (no store app needed).
+    var dl = DS.el("a", "tile-dl"); dl.href = "#"; dl.dataset.apiDl = ""; dl.dataset.id = a.id;
+    dl.setAttribute("aria-label", "Download " + a.name + " APK"); dl.title = "Download APK";
+    dl.appendChild(DS.el("span", "", "↓"));
+    t.appendChild(dl);
     return t;
   }
   function visible() {
@@ -58,6 +65,7 @@
     l.slice(0, shown).forEach(function (a) { grid.appendChild(tile(a)); });
     more.hidden = l.length <= shown;
     status.textContent = (l.length === all.length ? l.length + " app" + (l.length === 1 ? "" : "s") : l.length + " of " + all.length + " apps") + (ok ? "" : " · offline copy");
+    DS.bindApiDownloads();
   }
   function cats() {
     var seen = {}; all.forEach(function (a) { var c = a.category || "Other"; seen[c] = (seen[c] || 0) + 1; });

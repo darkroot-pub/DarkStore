@@ -23,7 +23,7 @@
 <main class="wrap" id="main"><div class="docs">
   <aside class="docnav" aria-label="On this page">
     <h4>On this page</h4>
-    <a href="#key">Get a key</a><a href="#request">Make a request</a><a href="#endpoints">Endpoints</a><a href="#params">/apps parameters</a><a href="#answer">Example answer</a><a href="#errors">Limits and errors</a><a href="#examples">More examples</a><a href="#please">Please</a>
+    <a href="#key">Get a key</a><a href="#request">Make a request</a><a href="#endpoints">Endpoints</a><a href="#params">/apps parameters</a><a href="#answer">Example answer</a><a href="#downloads">Direct downloads</a><a href="#errors">Limits and errors</a><a href="#examples">More examples</a><a href="#please">Please</a>
   </aside>
   <div class="doc">
     <span class="eyebrow"><i aria-hidden="true"></i>Developer documentation</span>
@@ -33,7 +33,10 @@
     <div class="callout"><svg class="ico-s" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5m0 3h.01"/></svg><span>Apps appear in this API only after they passed DarkStore's review. The list updates by itself.</span></div>
 
     <h2 id="key">1. Get a key</h2>
-    <p>Ask the DarkStore team for an API key (see our <a href="https://github.com/darkrootiding-hub" rel="noopener">GitHub</a>). Every key has its own speed limit and can be paused at any time. Keep it secret: call the API from your server, not from public JavaScript.</p>
+    <p>Ask the DarkStore team for an API key (see our <a href="https://github.com/darkrootiding-hub" rel="noopener">GitHub</a>). Every key has its own speed limit and can be paused at any time.</p>
+    <p>The <strong>default public key</strong> is already enabled for read-only catalog access, including the direct APK links used by this website:</p>
+    <div class="keybox"><code id="apikey">dsk_4be1239d1f9532e99d545f3eab1e3a1023df8d0114c6a121</code><button class="copy-code" id="keycopy" type="button">Copy</button></div>
+    <p class="small muted">This default key is public and rate-limited to 60 requests per minute. For production, request a scoped private key and keep it on your server — never ship a private key in public JavaScript.</p>
 
     <h2 id="request">2. Make a request</h2>
     <p>Base address:</p>
@@ -80,6 +83,13 @@
   "meta": { "total": 39, "limit": 20, "offset": 0, "count": 20, "hasMore": true }
 }</code></pre>
     <p><code>download</code> is only present if DarkStore allows it for your key and for that app. Some fields (description, screenshots, video, changelog) can be switched off by DarkStore.</p>
+
+    <h2 id="downloads">Direct downloads</h2>
+    <p>Every published app in this API carries an https <code>download.url</code>. DarkRoot Store uses the default key above to put a direct "Download APK" button on every app page and catalog tile, so visitors can install an app without opening the store app first.</p>
+<pre><code>curl -H "X-API-Key: dsk_4be1239d1f9532e99d545f3eab1e3a1023df8d0114c6a121" \
+  "https://mjhuwxmpbxmqgtfkqvsc.supabase.co/functions/v1/store-api/v1/apps/com.venter.hopweb" \
+  | jq -r '.data.download.url'</code></pre>
+    <div class="callout"><svg class="ico-s" viewBox="0 0 24 24"><path d="M12 3v12m0 0l-5-5m5 5l5-5M5 21h14"/></svg><span>Only https download links are shown. The website never accepts a plain http APK url.</span></div>
 
     <h2 id="errors">Limits and errors</h2>
     <p>Every answer carries <code>X-RateLimit-Limit</code> and <code>X-RateLimit-Remaining</code> (per minute). When you go over, you get <code>429</code> with a <code>Retry-After</code> header. Cache the list on your side and use <code>updated_since</code>.</p>
@@ -141,6 +151,11 @@ apps = r.json()["data"]</code></pre>
       DS.copy(text).then(function(){ btn.textContent = "Copied"; setTimeout(function(){ btn.textContent = "Copy"; }, 1600); });
     });
     pre.appendChild(btn);
+  });
+
+  var kc = document.getElementById("keycopy"), k = document.getElementById("apikey");
+  if (kc && k) kc.addEventListener("click", function () {
+    DS.copy(k.textContent.trim()).then(function () { kc.textContent = "Copied"; setTimeout(function () { kc.textContent = "Copy"; }, 1600); });
   });
 })();
 </script>
