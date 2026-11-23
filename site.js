@@ -124,6 +124,26 @@ window.DS = (function () {
     if (a && !a.dataset.ready) { e.preventDefault(); bindApiDownloads(); }
   });
 
+  /* Hand off to the native app WITHOUT replacing this page.
+     A hidden frame is used on purpose: if DarkRoot Store is not installed,
+     Android fails quietly inside the frame instead of showing an
+     "Unknown scheme / chrome-error" screen. If we are still visible after a
+     moment, tell the visitor what to do and let them use the direct APK link. */
+  function openInApp(intent, status, missing) {
+    var noted = false;
+    function note() { if (!noted && status) { status.textContent = missing; noted = true; } }
+    try {
+      var f = document.createElement("iframe");
+      f.style.cssText = "display:none;width:0;height:0;border:0";
+      f.setAttribute("aria-hidden", "true");
+      f.src = intent;
+      document.body.appendChild(f);
+      setTimeout(function () { if (f.parentNode) f.parentNode.removeChild(f); }, 2500);
+    } catch (e) {}
+    setTimeout(function () { if (document.visibilityState === "visible") note(); }, 1400);
+    return false;
+  }
+
   // Listing links for the other stores. Fills every [data-store="fdroid|orion"] card/link on the page.
   function stores() {
     return release().then(function (r) {
@@ -226,6 +246,6 @@ window.DS = (function () {
   });
 
   return { C: C, get: get, release: release, bind: bind, stores: stores, apps: apps, cachedApps: cachedApps, app: app,
-    apiApps: apiApps, apiUrl: apiUrl, bindApiDownloads: bindApiDownloads,
+    apiApps: apiApps, apiUrl: apiUrl, bindApiDownloads: bindApiDownloads, openInApp: openInApp,
     img: img, icon: icon, el: el, copy: copy, direct: direct, toast: toast, shots: shots, rate: rate, stars: stars, theme: theme };
 })();

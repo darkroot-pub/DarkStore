@@ -68,8 +68,16 @@
   if (!/^[A-Z0-9]{8}$/.test(code)) { $("bad").hidden = false; return; }
   $("invite").hidden = false; $("code").textContent = code; DS.bind();
   var android = /Android/i.test(navigator.userAgent);
-  var intent = "intent://invite/" + code + "#Intent;scheme=" + DS.C.SCHEME + ";package=" + DS.C.PACKAGE + ";end";
-  $("open").href = android ? intent : DS.C.SCHEME + "://invite/" + code;
+  var intent = "intent://invite/" + code + "#Intent;scheme=" + DS.C.SCHEME + ";package=" + DS.C.PACKAGE
+    + ";S.browser_fallback_url=" + encodeURIComponent(location.href) + ";end";
+  // Never auto-launch the app: on a device without DarkRoot Store, an intent://
+  // navigation turns the whole page into an error screen. Open only on a tap.
+  $("open").href = location.href;
+  $("open").addEventListener("click", function (e) {
+    e.preventDefault();
+    if (!android) { $("status").textContent = "DarkRoot Store is an Android app. Download it on your phone, then open this link there."; return; }
+    DS.openInApp(intent, $("status"), "DarkRoot Store isn't installed here. Download the free APK above to use this invite — the code is copied automatically.");
+  });
   var ctrl = ("AbortController" in window) ? new AbortController() : null, t = setTimeout(function(){ if (ctrl) ctrl.abort(); }, 6000);
   fetch(DS.C.BACKEND + "/referral/inviter?code=" + encodeURIComponent(code), ctrl ? {signal: ctrl.signal} : {})
     .then(function(r){ return r.ok ? r.json() : null; })
@@ -90,9 +98,8 @@
   // Download: copy "DSREF:<CODE>" first so the app can claim the invite after install.
   // Own the click here (stopPropagation) so this always runs, even on the very first tap
   // while site.js is still resolving the APK link.
-  var tapped = false;
   function startDownload(a){
-    tapped = true; $("copied").hidden = false;
+    $("copied").hidden = false;
     DS.copy("DSREF:" + code).then(function(){ setTimeout(function(){ location.href = a.href; }, 350); }, function(){ location.href = a.href; });
   }
   $("dl").addEventListener("click", function(e){
@@ -111,7 +118,6 @@
     $("status").textContent = "DarkRoot Store is an Android app. Download it on your phone, then open this link there.";
     return;
   }
-  setTimeout(function(){ if (!tapped) location.href = intent; }, 1200);
 })();
 </script>
 </body></html>

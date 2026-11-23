@@ -10,21 +10,34 @@
   var valid = /^[A-Za-z0-9_.\-]{1,120}$/.test(id);
   var path = valid ? "app/" + encodeURIComponent(id) : "";
   var shareUrl = location.origin + location.pathname + (valid ? "?id=" + encodeURIComponent(id) : "");
-  var intent = "intent://" + path + "#Intent;scheme=" + DS.C.SCHEME + ";package=" + DS.C.PACKAGE + ";end";
-  var deep = android ? intent : DS.C.SCHEME + "://" + path;
-  $("open").href = deep; $("fbOpen").href = deep;
+  // browser_fallback_url keeps real Chrome on a real page if the app is missing.
+  var intent = "intent://" + path + "#Intent;scheme=" + DS.C.SCHEME + ";package=" + DS.C.PACKAGE
+    + ";S.browser_fallback_url=" + encodeURIComponent(shareUrl) + ";end";
+  var missing = android
+    ? "DarkRoot Store isn't installed here. Use Download APK above — this app works without the store."
+    : "DarkRoot Store is an Android app. Use Download APK above, or open this page on your phone.";
+  // "Open in app" is now a deliberate tap, never an automatic redirect.
+  ["open", "fbOpen"].forEach(function (i) {
+    var e = $(i); if (!e) return;
+    e.href = shareUrl;
+    e.addEventListener("click", function (ev) {
+      ev.preventDefault();
+      if (!android) { $("status").textContent = missing; $("fbStatus").textContent = missing; return; }
+      DS.openInApp(intent, $("app").hidden ? $("fbStatus") : $("status"), missing);
+    });
+  });
   var fell = false;
-  // Details could not be loaded (not in the database, offline, any source): never a dead end, hand over to the store app.
+  // Details could not be loaded (not in the database, offline, any source): never a dead end.
   function fallback() {
     if (fell) return; fell = true;
     $("loading").hidden = true; $("app").hidden = true; $("fallback").hidden = false;
     document.title = "Open in DarkRoot Store";
-    $("fbStatus").textContent = android ? "Opening the app… if nothing happens, install DarkRoot Store first." : "DarkRoot Store is an Android app. Open this link on your Android phone.";
-    if (!android) $("fbOpen").hidden = true;
+    $("fbStatus").textContent = android
+      ? "Browse the details here, or install this app directly with Download APK. Tap Open in app only if you already have DarkRoot Store."
+      : "DarkRoot Store is an Android app. Use Download APK to install this app directly, or open this page on your phone.";
   }
   $("fbCopy").addEventListener("click", function () { DS.copy(shareUrl).then(function () { DS.toast("Link copied"); }); });
-  if (!valid) { fallback(); if (android) setTimeout(function () { location.href = intent; }, 400); return; }
-  if (android) setTimeout(function () { location.href = intent; }, 700);   // best effort: open the app straight away, whatever the data says
+  if (!valid) { fallback(); return; }
 
   function fact(k, v) { if (!v) return; var d = DS.el("div"); d.appendChild(DS.el("dt", "", k)); d.appendChild(DS.el("dd", "", v)); $("facts").appendChild(d); }
 
@@ -54,8 +67,9 @@
         r.onclick = function () { var c = $("desc").classList.toggle("clamp"); r.textContent = c ? "Read more" : "Show less"; };
       } else $("desc").classList.remove("clamp");
     }
-    if (android) $("status").textContent = "Opening the app… if nothing happens, install DarkRoot Store first.";
-    else $("status").textContent = "DarkRoot Store is an Android app. Open this link on your Android phone.";
+    $("status").textContent = android
+      ? "Every detail is here, or install instantly with Download APK. Already have DarkRoot Store? Tap Open in app."
+      : "Use Download APK to install this app directly, or open this page on your phone for the in-app experience.";
 
     // more apps
     DS.apps().then(function (r) {
