@@ -16,7 +16,7 @@
 
   // download bar on phones: appears after the hero scrolls away
   var dock = $("dock"), hero = document.querySelector(".hero");
-  if ("IntersectionObserver" in window) new IntersectionObserver(function (e) { dock.classList.toggle("show", !e[0].isIntersecting); }).observe(hero);
+  if ("IntersectionObserver" in window && dock && hero) new IntersectionObserver(function (e) { dock.classList.toggle("show", !e[0].isIntersecting); }).observe(hero);
 
   /* ---------- catalog ---------- */
   var PAGE = 12, all = [], cat = "all", shown = PAGE, ok = true;

@@ -101,12 +101,14 @@
   document.addEventListener('DOMContentLoaded', function(){
     var btn = document.getElementById('menuBtn');
     var bd  = document.getElementById('menuBackdrop');
-    if (!btn || !bd) return;
-    var obs = new MutationObserver(function(){
-      var open = btn.getAttribute('aria-expanded') === 'true';
-      bd.classList.toggle('show', open);
-    });
-    obs.observe(btn, {attributes: true, attributeFilter: ['aria-expanded']});
+    if (!btn || !bd || !(btn instanceof Node) || !(bd instanceof Node)) return;
+    try {
+      var obs = new MutationObserver(function(){
+        var open = btn.getAttribute('aria-expanded') === 'true';
+        bd.classList.toggle('show', open);
+      });
+      obs.observe(btn, {attributes: true, attributeFilter: ['aria-expanded']});
+    } catch (e) {}
     bd.addEventListener('click', function(){ btn.click(); });
   });
 })();
