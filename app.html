@@ -102,13 +102,8 @@
     var btn = document.getElementById('menuBtn');
     var bd  = document.getElementById('menuBackdrop');
     if (!btn || !bd || !(btn instanceof Node) || !(bd instanceof Node)) return;
-    try {
-      var obs = new MutationObserver(function(){
-        var open = btn.getAttribute('aria-expanded') === 'true';
-        bd.classList.toggle('show', open);
-      });
-      obs.observe(btn, {attributes: true, attributeFilter: ['aria-expanded']});
-    } catch (e) {}
+    // The backdrop is shown with CSS :has(#menuBtn[aria-expanded="true"]),
+    // so no MutationObserver is needed here.
     bd.addEventListener('click', function(){ btn.click(); });
   });
 })();
