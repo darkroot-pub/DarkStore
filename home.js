@@ -1,7 +1,7 @@
 (function () {
   var $ = function (i) { return document.getElementById(i); };
   var ref = new URLSearchParams(location.search).get("ref");   // an invite link that landed on the home page
-  if (ref && /^[A-Za-z0-9]{8}$/.test(ref)) { location.replace("invite.html?ref=" + encodeURIComponent(ref.toUpperCase())); return; }
+  if (ref && /^[A-Za-z0-9]{8}$/.test(ref)) { location.replace("/invite?ref=" + encodeURIComponent(ref.toUpperCase())); return; }
 
   if (!/Android/i.test(navigator.userAgent)) $("desktopHint").hidden = false;
 
@@ -24,7 +24,7 @@
 
   function tile(a) {
     var t = DS.el("div", "tile");
-    var m = DS.el("a", "tile-main"); m.href = "app.html?id=" + encodeURIComponent(a.id);
+    var m = DS.el("a", "tile-main"); m.href = "/app?id=" + encodeURIComponent(a.id);
     m.appendChild(DS.icon(a, "m"));
     var d = DS.el("div"); d.appendChild(DS.el("b", "", a.name)); d.appendChild(DS.el("small", "", a.developer || a.category || "App"));
     if (a.developer && a.category) d.appendChild(DS.el("small", "", a.category));
@@ -82,7 +82,7 @@
     if (!list.length) { box.textContent = "No apps yet. Open the app to browse."; box.className = "small muted"; return; }
     box.className = "";
     list.slice(0, 5).forEach(function (a) {
-      var r = DS.el("a", "row"); r.href = "app.html?id=" + encodeURIComponent(a.id);
+      var r = DS.el("a", "row"); r.href = "/app?id=" + encodeURIComponent(a.id);
       r.appendChild(DS.icon(a));
       var t = DS.el("div"); t.appendChild(DS.el("b", "", a.name)); t.appendChild(DS.el("small", "", a.developer || a.category || ""));
       r.appendChild(t);

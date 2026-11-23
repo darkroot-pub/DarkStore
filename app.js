@@ -41,11 +41,34 @@
 
   function fact(k, v) { if (!v) return; var d = DS.el("div"); d.appendChild(DS.el("dt", "", k)); d.appendChild(DS.el("dd", "", v)); $("facts").appendChild(d); }
 
+  // Keep the page's SEO metadata in sync with the app that actually loaded.
+  function seo(a) {
+    var page = location.origin + "/app?id=" + encodeURIComponent(id);
+    var c = $("canon"); if (c) c.href = page;
+    var ou = $("ogurl"); if (ou) ou.content = page;
+    var ot = $("ogtitle"); if (ot) ot.content = a.name + " on DarkRoot Store";
+    var od = $("ogdesc"); if (od) od.content = (a.description || ("Download " + a.name + " on DarkRoot Store")).slice(0, 160);
+    var shots = DS.shots(a).filter(function (u) { return /^https:\/\//i.test(u); });
+    var image = (/^https:\/\//i.test(a.logo || "") ? a.logo : null) || shots[0] || location.origin + "/icon.png";
+    var oi = $("ogimage"); if (oi) oi.content = image;
+    var ld = $("app-ld");
+    if (ld) ld.textContent = JSON.stringify({
+      "@context": "https://schema.org", "@type": "SoftwareApplication",
+      "name": a.name, "description": (a.description || "").slice(0, 300),
+      "applicationCategory": a.category || "ApplicationStoreApplication",
+      "operatingSystem": "Android", "url": page, "image": image,
+      "softwareVersion": a.version,
+      "author": a.developer ? { "@type": "Organization", "name": a.developer } : undefined,
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    });
+  }
+
   DS.app(id).then(function (a) {
     if (!a || a.isApproved === false || a.isSuspended === true || !a.name) { fallback(); return; }
     $("loading").hidden = true; $("app").hidden = false;
     document.title = a.name + " on DarkRoot Store";
     var d = document.querySelector('meta[name="description"]'); if (d) d.content = (a.description || "").slice(0, 150) || d.content;
+    seo(a);
     $("icon").appendChild(DS.icon(a, "xl"));
     $("name").textContent = a.name;
     if (a.developer) $("by").textContent = "by " + a.developer; else $("by").hidden = true;
@@ -78,7 +101,7 @@
       l = same.concat(l.filter(function (x) { return same.indexOf(x) < 0; })).slice(0, 6);
       if (!l.length) return;
       l.forEach(function (x) {
-        var t = DS.el("a", "tile"); t.href = "app.html?id=" + encodeURIComponent(x.id); t.appendChild(DS.icon(x, "m"));
+        var t = DS.el("a", "tile"); t.href = "/app?id=" + encodeURIComponent(x.id); t.appendChild(DS.icon(x, "m"));
         var dd = DS.el("div"); dd.appendChild(DS.el("b", "", x.name)); dd.appendChild(DS.el("small", "", x.developer || x.category || "")); t.appendChild(dd);
         if (DS.stars(x)) t.appendChild(DS.el("span", "rt", "★ " + DS.stars(x)));
         $("relGrid").appendChild(t);
