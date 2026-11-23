@@ -277,7 +277,7 @@ footer .wrap{display:block}
 .doc .callout{display:flex;gap:12px;align-items:flex-start;border:1px solid color-mix(in srgb,var(--blue) 24%,var(--line));background:var(--soft);border-radius:14px;padding:14px 16px;margin:18px 0;color:var(--steel);font-size:14.5px}
 .doc .callout svg{flex:none;color:var(--blue);margin-top:2px}
 .doc pre{position:relative;padding:16px 18px;margin:12px 0 20px;line-height:1.6;overflow:auto;max-width:100%}
-.doc pre code{padding-right:74px}
+.doc pre code{padding-right:74px;white-space:pre-wrap;overflow-wrap:anywhere}
 .copy-code{position:absolute;top:9px;right:9px;border:1px solid var(--line);background:var(--plate);color:var(--steel);border-radius:8px;padding:5px 9px;font:600 11.5px var(--body);cursor:pointer}
 .copy-code:hover{border-color:var(--blue);color:var(--blue)}
 .table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:14px;margin:10px 0 20px}
