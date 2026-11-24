@@ -1,26 +1,56 @@
 <!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>You're invited to DarkRoot Store</title><meta name="robots" content="noindex"><meta name="theme-color" content="#f5f8fc">
-<meta property="og:title" content="You're invited to DarkRoot Store"><meta property="og:description" content="A friend invited you. Join DarkRoot Store."><meta property="og:image" content="icon.png">
-<link rel="icon" href="favicon.png"><link rel="apple-touch-icon" href="apple-touch-icon.png">
+<title>You're invited to DarkRoot Store</title>
+<meta name="description" content="A friend invited you to DarkRoot Store — the Android store where every app is reviewed before it reaches you. Your invite is applied automatically.">
+<meta name="robots" content="noindex"><meta name="theme-color" content="#f5f8fc">
+<meta property="og:type" content="website"><meta property="og:site_name" content="DarkRoot Store"><meta property="og:url" content="https://darkrootstore.vercel.app/invite"><meta property="og:title" content="You're invited to DarkRoot Store"><meta property="og:description" content="Install apps that were reviewed first. Your friend's invite is applied automatically."><meta property="og:image" content="https://darkrootstore.vercel.app/icon.png"><meta property="og:locale" content="en_US"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="You're invited to DarkRoot Store"><meta name="twitter:description" content="Install apps that were reviewed first."><meta name="twitter:image" content="https://darkrootstore.vercel.app/icon.png">
+<link rel="canonical" href="https://darkrootstore.vercel.app/invite"><link rel="icon" href="/favicon.png"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><link rel="manifest" href="/manifest.webmanifest">
 <script>try{var t=localStorage.getItem("ds_theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="site.css">
+<link rel="preload" href="assets/fonts/bricolage-grotesque-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/ibm-plex-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="site.css"><link rel="stylesheet" href="theme.css">
 </head><body class="card-page">
-<main class="card" aria-live="polite">
+<main class="card invite-card" aria-live="polite">
   <section id="invite" hidden>
-    <div class="ico fb"><img src="icon.png" alt="DarkRoot Store"></div>
+    <div class="invite-top">
+      <div class="ico fb"><img src="icon.png" alt="DarkRoot Store"></div>
+      <span class="invite-badge">INVITE</span>
+    </div>
     <h1 id="title">You're invited to DarkRoot Store</h1>
     <p id="sub">Install apps that were reviewed first.</p>
-    <div class="code" id="code" aria-label="Invite code"></div>
-    <a class="btn" id="open" href="#">Open in DarkRoot Store</a>
+
+    <div class="code-row">
+      <div class="code" id="code" aria-label="Invite code"></div>
+      <button class="code-copy" id="copy" type="button" aria-label="Copy invite code">
+        <svg class="ico-s" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><span>Copy</span>
+      </button>
+    </div>
+
+    <div class="invite-cta">
+      <a class="btn hero-dl" id="dl" data-dl data-text="Download DarkRoot Store" href="#">
+        <svg class="ico-s" viewBox="0 0 24 24"><path d="M12 3v12m0 0l-5-5m5 5l5-5M5 21h14"/></svg>
+        <span class="dl-stack"><b data-label>Download DarkRoot Store</b><small>Free APK for Android<span data-ver></span></small></span>
+      </a>
+      <a class="btn open-app" id="open" href="#">Already installed? Open in app</a>
+    </div>
+
     <p class="hint" id="status" role="status"></p>
-    <div id="getbox"><p class="hint">Don't have DarkRoot Store yet?</p>
-      <a class="btn ghost" id="dl" data-dl data-text="Download DarkRoot Store" href="#"><span data-label>Download DarkRoot Store</span></a>
-      <ol class="how"><li>Download and install the app.</li><li>Sign up with a new account.</li><li>Your friend's invite is applied automatically.</li></ol>
-      <p class="hint" id="copied" hidden>We copied your invite code, so the app can find it after you install.</p></div>
-    <button class="btn ghost" id="copy" type="button">Copy invite code</button>
+    <p class="copied-note" id="copied" hidden>
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9.5"/></svg>
+      <span>Invite code copied. After you install, sign up with a new account and the invite applies automatically.</span>
+    </p>
+
+    <div class="trust" aria-label="Why DarkRoot Store">
+      <span>✓ Reviewed apps</span><span>✓ Free to use</span><span>✓ No ads</span>
+    </div>
+
+    <ol class="how">
+      <li>Download and install DarkRoot Store.</li>
+      <li>Sign up with a new account.</li>
+      <li>Your friend's invite is applied automatically.</li>
+    </ol>
+
     <div class="mini"><img src="favicon.png" alt="">DarkRoot Store <span data-ver></span></div>
   </section>
   <section id="bad" hidden>
@@ -37,8 +67,16 @@
   if (!/^[A-Z0-9]{8}$/.test(code)) { $("bad").hidden = false; return; }
   $("invite").hidden = false; $("code").textContent = code; DS.bind();
   var android = /Android/i.test(navigator.userAgent);
-  var intent = "intent://invite/" + code + "#Intent;scheme=" + DS.C.SCHEME + ";package=" + DS.C.PACKAGE + ";end";
-  $("open").href = android ? intent : DS.C.SCHEME + "://invite/" + code;
+  var intent = "intent://invite/" + code + "#Intent;scheme=" + DS.C.SCHEME + ";package=" + DS.C.PACKAGE
+    + ";S.browser_fallback_url=" + encodeURIComponent(location.href) + ";end";
+  // Never auto-launch the app: on a device without DarkRoot Store, an intent://
+  // navigation turns the whole page into an error screen. Open only on a tap.
+  $("open").href = location.href;
+  $("open").addEventListener("click", function (e) {
+    e.preventDefault();
+    if (!android) { $("status").textContent = "DarkRoot Store is an Android app. Download it on your phone, then open this link there."; return; }
+    DS.openInApp(intent, $("status"), "DarkRoot Store isn't installed here. Download the free APK above to use this invite — the code is copied automatically.");
+  });
   var ctrl = ("AbortController" in window) ? new AbortController() : null, t = setTimeout(function(){ if (ctrl) ctrl.abort(); }, 6000);
   fetch(DS.C.BACKEND + "/referral/inviter?code=" + encodeURIComponent(code), ctrl ? {signal: ctrl.signal} : {})
     .then(function(r){ return r.ok ? r.json() : null; })
@@ -47,15 +85,38 @@
       else if (j.enabled === false) $("sub").textContent = "Invite rewards are paused right now, but you can still join.";
       else if (j.valid === false) $("sub").textContent = "This invite code wasn't found, but you can still join DarkRoot Store."; })
     .catch(function(){ clearTimeout(t); });
-  $("copy").addEventListener("click", function(){ var b = this; DS.copy(code).then(function(){ b.textContent = "Code copied"; setTimeout(function(){ b.textContent = "Copy invite code"; }, 1800); }); });
-  // Download: leave "DSREF:<CODE>" in the clipboard first, so the app finds the invite after install.
-  $("dl").addEventListener("click", function(e){
-    if (!this.dataset.ready) return;           // site.js retries the link
-    e.preventDefault(); var url = this.href; $("copied").hidden = false;
-    DS.copy("DSREF:" + code).then(function(){ setTimeout(function(){ location.href = url; }, 350); }, function(){ location.href = url; });
+
+  $("copy").addEventListener("click", function(){
+    var b = this;
+    DS.copy(code).then(function(){
+      b.classList.add("done"); b.querySelector("span").textContent = "Copied";
+      setTimeout(function(){ b.classList.remove("done"); b.querySelector("span").textContent = "Copy"; }, 1800);
+    });
   });
-  if (!android) { $("open").hidden = true; $("status").textContent = "DarkRoot Store is an Android app. Open this link on your Android phone."; return; }
-  setTimeout(function(){ location.href = intent; }, 250);
+
+  // Download: copy "DSREF:<CODE>" first so the app can claim the invite after install.
+  // Own the click here (stopPropagation) so this always runs, even on the very first tap
+  // while site.js is still resolving the APK link.
+  function startDownload(a){
+    $("copied").hidden = false;
+    DS.copy("DSREF:" + code).then(function(){ setTimeout(function(){ location.href = a.href; }, 350); }, function(){ location.href = a.href; });
+  }
+  $("dl").addEventListener("click", function(e){
+    e.preventDefault(); e.stopPropagation();
+    var a = this;
+    var wait = a.dataset.ready ? Promise.resolve(true)
+      : DS.bind().then(function(){ return !!a.dataset.ready; });
+    wait.then(function(ok){
+      if (ok) startDownload(a);
+      else { DS.bind(true); DS.toast("Download link is loading — tap again in a second."); }
+    });
+  });
+
+  if (!android) {
+    $("open").hidden = true;
+    $("status").textContent = "DarkRoot Store is an Android app. Download it on your phone, then open this link there.";
+    return;
+  }
 })();
 </script>
 </body></html>

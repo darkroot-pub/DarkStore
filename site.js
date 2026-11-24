@@ -10,6 +10,10 @@ window.DS = (function () {
     PACKAGE: "com.darkstore.darkroot", SCHEME: "darkstore",
     SUPABASE: "https://mjhuwxmpbxmqgtfkqvsc.supabase.co",
     ANON: "sb_publishable_1cVwbCsAjrY3cHStxiULpw_Z2d-sWqc",
+    /* Published catalog API. This is the DEFAULT PUBLIC key: it is rate-limited and meant for
+       read-only demo use. Issue a scoped private key for production and keep that one server-side. */
+    API: "https://mjhuwxmpbxmqgtfkqvsc.supabase.co/functions/v1/store-api/v1",
+    API_KEY: "dsk_4be1239d1f9532e99d545f3eab1e3a1023df8d0114c6a121",
     /* Other stores that carry DarkRoot Store. Paste the listing link here, or set fdroidUrl / orionUrl in Firebase
        DarkStoreUpdate (no redeploy needed; Firebase wins). Empty = the card shows "Coming soon". */
     STORES: { fdroid: "", orion: "" }
@@ -22,7 +26,7 @@ window.DS = (function () {
     var root = document.documentElement;
     if (next) { root.setAttribute("data-theme", next); try { localStorage.setItem("ds_theme", next); } catch (e) {} }
     var cur = root.getAttribute("data-theme") || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-    var m = document.querySelector('meta[name="theme-color"]'); if (m) m.content = cur === "dark" ? "#080b12" : "#f5f8fc";
+    var m = document.querySelector('meta[name="theme-color"]'); if (m) m.content = cur === "dark" ? "#080b12" : "#f6f8fb";
     return cur;
   }
   function initThemeButtons() {
@@ -71,6 +75,75 @@ window.DS = (function () {
       return r;
     });
   }
+  /* ---------- Published catalog API: direct APK links for website visitors ---------- */
+  var AK = "ds_api_apps_v1", apiP = null;
+  function apiList() {
+    var cache = store(AK);
+    return timed(C.API + "/apps?limit=100", { headers: { "X-API-Key": C.API_KEY } }, 9000)
+      .then(function (r) { return r.ok ? r.json() : null; }, function () { return null; })
+      .then(function (j) {
+        var l = (j && Array.isArray(j.data)) ? j.data.filter(function (a) {
+          return a && a.id && a.download && /^https:\/\//i.test(a.download.url || "");
+        }) : null;
+        if (l && l.length) { store(AK, l); return l; }
+        return Array.isArray(cache) && cache.length ? cache : [];
+      })
+      .catch(function () { return Array.isArray(cache) && cache.length ? cache : []; });
+  }
+  function apiApps() { if (!apiP) apiP = apiList(); return apiP; }
+  function apiUrl(id) {
+    return apiApps().then(function (l) {
+      for (var i = 0; i < l.length; i++) if (l[i].id === id) return direct(l[i].download.url);
+      return null;
+    });
+  }
+  // Fills every [data-api-dl][data-id] link with the verified APK url from the API.
+  function bindApiDownloads() {
+    var links = document.querySelectorAll("[data-api-dl]");
+    Array.prototype.forEach.call(links, function (a) { if (!a.dataset.ready) a.classList.add("busy"); });
+    return apiApps().then(function (list) {
+      var map = {};
+      list.forEach(function (a) { map[a.id] = a; });
+      Array.prototype.forEach.call(links, function (a) {
+        var app = map[a.dataset.id], u = app && app.download && app.download.url;
+        a.classList.remove("busy");
+        if (u && /^https:\/\//i.test(u)) {
+          a.href = direct(u); a.setAttribute("download", ""); a.setAttribute("target", "_blank"); a.setAttribute("rel", "noopener");
+          a.dataset.ready = "1"; a.removeAttribute("aria-disabled");
+        } else {
+          a.href = "#"; a.dataset.ready = ""; a.setAttribute("aria-disabled", "true");
+        }
+        var l = a.querySelector("[data-apk-label]");
+        if (l) l.textContent = u ? (a.dataset.apkText || "Download APK") : "Download unavailable";
+      });
+      return list;
+    });
+  }
+  document.addEventListener("click", function (e) {
+    var a = e.target.closest && e.target.closest("[data-api-dl]");
+    if (a && !a.dataset.ready) { e.preventDefault(); bindApiDownloads(); }
+  });
+
+  /* Hand off to the native app WITHOUT replacing this page.
+     A hidden frame is used on purpose: if DarkRoot Store is not installed,
+     Android fails quietly inside the frame instead of showing an
+     "Unknown scheme / chrome-error" screen. If we are still visible after a
+     moment, tell the visitor what to do and let them use the direct APK link. */
+  function openInApp(intent, status, missing) {
+    var noted = false;
+    function note() { if (!noted && status) { status.textContent = missing; noted = true; } }
+    try {
+      var f = document.createElement("iframe");
+      f.style.cssText = "display:none;width:0;height:0;border:0";
+      f.setAttribute("aria-hidden", "true");
+      f.src = intent;
+      document.body.appendChild(f);
+      setTimeout(function () { if (f.parentNode) f.parentNode.removeChild(f); }, 2500);
+    } catch (e) {}
+    setTimeout(function () { if (document.visibilityState === "visible") note(); }, 1400);
+    return false;
+  }
+
   // Listing links for the other stores. Fills every [data-store="fdroid|orion"] card/link on the page.
   function stores() {
     return release().then(function (r) {
@@ -172,5 +245,7 @@ window.DS = (function () {
     }
   });
 
-  return { C: C, get: get, release: release, bind: bind, stores: stores, apps: apps, cachedApps: cachedApps, app: app, img: img, icon: icon, el: el, copy: copy, direct: direct, toast: toast, shots: shots, rate: rate, stars: stars, theme: theme };
+  return { C: C, get: get, release: release, bind: bind, stores: stores, apps: apps, cachedApps: cachedApps, app: app,
+    apiApps: apiApps, apiUrl: apiUrl, bindApiDownloads: bindApiDownloads, openInApp: openInApp,
+    img: img, icon: icon, el: el, copy: copy, direct: direct, toast: toast, shots: shots, rate: rate, stars: stars, theme: theme };
 })();

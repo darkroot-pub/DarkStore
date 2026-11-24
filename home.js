@@ -1,7 +1,7 @@
 (function () {
   var $ = function (i) { return document.getElementById(i); };
   var ref = new URLSearchParams(location.search).get("ref");   // an invite link that landed on the home page
-  if (ref && /^[A-Za-z0-9]{8}$/.test(ref)) { location.replace("invite.html?ref=" + encodeURIComponent(ref.toUpperCase())); return; }
+  if (ref && /^[A-Za-z0-9]{8}$/.test(ref)) { location.replace("/invite?ref=" + encodeURIComponent(ref.toUpperCase())); return; }
 
   if (!/Android/i.test(navigator.userAgent)) $("desktopHint").hidden = false;
 
@@ -16,19 +16,26 @@
 
   // download bar on phones: appears after the hero scrolls away
   var dock = $("dock"), hero = document.querySelector(".hero");
-  if ("IntersectionObserver" in window) new IntersectionObserver(function (e) { dock.classList.toggle("show", !e[0].isIntersecting); }).observe(hero);
+  if ("IntersectionObserver" in window && dock && hero) new IntersectionObserver(function (e) { dock.classList.toggle("show", !e[0].isIntersecting); }).observe(hero);
 
   /* ---------- catalog ---------- */
   var PAGE = 12, all = [], cat = "all", shown = PAGE, ok = true;
   var grid = $("grid"), status = $("status"), q = $("q"), sort = $("sort"), more = $("more");
 
   function tile(a) {
-    var t = DS.el("a", "tile"); t.href = "app.html?id=" + encodeURIComponent(a.id);
-    t.appendChild(DS.icon(a, "m"));
+    var t = DS.el("div", "tile");
+    var m = DS.el("a", "tile-main"); m.href = "/app?id=" + encodeURIComponent(a.id);
+    m.appendChild(DS.icon(a, "m"));
     var d = DS.el("div"); d.appendChild(DS.el("b", "", a.name)); d.appendChild(DS.el("small", "", a.developer || a.category || "App"));
     if (a.developer && a.category) d.appendChild(DS.el("small", "", a.category));
-    t.appendChild(d);
-    if (DS.stars(a)) t.appendChild(DS.el("span", "rt", "★ " + DS.stars(a)));
+    m.appendChild(d);
+    if (DS.stars(a)) m.appendChild(DS.el("span", "rt", "★ " + DS.stars(a)));
+    t.appendChild(m);
+    // Direct APK download from the published catalog (no store app needed).
+    var dl = DS.el("a", "tile-dl"); dl.href = "#"; dl.dataset.apiDl = ""; dl.dataset.id = a.id;
+    dl.setAttribute("aria-label", "Download " + a.name + " APK"); dl.title = "Download APK";
+    dl.appendChild(DS.el("span", "", "↓"));
+    t.appendChild(dl);
     return t;
   }
   function visible() {
@@ -58,6 +65,7 @@
     l.slice(0, shown).forEach(function (a) { grid.appendChild(tile(a)); });
     more.hidden = l.length <= shown;
     status.textContent = (l.length === all.length ? l.length + " app" + (l.length === 1 ? "" : "s") : l.length + " of " + all.length + " apps") + (ok ? "" : " · offline copy");
+    DS.bindApiDownloads();
   }
   function cats() {
     var seen = {}; all.forEach(function (a) { var c = a.category || "Other"; seen[c] = (seen[c] || 0) + 1; });
@@ -74,7 +82,7 @@
     if (!list.length) { box.textContent = "No apps yet. Open the app to browse."; box.className = "small muted"; return; }
     box.className = "";
     list.slice(0, 5).forEach(function (a) {
-      var r = DS.el("a", "row"); r.href = "app.html?id=" + encodeURIComponent(a.id);
+      var r = DS.el("a", "row"); r.href = "/app?id=" + encodeURIComponent(a.id);
       r.appendChild(DS.icon(a));
       var t = DS.el("div"); t.appendChild(DS.el("b", "", a.name)); t.appendChild(DS.el("small", "", a.developer || a.category || ""));
       r.appendChild(t);
