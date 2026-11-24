@@ -13,6 +13,7 @@ import 'nav_ui_tab.dart';
 import 'tools_tab.dart';
 import 'control_tabs.dart';
 import 'help_tabs.dart';
+import 'publish_guide_tab.dart';
 import 'v16_tabs.dart';
 import 'v17_tabs.dart';
 import 'api_tab.dart';
@@ -121,6 +122,7 @@ List<NavItem> _allItems() => [
       NavItem('reviews', 'Reviews', 'Catalog & content', Icons.rate_review_rounded, 'Ratings and comments', () => FutureTab(reviewsAdminTab), area: 'reviews'),
       NavItem('banners', 'Banners', 'Catalog & content', Icons.view_carousel_rounded, 'Home banners', () => FutureTab(bannersTab), area: 'content'),
       NavItem('events', 'Events', 'Catalog & content', Icons.celebration_rounded, 'Festival and event themes', () => FutureTab(eventsTab), area: 'content'),
+      NavItem('publishguide', 'Publish guide', 'Catalog & content', Icons.rocket_launch_rounded, 'Home notice + how to publish page with video', () => FutureTab(publishGuideTab), area: 'content'),
       NavItem('faq', 'Help / FAQ', 'Catalog & content', Icons.quiz_rounded, 'Questions and answers', () => FutureTab(faqTab), area: 'content'),
       NavItem('search', 'Search', 'Catalog & content', Icons.manage_search_rounded, 'Search settings and insights', () => FutureTab(searchAdminTab), area: 'content'),
       NavItem('share', 'Share text', 'Catalog & content', Icons.share_rounded, 'Text used when sharing', () => FutureTab(shareTab), area: 'content'),
