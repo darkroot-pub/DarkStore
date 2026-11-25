@@ -471,12 +471,7 @@ Future<Widget> updateTab(BuildContext c, VoidCallback rl) async {
       }, child: const Text('Edit & publish')),
     ]))),
     Card(child: Column(children: [
-      SwitchListTile(title: const Text('Maintenance mode'), subtitle: Text(s(m['message']).isEmpty ? 'Blocks the app for every non-admin' : s(m['message'])), value: bo(m['isEnabled'] ?? m['enabled']),
-          onChanged: (v) => act(c, () async { await Db.upd('maintenanceConfig', {'enabled': v, 'isEnabled': v}); await Db.audit('MAINTENANCE', 'config', 'maintenanceConfig', 'Maintenance', '$v'); }, rl)),
-      ListTile(title: const Text('Maintenance message'), trailing: const Icon(Icons.edit), onTap: () async {
-        final x = await editSheet(c, 'Maintenance message', const [F('message', 'Message', 'area')], m);
-        if (x != null && c.mounted) await act(c, () => Db.upd('maintenanceConfig', {'message': s(x['message'])}), rl);
-      }),
+      ListTile(leading: const Icon(Icons.construction_rounded), title: const Text('Maintenance'), subtitle: Text(bo(m['isEnabled'] ?? m['enabled']) ? 'Switched ON. Open the Maintenance page to see times or end it.' : 'Off. Close the store now or on a schedule from the Maintenance page.')),
       SwitchListTile(title: const Text('Premium is free for everyone'), value: p['isFree'] != false,
           onChanged: (v) => act(c, () async { await Db.upd('premiumConfig', {'isFree': v}); await Db.audit('PREMIUM_FREE', 'config', 'premiumConfig', 'Premium', '$v'); }, rl)),
     ])),

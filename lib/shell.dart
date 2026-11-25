@@ -14,6 +14,7 @@ import 'tools_tab.dart';
 import 'control_tabs.dart';
 import 'help_tabs.dart';
 import 'publish_guide_tab.dart';
+import 'maintenance_tab.dart';
 import 'v16_tabs.dart';
 import 'v17_tabs.dart';
 import 'api_tab.dart';
@@ -145,6 +146,7 @@ List<NavItem> _allItems() => [
       NavItem('update', 'Push app update', 'Platform', Icons.system_update_rounded, 'Tell users a new version exists', () => FutureTab(updateTab), adminOnly: true),
       NavItem('audit', 'Audit log', 'Platform', Icons.history_rounded, 'Who changed what', () => FutureTab(auditTab), area: 'audit'),
       NavItem('server', 'Server', 'Platform', Icons.cloud_rounded, 'Notifier server address and status', () => FutureTab(serverTab), adminOnly: true),
+      NavItem('maintenance', 'Maintenance', 'Platform', Icons.construction_rounded, 'Close the store now or on a schedule', () => FutureTab(maintenanceTab), adminOnly: true),
       NavItem('tools', 'Tools & backup', 'Platform', Icons.build_circle_rounded, 'Backups, imports, maintenance', () => FutureTab(toolsTab), adminOnly: true),
     ];
 
